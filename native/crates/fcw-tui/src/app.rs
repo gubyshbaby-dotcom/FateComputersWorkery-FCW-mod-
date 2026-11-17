@@ -320,12 +320,12 @@ impl App {
             }
             Key::F(8) | Key::Char('w') if self.program == Program::Yield => {
                 let name = format!("fcw-yield-{}.txt", w.day);
-                // в файл идут те же экраны, только шире (подсказки не режутся) и без вкладок и клавиш
+                // в файл идут те же экраны 80×25, без вкладок и строки клавиш
                 let mut view = self.clone();
                 let mut text = String::new();
                 for tab in [0, 2, 3] {
                     view.tab = tab;
-                    let screen = view.render(w, 100, 25).to_text();
+                    let screen = view.render(w, 80, 25).to_text();
                     let lines: Vec<&str> = screen.lines().collect();
                     let body = &lines[if tab == 0 { 0 } else { 2 }..lines.len() - 1];
                     let kept: Vec<&str> =
