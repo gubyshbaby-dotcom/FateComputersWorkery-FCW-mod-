@@ -48,6 +48,18 @@ distro_remove_other_terminals() {
 }
 
 distro_configure() {
+  # Несколько зеркал: если одно недоступно из сети сервера (бывает, что
+  # провайдер режет отдельные хостинги), pacman переходит к следующему.
+  cat > "$ROOT/etc/pacman.d/mirrorlist" <<'EOF'
+## FCW: зеркала Arch Linux, сверху вниз. Подобрать самые быстрые для своей сети:
+##   sudo pacman -S reflector && sudo reflector --latest 20 --sort rate --save /etc/pacman.d/mirrorlist
+Server = https://geo.mirror.pkgbuild.com/$repo/os/$arch
+Server = https://mirror.yandex.ru/archlinux/$repo/os/$arch
+Server = https://mirrors.kernel.org/archlinux/$repo/os/$arch
+Server = https://mirror.rackspace.com/archlinux/$repo/os/$arch
+Server = https://mirror.leaseweb.net/archlinux/$repo/os/$arch
+Server = https://ftp.halifax.rwth-aachen.de/archlinux/$repo/os/$arch
+EOF
   sed -i 's/^#\(en_US.UTF-8\)/\1/; s/^#\(ru_RU.UTF-8\)/\1/' "$ROOT/etc/locale.gen"
   in_root locale-gen >/dev/null
   printf 'LANG=en_US.UTF-8\n' > "$ROOT/etc/locale.conf"

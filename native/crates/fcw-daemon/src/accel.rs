@@ -57,6 +57,44 @@ pub fn kvm_usable() -> bool {
     }
 }
 
+/// Почему /dev/kvm нельзя использовать; `None`, если можно. Текст для админа
+/// сервера: что именно не так и что с этим сделать.
+pub fn kvm_problem() -> Option<String> {
+    #[cfg(target_os = "linux")]
+    {
+        use std::os::unix::fs::MetadataExt;
+        let err = match std::fs::OpenOptions::new().read(true).write(true).open("/dev/kvm") {
+            Ok(_) => return None,
+            Err(e) => e,
+        };
+        // SAFETY: getuid/getgid не имеют побочных эффектов
+        let (uid, gid) = unsafe { (libc::getuid(), libc::getgid()) };
+        let owner = std::fs::metadata("/dev/kvm")
+            .map(|m| format!("owner {}:{}, mode {:o}", m.uid(), m.gid(), m.mode() & 0o777))
+            .unwrap_or_default();
+        Some(match err.raw_os_error() {
+            Some(libc::ENOENT) => "/dev/kvm is missing: hardware virtualization is not available here \
+                (on a VPS enable nested virtualization; in a container pass the device with --device /dev/kvm)"
+                .to_string(),
+            Some(libc::EPERM) => format!(
+                "/dev/kvm exists but the container is not allowed to use it ({owner}): a bind mount is not \
+                 enough, the container needs the device itself (docker --device /dev/kvm; Pelican/Pterodactyl \
+                 Wings: device passthrough)"
+            ),
+            Some(libc::EACCES) => format!(
+                "/dev/kvm exists but this process (uid {uid}, gid {gid}) may not open it ({owner}): on the \
+                 host run `chmod 666 /dev/kvm` (or a udev rule KERNEL==\"kvm\", MODE=\"0666\"), or add the user \
+                 to the device's group"
+            ),
+            _ => format!("cannot open /dev/kvm: {err}"),
+        })
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        None
+    }
+}
+
 /// Пробный запуск QEMU с ускорителем: если процесс жив через пару секунд,
 /// ускоритель работает.
 pub async fn probe(qemu: &Path, accel: Accel) -> bool {

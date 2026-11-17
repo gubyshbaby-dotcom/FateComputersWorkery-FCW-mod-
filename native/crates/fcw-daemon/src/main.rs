@@ -1,6 +1,6 @@
 use anyhow::{anyhow, Context, Result};
 use clap::Parser;
-use fcw_daemon::accel::Accel;
+use fcw_daemon::accel::{self, Accel};
 use fcw_daemon::args::Args;
 use fcw_daemon::daemon::Daemon;
 use fcw_daemon::localsock::LocalListener;
@@ -86,6 +86,11 @@ async fn run(args: Args, events: broadcast::Sender<pb::Event>) -> Result<()> {
         None => locator.accel_for(None).await,
     };
     tracing::info!("accelerator: {}", accel.name());
+    if accel == Accel::Tcg {
+        if let Some(why) = accel::kvm_problem() {
+            tracing::warn!("no KVM, machines run in software emulation (slow): {why}");
+        }
+    }
 
     std::fs::create_dir_all(&args.images_dir).with_context(|| format!("create {}", args.images_dir.display()))?;
     std::fs::create_dir_all(&args.vms_dir).with_context(|| format!("create {}", args.vms_dir.display()))?;

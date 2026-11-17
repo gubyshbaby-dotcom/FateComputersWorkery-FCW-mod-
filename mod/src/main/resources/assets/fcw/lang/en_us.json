@@ -38,6 +38,7 @@
   "command.fcw.qemu.unknown": "QEMU: the daemon does not report it (older daemon build)",
   "command.fcw.status.accel": "Accelerator: %s",
   "command.fcw.status.accel_tcg": "Accelerator: tcg — no hardware acceleration (KVM unavailable): machines will be slow",
+  "command.fcw.status.accel_why": "Why no KVM: %s",
   "command.fcw.status.binary": "File: %s",
   "command.fcw.status.computers": "Loaded computers: %s, powered on: %s",
   "command.fcw.status.daemon": "VM daemon: %s — %s",

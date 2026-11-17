@@ -240,6 +240,11 @@ pub async fn hello_result(d: &Daemon) -> pb::HelloResult {
         qemu_path: q.as_ref().map(|q| q.qemu.to_string_lossy().to_string()).unwrap_or_default(),
         qemu_version: q.as_ref().map(|q| q.version_str.clone()).unwrap_or_default(),
         qemu_bundled: q.as_ref().map(|q| q.bundled).unwrap_or(false),
+        accelerator_note: if accel == crate::accel::Accel::Tcg && cfg!(target_os = "linux") {
+            crate::accel::kvm_problem().unwrap_or_default()
+        } else {
+            String::new()
+        },
     }
 }
 

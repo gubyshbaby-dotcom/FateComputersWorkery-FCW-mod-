@@ -91,6 +91,10 @@ public final class FcwCommands {
             String accel = d.accelerator();
             if ("tcg".equals(accel)) {
                 src.sendSuccess(() -> Component.translatable("command.fcw.status.accel_tcg").withStyle(ChatFormatting.YELLOW), false);
+                String why = h.getAcceleratorNote();
+                if (!why.isEmpty()) {
+                    src.sendSuccess(() -> Component.translatable("command.fcw.status.accel_why", why).withStyle(ChatFormatting.GRAY), false);
+                }
             } else if (!accel.isEmpty()) {
                 src.sendSuccess(() -> Component.translatable("command.fcw.status.accel", accel).withStyle(ChatFormatting.GREEN), false);
             }

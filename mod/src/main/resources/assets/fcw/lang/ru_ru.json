@@ -38,6 +38,7 @@
   "command.fcw.qemu.unknown": "QEMU: демон не сообщает (старая сборка демона)",
   "command.fcw.status.accel": "Ускоритель: %s",
   "command.fcw.status.accel_tcg": "Ускоритель: tcg — без аппаратного ускорения (KVM недоступен): машины будут медленными",
+  "command.fcw.status.accel_why": "Почему нет KVM: %s",
   "command.fcw.status.binary": "Файл: %s",
   "command.fcw.status.computers": "Загружено компьютеров: %s, включено: %s",
   "command.fcw.status.daemon": "Демон ВМ: %s — %s",

@@ -158,6 +158,9 @@ message HelloResult {
   string qemu_path = 14;
   string qemu_version = 15;    // "11.1.3"
   bool qemu_bundled = 16;      // это переносимый QEMU из --qemu-dir
+  // Почему нет аппаратного ускорения (пусто, если оно есть или задано явно):
+  // нет /dev/kvm, нет прав, контейнер не пускает к устройству и т.п.
+  string accelerator_note = 17;
 }
 
 message ImageInfo {
