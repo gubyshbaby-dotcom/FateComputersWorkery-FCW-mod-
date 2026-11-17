@@ -405,7 +405,8 @@ mod encoder {
     const LINGER: Duration = Duration::from_secs(2);
     /// Ключевые кадры по запросу — не чаще.
     const IDR_SPACING: Duration = Duration::from_millis(300);
-    /// Картинка замерла: тот же кадр кодируется ещё столько раз. Свободный
+    /// Картинка замерла (нового кадра нет два периода): тот же кадр
+    /// кодируется ещё столько раз. Свободный
     /// битрейт уходит в качество, и к паузе картинка становится чёткой, не
     /// дожидаясь уточнения тайлами.
     const STILL_FRAMES: u32 = 4;
@@ -426,7 +427,10 @@ mod encoder {
 
     pub fn run(hub: &HubInner, shared: &Enc) {
         let fps = hub.cfg.fps.clamp(1, 60);
-        let interval = Duration::from_micros(1_000_000 / fps as u64);
+        // Наименьший промежуток между кадрами чуть короче периода: гость выдаёт
+        // кадры со своим ритмом, и после запоздавшего кадра следующий не должен
+        // пропасть из-за ожидания полного периода.
+        let interval = Duration::from_micros(850_000 / fps as u64);
         let started = Instant::now();
         let mut active: Option<Active> = None;
         let mut buf: Vec<u8> = Vec::new();
@@ -434,6 +438,8 @@ mod encoder {
         let mut last_idr = started;
         let mut idle_since: Option<Instant> = None;
         let mut still_left = 0u32;
+        let mut last_new = started;
+        let still_after = Duration::from_micros(2_000_000 / fps as u64);
         loop {
             if shared.retire.load(Ordering::Acquire) {
                 return; // место отдано другому экрану
@@ -498,6 +504,7 @@ mod encoder {
                 Capture::Frame { seq, capture_unix_us } => {
                     if seq != a.shown_seq {
                         still_left = STILL_FRAMES;
+                        last_new = Instant::now();
                         (seq, capture_unix_us)
                     } else {
                         // та же картинка ещё раз: «захвачена» сейчас
@@ -508,7 +515,10 @@ mod encoder {
                     // картинка стоит: доводим качество; ключевой кадр по запросу
                     // всё равно нужен
                     let idr = shared.want_idr.load(Ordering::Acquire) && last_idr.elapsed() >= IDR_SPACING;
-                    if idr || (still_left > 0 && shared.viewers.load(Ordering::Acquire) > 0) {
+                    let still = still_left > 0
+                        && last_new.elapsed() >= still_after
+                        && shared.viewers.load(Ordering::Acquire) > 0;
+                    if idr || still {
                         still_left = still_left.saturating_sub(1);
                         a.last_seq = 0;
                     } else {

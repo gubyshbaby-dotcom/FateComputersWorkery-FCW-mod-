@@ -68,6 +68,15 @@ impl AudioSink {
         (self.lag_us as usize * 48 / 1000) * 2
     }
 
+    /// Сглаженное отставание видео от звука, мс (0 — видео сейчас не идёт).
+    pub fn video_lag_ms(&self) -> u32 {
+        if self.lag_at.is_some_and(|t| t.elapsed() < LAG_TTL) {
+            (self.lag_us / 1000) as u32
+        } else {
+            0
+        }
+    }
+
     /// Текущая задержка звука под видео, мс.
     pub fn video_delay_ms(&self) -> u32 {
         (self.hold / 2 / 48) as u32

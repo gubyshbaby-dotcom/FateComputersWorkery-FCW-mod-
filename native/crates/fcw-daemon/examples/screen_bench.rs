@@ -68,6 +68,8 @@ struct Opts {
     far_fps: u32,
     /// Мерить PSNR картинки клиента (раз в 2 с сцена замирает на 200 мс).
     quality: bool,
+    /// Через сколько миллисекунд после остановки кадра сравнивать.
+    quality_delay_ms: u64,
     /// Сохранить кадр клиента и демона в <префикс>-client.png / -server.png.
     png: Option<String>,
     tiers: Option<String>,
@@ -100,6 +102,7 @@ fn parse() -> Opts {
         viewers: 0,
         far_fps: 8,
         quality: false,
+        quality_delay_ms: 150,
         png: None,
         tiers: None,
         vnc: None,
@@ -126,6 +129,7 @@ fn parse() -> Opts {
             "--viewers" => o.viewers = v().parse().unwrap(),
             "--far-fps" => o.far_fps = v().parse().unwrap(),
             "--quality" => o.quality = true,
+            "--quality-delay-ms" => o.quality_delay_ms = v().parse().unwrap(),
             "--png" => o.png = Some(v()),
             "--tiers" => o.tiers = Some(v()),
             "--vnc" => o.vnc = Some(v()),
@@ -477,7 +481,7 @@ async fn main() {
             (s, v)
         }
     };
-    let (_s, view) = connect(o.fps, addr.port()).await;
+    let (session, view) = connect(o.fps, addr.port()).await;
     // дополнительные зрители (напрямую, без имитатора канала): ближние и дальние
     let mut extra = Vec::new();
     for i in 0..o.viewers {
@@ -512,10 +516,13 @@ async fn main() {
     let mut tick = tokio::time::interval(Duration::from_micros(1_000_000 / fps));
     tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     let mut produced = 0u64;
-    // качество: раз в 2 с кадр держится 200 мс, через 150 мс сравниваем клиента с демоном
+    // качество: раз в 2 с кадр замирает, через 150 мс (--quality-delay-ms) сравниваем
+    // клиента с демоном и ещё через 50 мс продолжаем
     let mut quality: Vec<f64> = Vec::new();
     let mut next_probe = Duration::from_secs(2);
     let mut encoders = 0;
+    // отставание видео от звука, как его оценивает клиент (на столько он задержит звук)
+    let mut video_lag: Vec<u64> = Vec::new();
     // сцена vnc: «произведено» — число обновлений экрана от QEMU
     let mut commits = vm.gfx.subscribe();
     let commit_count = Arc::new(std::sync::atomic::AtomicU64::new(0));
@@ -548,9 +555,13 @@ async fn main() {
         frame += 1;
         produced += 1;
         encoders = encoders.max(fcw_daemon::video::active_encoders());
+        let lag = session.video_lag_ms("b");
+        if lag > 0 {
+            video_lag.push(lag as u64 * 1000);
+        }
         if o.quality && start.elapsed() >= next_probe {
             next_probe += Duration::from_secs(2);
-            tokio::time::sleep(Duration::from_millis(150)).await;
+            tokio::time::sleep(Duration::from_millis(o.quality_delay_ms)).await;
             let (_, _, srv) = vm.gfx.snapshot();
             let (_, _, cli) = view.snapshot();
             quality.push(psnr(&srv, &cli));
@@ -643,6 +654,13 @@ async fn main() {
         );
     }
     let vs = fcw_daemon::video::stats();
+    if !video_lag.is_empty() {
+        println!(
+            "  отставание видео от звука (кодирование + декодирование): p50 {:.0} мс, p95 {:.0} мс",
+            pct(&mut video_lag, 0.5),
+            pct(&mut video_lag, 0.95)
+        );
+    }
     if vs.frames + vs.skipped > 0 {
         println!(
             "  кодировщиков одновременно: {encoders}; кадров {} (ключевых {}, пропущено {}), {:.1} Мбит/с, \

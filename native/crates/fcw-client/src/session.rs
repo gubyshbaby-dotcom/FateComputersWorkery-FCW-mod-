@@ -320,6 +320,13 @@ impl Session {
         self.input(vm_id, input_event::Kind::ReleaseAll(spb::ReleaseAll {}));
     }
 
+    /// На сколько видеорежим экрана машины сейчас отстаёт от её звука, мс
+    /// (кодирование у демона и декодирование здесь); на это время
+    /// задерживается звук. 0 — видео не идёт.
+    pub fn video_lag_ms(&self, vm_id: &str) -> u32 {
+        self.audio.lock().get(vm_id).map(|a| a.video_lag_ms()).unwrap_or(0)
+    }
+
     /// PCM 48 кГц стерео s16 (чередование L,R); возвращает число значений.
     pub fn read_audio(&self, vm_id: &str, out: &mut [i16]) -> usize {
         self.audio.lock().get_mut(vm_id).map(|a| a.read(out)).unwrap_or(0)
