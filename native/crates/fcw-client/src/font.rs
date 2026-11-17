@@ -63,6 +63,13 @@ impl Font {
                 map.insert(i as u32, i);
             }
         }
+        // В этом Terminus строчные «и» и «й» без диагонали, как латинская «u»:
+        // русский текст читается как «uнформацuя». Рисуем привычную форму.
+        for (cp, g) in cyrillic_i() {
+            if let Some(&i) = map.get(&cp) {
+                glyphs[i] = g;
+            }
+        }
         // блочные элементы, которых нет в шрифте, рисуем сами
         for (cp, g) in synth_blocks() {
             if let std::collections::hash_map::Entry::Vacant(e) = map.entry(cp) {
@@ -84,6 +91,17 @@ impl Font {
             if cp == 0 || cp == ' ' as u32 { self.space } else { self.map.get(&cp).copied().unwrap_or(self.fallback) };
         &self.glyphs[idx]
     }
+}
+
+/// «и» (U+0438) и «й» (U+0439) с диагональю, на высоте строчных Terminus (ряды 5..=11).
+fn cyrillic_i() -> [(u32, [u8; CELL_H]); 2] {
+    const BODY: [u8; 7] = [0x42, 0x46, 0x4a, 0x52, 0x62, 0x42, 0x42];
+    let mut i = [0u8; CELL_H];
+    i[5..12].copy_from_slice(&BODY);
+    let mut short_i = i;
+    short_i[2] = 0x24; // кратка, как у шрифтовой «й»
+    short_i[3] = 0x18;
+    [(0x438, i), (0x439, short_i)]
 }
 
 fn synth_blocks() -> Vec<(u32, [u8; CELL_H])> {
@@ -159,6 +177,10 @@ mod tests {
         assert_ne!(f.glyph('A' as u32), f.glyph('B' as u32));
         assert_eq!(f.glyph(0), f.glyph(' ' as u32));
         assert!(f.glyph(' ' as u32).iter().all(|b| *b == 0));
+        // «и» не должна совпадать с «u», «й» — это «и» с краткой
+        assert_ne!(f.glyph('и' as u32), f.glyph('u' as u32));
+        assert_eq!(f.glyph('и' as u32)[5..], f.glyph('й' as u32)[5..]);
+        assert_ne!(f.glyph('и' as u32)[..5], f.glyph('й' as u32)[..5]);
     }
 
     #[test]
