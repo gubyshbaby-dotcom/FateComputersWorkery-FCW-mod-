@@ -244,11 +244,99 @@ pub enum Decoded {
     Copy(spb::Rect),
 }
 
+/// Декодер видеорежима (RECT_H264). Состояние живёт, пока жив поток экрана:
+/// кадры одного видеопотока зависят друг от друга и идут строго по порядку.
+#[derive(Default)]
+pub struct VideoDecoder {
+    #[cfg(feature = "video")]
+    dec: Option<openh264::decoder::Decoder>,
+    /// Номер видеопотока, который сейчас декодируется.
+    #[cfg(feature = "video")]
+    stream: u32,
+    /// Декодер получил ключевой кадр и не ошибался.
+    #[cfg(feature = "video")]
+    synced: bool,
+    /// Кадр пришлось отбросить: нужен ключевой.
+    need_key: bool,
+}
+
+impl VideoDecoder {
+    /// Клиент собран с декодером H.264.
+    pub const SUPPORTED: bool = cfg!(feature = "video");
+
+    /// Нужно ли просить ключевой кадр (сбрасывает признак).
+    pub fn take_need_key(&mut self) -> bool {
+        std::mem::take(&mut self.need_key)
+    }
+
+    /// Декодирует кадр; `pixels = false` — только обновить состояние декодера
+    /// (за этим кадром в том же обновлении идёт следующий). Возвращает RGBA
+    /// размера `r.w * r.h`.
+    #[cfg(feature = "video")]
+    fn decode(&mut self, r: &spb::Rect, pixels: bool) -> Option<Vec<u8>> {
+        if self.dec.is_none() || r.video_stream != self.stream {
+            if !r.video_key {
+                self.need_key = true;
+                return None;
+            }
+            self.dec = openh264::decoder::Decoder::new().ok();
+            self.stream = r.video_stream;
+            self.synced = false;
+        }
+        if !self.synced && !r.video_key {
+            self.need_key = true;
+            return None;
+        }
+        let yuv = match self.dec.as_mut()?.decode(&r.data) {
+            Ok(Some(yuv)) => yuv,
+            Ok(None) => return None,
+            Err(_) => {
+                self.synced = false;
+                self.need_key = true;
+                return None;
+            }
+        };
+        self.synced = true;
+        if !pixels {
+            return None;
+        }
+        use openh264::formats::YUVSource;
+        let (dw, dh) = yuv.dimensions();
+        let (w, h) = (r.w as usize, r.h as usize);
+        if dw < w || dh < h || w == 0 || h == 0 {
+            return None;
+        }
+        let mut full = vec![0u8; dw * dh * 4];
+        yuv.write_rgba8(&mut full);
+        if (dw, dh) == (w, h) {
+            return Some(full);
+        }
+        let mut out = Vec::with_capacity(w * h * 4);
+        for row in 0..h {
+            out.extend_from_slice(&full[row * dw * 4..(row * dw + w) * 4]);
+        }
+        Some(out)
+    }
+
+    #[cfg(not(feature = "video"))]
+    fn decode(&mut self, _r: &spb::Rect, _pixels: bool) -> Option<Vec<u8>> {
+        None
+    }
+}
+
 /// Распаковка прямоугольников (вне блокировки вида).
-pub fn decode_rects(rects: Vec<spb::Rect>) -> Vec<Decoded> {
+pub fn decode_rects(rects: Vec<spb::Rect>, video: &mut VideoDecoder) -> Vec<Decoded> {
     let mut out = Vec::with_capacity(rects.len());
-    for r in rects {
+    let h264 = spb::RectEncoding::RectH264 as i32;
+    // из нескольких кадров видео в одном обновлении на экран попадёт последний
+    let last_video = rects.iter().rposition(|r| r.encoding == h264);
+    for (i, r) in rects.into_iter().enumerate() {
         match spb::RectEncoding::try_from(r.encoding).unwrap_or(spb::RectEncoding::RectUnknown) {
+            spb::RectEncoding::RectH264 => {
+                if let Some(px) = video.decode(&r, Some(i) == last_video) {
+                    out.push(Decoded::Pixels(r, px));
+                }
+            }
             spb::RectEncoding::RectRgbaZstd => {
                 let len = (r.w * r.h * 4) as usize;
                 if let Ok(px) = zstd::bulk::decompress(&r.data, len) {
@@ -315,11 +403,13 @@ pub struct FrameStats {
     pub frames: u64,
     /// Размер сообщений FrameUpdate/TextUpdate (байт).
     pub bytes: u64,
-    /// Задержка от захвата демоном до прихода к клиенту, мкс (если демон
-    /// прислал capture_unix_us).
+    /// Задержка от захвата демоном до готовности кадра у клиента (распакован
+    /// и записан в буфер вида), мкс — если демон прислал capture_unix_us.
     pub latency_us: Vec<u64>,
     pub jpeg_rects: u64,
     pub lossless_rects: u64,
+    /// Кадры видеорежима (RECT_H264).
+    pub video_rects: u64,
 }
 
 /// Снимок для `viewInfo`.
@@ -556,13 +646,21 @@ impl View {
         result
     }
 
-    /// Учёт пришедшего кадра (размер сообщения и метка времени захвата).
-    pub fn record_frame(&self, bytes: usize, capture_unix_us: u64, jpeg_rects: u64, lossless_rects: u64) {
+    /// Учёт применённого кадра (размер сообщения и метка времени захвата).
+    pub fn record_frame(
+        &self,
+        bytes: usize,
+        capture_unix_us: u64,
+        jpeg_rects: u64,
+        lossless_rects: u64,
+        video_rects: u64,
+    ) {
         let mut st = self.stats.lock();
         st.frames += 1;
         st.bytes += bytes as u64;
         st.jpeg_rects += jpeg_rects;
         st.lossless_rects += lossless_rects;
+        st.video_rects += video_rects;
         if capture_unix_us != 0 {
             let now = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -620,16 +718,37 @@ impl View {
 mod tests {
     use super::*;
 
+    fn decode_rects_plain(rects: Vec<spb::Rect>) -> Vec<Decoded> {
+        decode_rects(rects, &mut VideoDecoder::default())
+    }
+
     fn solid(x: u32, y: u32, w: u32, h: u32, c: [u8; 4]) -> spb::Rect {
-        spb::Rect { x, y, w, h, encoding: spb::RectEncoding::RectSolid as i32, data: c.to_vec(), src_x: 0, src_y: 0 }
+        spb::Rect {
+            x,
+            y,
+            w,
+            h,
+            encoding: spb::RectEncoding::RectSolid as i32,
+            data: c.to_vec(),
+            src_x: 0,
+            src_y: 0,
+            ..Default::default()
+        }
     }
 
     #[test]
     fn frame_and_dirty() {
         let v = View::new("vm", "gfx0", 30, KIND_GRAPHICAL);
-        let key =
-            spb::FrameUpdate { seq: 1, width: 200, height: 100, keyframe: true, rects: vec![], capture_unix_us: 0 };
-        v.apply_frame(&key, decode_rects(vec![solid(0, 0, 200, 100, [1, 2, 3, 255])]));
+        let key = spb::FrameUpdate {
+            seq: 1,
+            width: 200,
+            height: 100,
+            keyframe: true,
+            rects: vec![],
+            capture_unix_us: 0,
+            ..Default::default()
+        };
+        v.apply_frame(&key, decode_rects_plain(vec![solid(0, 0, 200, 100, [1, 2, 3, 255])]));
         let mut buf = vec![0u8; 200 * 100 * 4];
         let mut rects = vec![0i32; 64];
         assert_eq!(v.copy_dirty(&mut buf, &mut rects), -1);
@@ -646,10 +765,18 @@ mod tests {
             data: zstd::bulk::compress(&px, 1).unwrap(),
             src_x: 0,
             src_y: 0,
+            ..Default::default()
         };
-        let u =
-            spb::FrameUpdate { seq: 2, width: 200, height: 100, keyframe: false, rects: vec![r], capture_unix_us: 0 };
-        v.apply_frame(&u, decode_rects(u.rects.clone()));
+        let u = spb::FrameUpdate {
+            seq: 2,
+            width: 200,
+            height: 100,
+            keyframe: false,
+            rects: vec![r],
+            capture_unix_us: 0,
+            ..Default::default()
+        };
+        v.apply_frame(&u, decode_rects_plain(u.rects.clone()));
         assert_eq!(v.copy_dirty(&mut buf, &mut rects), 1);
         assert_eq!(&rects[0..4], &[64, 0, 64, 64]);
         let off = (15 * 200 + 75) * 4;
@@ -664,8 +791,9 @@ mod tests {
             keyframe: false,
             rects: vec![solid(0, 0, 10, 10, [0; 4]), solid(140, 70, 10, 10, [0; 4])],
             capture_unix_us: 0,
+            ..Default::default()
         };
-        v.apply_frame(&u2, decode_rects(u2.rects.clone()));
+        v.apply_frame(&u2, decode_rects_plain(u2.rects.clone()));
         let mut one = vec![0i32; 4];
         assert_eq!(v.copy_dirty(&mut buf, &mut one), -1);
     }
@@ -673,8 +801,15 @@ mod tests {
     #[test]
     fn dirty_rects_merge_vertically() {
         let v = View::new("vm", "gfx0", 30, KIND_GRAPHICAL);
-        let key =
-            spb::FrameUpdate { seq: 1, width: 256, height: 256, keyframe: true, rects: vec![], capture_unix_us: 0 };
+        let key = spb::FrameUpdate {
+            seq: 1,
+            width: 256,
+            height: 256,
+            keyframe: true,
+            rects: vec![],
+            capture_unix_us: 0,
+            ..Default::default()
+        };
         v.apply_frame(&key, vec![]);
         let mut buf = vec![0u8; 256 * 256 * 4];
         let mut rects = vec![0i32; 64];
@@ -686,8 +821,9 @@ mod tests {
             keyframe: false,
             rects: vec![solid(64, 0, 128, 128, [5; 4])],
             capture_unix_us: 0,
+            ..Default::default()
         };
-        v.apply_frame(&u, decode_rects(u.rects.clone()));
+        v.apply_frame(&u, decode_rects_plain(u.rects.clone()));
         assert_eq!(v.copy_dirty(&mut buf, &mut rects), 1);
         assert_eq!(&rects[0..4], &[64, 0, 128, 128]);
     }
@@ -695,9 +831,16 @@ mod tests {
     #[test]
     fn cursor_overlay() {
         let v = View::new("vm", "gfx0", 30, KIND_GRAPHICAL);
-        let key =
-            spb::FrameUpdate { seq: 1, width: 128, height: 128, keyframe: true, rects: vec![], capture_unix_us: 0 };
-        v.apply_frame(&key, decode_rects(vec![solid(0, 0, 128, 128, [0, 0, 0, 255])]));
+        let key = spb::FrameUpdate {
+            seq: 1,
+            width: 128,
+            height: 128,
+            keyframe: true,
+            rects: vec![],
+            capture_unix_us: 0,
+            ..Default::default()
+        };
+        v.apply_frame(&key, decode_rects_plain(vec![solid(0, 0, 128, 128, [0, 0, 0, 255])]));
         v.set_cursor_shape(Some(CursorImage { w: 2, h: 2, hot_x: 0, hot_y: 0, rgba: [255u8; 16].to_vec() }));
         v.set_cursor_pos(10, 10);
         let mut buf = vec![0u8; 128 * 128 * 4];

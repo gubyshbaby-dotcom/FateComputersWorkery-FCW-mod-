@@ -69,6 +69,29 @@ pub struct Args {
     /// Никогда не слать тайлы с потерями (JPEG)
     #[arg(long)]
     pub screen_lossless: bool,
+    /// Видеорежим: область экрана с видео идёт H.264 вместо тайлов: on | off
+    #[arg(long, default_value = "on", value_parser = parse_on_off, action = clap::ArgAction::Set)]
+    pub video: bool,
+    /// Ступени битрейта видеорежима, Мбит/с (до четырёх). Зритель получает
+    /// наибольшую ступень, которая укладывается в 70 % его бюджета.
+    #[arg(long, default_value = "2,5,10")]
+    pub video_tiers: String,
+    /// Ступень для игрока на этом же компьютере (same_host), Мбит/с
+    #[arg(long, default_value_t = 20.0)]
+    pub video_local_mbps: f64,
+    /// Частота кадров кодировщика видеорежима
+    #[arg(long, default_value_t = 30)]
+    pub video_fps: u32,
+    /// Предел одновременных кодировщиков на весь демон (по одному на экран и
+    /// ступень); по умолчанию половина ядер, но не меньше двух
+    #[arg(long)]
+    pub video_max_encoders: Option<u32>,
+    /// Потоков на один кодировщик
+    #[arg(long, default_value_t = 1)]
+    pub video_threads: u16,
+    /// Видео — это когда за кадр меняется такая доля экрана (0.05–1)
+    #[arg(long, default_value_t = 0.2)]
+    pub video_min_area: f32,
     /// Не завершаться при закрытии stdin (для ручного запуска и тестов)
     #[arg(long, hide = true)]
     pub no_stdin_watch: bool,
@@ -127,8 +150,23 @@ mod tests {
 }
 
 impl Args {
+    pub fn video_config(&self) -> Result<crate::video::VideoConfig, String> {
+        let tiers_kbps =
+            crate::video::VideoConfig::parse_tiers(&self.video_tiers).map_err(|e| format!("--video-tiers: {e}"))?;
+        Ok(crate::video::VideoConfig {
+            enabled: self.video && cfg!(feature = "video"),
+            tiers_kbps,
+            local_kbps: (self.video_local_mbps.clamp(0.1, 200.0) * 1000.0) as u32,
+            fps: self.video_fps.clamp(5, 60),
+            max_encoders: self.video_max_encoders.unwrap_or_else(crate::video::default_max_encoders),
+            threads: self.video_threads.clamp(1, 16),
+            min_area: self.video_min_area.clamp(0.05, 1.0),
+        })
+    }
+
     pub fn screen_config(&self) -> crate::vm::ScreenConfig {
         crate::vm::ScreenConfig {
+            video: self.video_config().unwrap_or_default(),
             max_bytes_per_sec: (self.screen_max_mbps.max(0.0) * 125_000.0) as u64,
             max_fps: self.screen_max_fps.clamp(1, 120),
             lossy: !self.screen_lossless,
@@ -148,6 +186,7 @@ impl Args {
         if let Some(a) = &self.control_tcp {
             a.parse::<std::net::SocketAddr>().map_err(|e| format!("--control-tcp {a:?}: {e}"))?;
         }
+        self.video_config()?;
         Ok(())
     }
 }
@@ -171,5 +210,30 @@ mod service_tests {
         assert!(a.validate().is_ok());
         assert!(parse(&["--service", "--control-tcp", "127.0.0.1:1"]).validate().is_err(), "token file required");
         assert!(parse(&["--control-tcp", "nonsense", "--token-file", "t"]).validate().is_err());
+    }
+
+    #[test]
+    fn video_flags() {
+        let v = parse(&["--control", "c"]).screen_config().video;
+        assert_eq!(v.enabled, cfg!(feature = "video"));
+        assert_eq!(v.tiers_kbps, [2_000, 5_000, 10_000, 0]);
+        assert_eq!((v.local_kbps, v.fps, v.threads), (20_000, 30, 1));
+        assert!(v.max_encoders >= 2);
+        let a = parse(&[
+            "--control",
+            "c",
+            "--video",
+            "off",
+            "--video-tiers",
+            "1,3",
+            "--video-max-encoders",
+            "1",
+            "--video-fps",
+            "24",
+        ]);
+        let v = a.screen_config().video;
+        assert!(!v.enabled);
+        assert_eq!((v.tiers_kbps, v.max_encoders, v.fps), ([1_000, 3_000, 0, 0], 1, 24));
+        assert!(parse(&["--control", "c", "--video-tiers", "fast"]).validate().is_err());
     }
 }

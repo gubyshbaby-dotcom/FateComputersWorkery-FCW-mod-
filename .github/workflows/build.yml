@@ -32,7 +32,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: native
-      - run: sudo apt-get update && sudo apt-get install -y qemu-utils cmake
+      # nasm: ассемблерные части OpenH264 (видеорежим экрана); без него кодек
+      # собирается без SIMD, и тесты с кодированием идут в разы медленнее
+      - run: sudo apt-get update && sudo apt-get install -y qemu-utils cmake nasm
       - run: cargo fmt --check
         working-directory: native
       - run: cargo clippy --workspace --all-targets -- -D warnings
@@ -61,6 +63,26 @@ jobs:
         with:
           workspaces: native
           key: ${{ matrix.target }}
+      # OpenH264 (видеорежим экрана, крейт openh264-sys2) собирается из исходников
+      # компилятором C++ раннера. Для x86_64 его ассемблерные части собирает nasm;
+      # если nasm нет, крейт молча собирает кодек без SIMD (в разы медленнее),
+      # поэтому ставим nasm; если не вышло, сборка идёт дальше с предупреждением.
+      # На aarch64 (Linux, macOS) ассемблер NEON собирает сам компилятор C, nasm
+      # не нужен.
+      # Если кодек на какой-то платформе не соберётся, её можно собрать без него:
+      #   cargo build ... --no-default-features --features fcw-daemon/audio,fcw-client/audio
+      - name: Install nasm (x86_64 targets)
+        if: ${{ startsWith(matrix.target, 'x86_64') }}
+        continue-on-error: true
+        shell: bash
+        run: |
+          case "$RUNNER_OS" in
+            Linux)   sudo apt-get update && sudo apt-get install -y nasm ;;
+            macOS)   brew install nasm ;;
+            Windows) choco install nasm -y --no-progress && echo "C:\\Program Files\\NASM" >> "$GITHUB_PATH"
+                     export PATH="$PATH:/c/Program Files/NASM" ;;
+          esac
+          nasm -v || echo "::warning::nasm is not available: OpenH264 is built without assembly, video mode will be slow"
       - name: Build daemon and client library
         shell: bash
         working-directory: native

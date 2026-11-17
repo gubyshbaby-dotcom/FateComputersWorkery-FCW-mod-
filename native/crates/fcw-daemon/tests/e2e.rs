@@ -7,6 +7,7 @@ use fcw_client::Session;
 use fcw_daemon::daemon::Daemon;
 use fcw_daemon::localsock::LocalListener;
 use fcw_daemon::qemu::QemuLocator;
+use fcw_daemon::video::VideoConfig;
 use fcw_daemon::vm::{Env, ScreenConfig};
 use fcw_daemon::{cert, control, pb, quic};
 use fcw_proto::control::{envelope, request, response};
@@ -278,8 +279,10 @@ async fn lossy_tiles_are_refined_to_exact_picture() {
     let c = cert::load_or_create(&dir).unwrap();
     let ep = quic::make_endpoint("127.0.0.1:0".parse().unwrap(), &c).unwrap();
     let port = ep.local_addr().unwrap().port();
-    // клиент на 127.0.0.1, но ведём себя как с удалённым игроком
-    let screen = ScreenConfig { local_unlimited: false, ..ScreenConfig::default() };
+    // клиент на 127.0.0.1, но ведём себя как с удалённым игроком; видеорежим
+    // выключен: здесь проверяется путь JPEG
+    let video = VideoConfig { enabled: false, ..Default::default() };
+    let screen = ScreenConfig { local_unlimited: false, video, ..ScreenConfig::default() };
     let d = daemon_with(&dir, port, &c.sha256_hex, screen);
     let (vm, _) = d
         .vm_for_create(&pb::CreateVm { vm_id: "v".into(), image_id: "i".into(), gpu: true, ..Default::default() })
@@ -306,5 +309,131 @@ async fn lossy_tiles_are_refined_to_exact_picture() {
     // видео остановилось: тайлы успокоились и досланы без потерь — картинка точная
     wait_for("exact picture", 10_000, || vm.gfx.snapshot().2 == v.snapshot().2).await;
     s.close();
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// Плавная «плазма» w x h (RGBX).
+#[cfg(feature = "video")]
+fn plasma_wh(w: usize, h: usize, t: f32) -> Vec<u8> {
+    let mut v = Vec::with_capacity(w * h * 4);
+    for y in 0..h {
+        for x in 0..w {
+            let (fx, fy) = (x as f32, y as f32);
+            v.extend_from_slice(&[
+                (128.0 + 120.0 * (fx / 37.0 + t).sin()) as u8,
+                (128.0 + 120.0 * (fy / 29.0 + t * 1.3).sin()) as u8,
+                (128.0 + 120.0 * ((fx + fy) / 51.0 + t * 0.7).sin()) as u8,
+                0,
+            ]);
+        }
+    }
+    v
+}
+
+/// PSNR (дБ) по RGB между двумя кадрами RGBA.
+#[cfg(feature = "video")]
+fn psnr(a: &[u8], b: &[u8]) -> f64 {
+    assert_eq!(a.len(), b.len());
+    let mut err = 0u64;
+    for (p, q) in a.as_chunks::<4>().0.iter().zip(b.as_chunks::<4>().0) {
+        for k in 0..3 {
+            let d = p[k] as i64 - q[k] as i64;
+            err += (d * d) as u64;
+        }
+    }
+    let mse = err as f64 / (a.len() / 4 * 3) as f64;
+    10.0 * (255.0f64 * 255.0 / mse.max(1e-9)).log10()
+}
+
+/// Видеорежим: область с «фильмом» идёт H.264 (одним кодировщиком на всех
+/// зрителей ступени), дальний зритель получает меньше кадров, старый клиент —
+/// тайлы; после остановки видео картинка у всех становится точной.
+#[cfg(feature = "video")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn video_region_goes_h264_then_exact_picture() {
+    let dir = tmpdir("video");
+    let c = cert::load_or_create(&dir).unwrap();
+    let ep = quic::make_endpoint("127.0.0.1:0".parse().unwrap(), &c).unwrap();
+    let port = ep.local_addr().unwrap().port();
+    // кодировщиков хватает и на младшую ступень для дальнего зрителя
+    let video = VideoConfig { max_encoders: 4, ..Default::default() };
+    let screen = ScreenConfig { local_unlimited: false, video, ..ScreenConfig::default() };
+    assert!(screen.video.enabled);
+    let d = daemon_with(&dir, port, &c.sha256_hex, screen);
+    let (vm, _) = d
+        .vm_for_create(&pb::CreateVm { vm_id: "v".into(), image_id: "i".into(), gpu: true, ..Default::default() })
+        .unwrap();
+    // 8 x 6 тайлов: серый «рабочий стол», плеер займёт 6 x 4 тайла
+    const W: u32 = 512;
+    const H: u32 = 384;
+    vm.gfx.resize(W, H);
+    vm.gfx.apply_rgbx(0, 0, W, H, &[0x60u8, 0x70, 0x80, 0].repeat((W * H) as usize));
+    vm.gfx.commit();
+    tokio::spawn(quic::serve(d.clone(), ep.clone()));
+
+    let connect = |video: bool, fps: u32| {
+        let (tok, _) = d.tokens.lock().issue("v", "u", "P", 1, 60);
+        let s = Session::connect("127.0.0.1", port, &c.sha256_hex);
+        s.set_accept_video(video);
+        s.attach(&tok);
+        (s, fps)
+    };
+    let mut viewers = Vec::new();
+    for (video, fps) in [(true, 30), (true, 30), (true, 8), (false, 30)] {
+        let (s, fps) = connect(video, fps);
+        assert_eq!(wait_event(&s, "attach").await["ok"], true);
+        let v = s.open_view("v", "gfx0", fps);
+        viewers.push((s, v));
+    }
+    for (_, v) in &viewers {
+        wait_for("first frame", 10_000, || v.info().width == W).await;
+        v.take_stats();
+    }
+
+    // «фильм»: 2 с по 30 кадров в секунду; часы в углу тикают вне видеообласти
+    let mut region = None;
+    for t in 0..60u32 {
+        vm.gfx.apply_rgbx(64, 64, 384, 256, &plasma_wh(384, 256, t as f32 * 0.07));
+        if t % 10 == 0 {
+            vm.gfx.apply_rgbx(480, 4, 8, 8, &[t as u8, 255, 0, 0].repeat(64));
+        }
+        vm.gfx.commit();
+        region = region.or(vm.gfx.video_region());
+        tokio::time::sleep(Duration::from_millis(33)).await;
+    }
+    let region = region.expect("video detected");
+    assert_eq!((region.x, region.y, region.w, region.h), (64, 64, 384, 256));
+    // кодировщиков два, а не по одному на зрителя: общая ступень двух ближних
+    // и младшая ступень дальнего
+    assert_eq!(fcw_daemon::video::active_encoders(), 2);
+
+    // сразу после остановки: у зрителей с видео — последний кадр H.264, близкий к оригиналу
+    tokio::time::sleep(Duration::from_millis(250)).await;
+    let server = vm.gfx.snapshot().2;
+    let stats: Vec<_> = viewers.iter().map(|(_, v)| v.take_stats()).collect();
+    for (i, st) in stats.iter().enumerate() {
+        // дальний зритель мог остановиться на кадре постарше: его не сравниваем
+        let q = psnr(&server, &viewers[i].1.snapshot().2);
+        assert!(i == 2 || q > 30.0, "viewer {i}: psnr {q:.1}");
+        assert!(st.latency_us.iter().all(|l| *l < 2_000_000), "viewer {i}: {st:?}");
+    }
+    assert!(stats[0].video_rects >= 30, "{:?}", stats[0]);
+    assert!(stats[1].video_rects >= 30, "{:?}", stats[1]);
+    // дальний зритель (8 к/с): только базовый временной слой — около четверти кадров
+    assert!(stats[2].video_rects >= 5 && stats[2].video_rects * 2 < stats[0].video_rects, "{:?}", stats[2]);
+    // старый клиент: без видео, тайлы JPEG
+    assert_eq!(stats[3].video_rects, 0);
+    assert!(stats[3].jpeg_rects > 0, "{:?}", stats[3]);
+    // тайлы видеообласти зрителям с видео не шли (только часы и первые кадры до распознавания)
+    assert!(stats[0].jpeg_rects + stats[0].lossless_rects < stats[3].jpeg_rects / 2, "{:?}", stats[0]);
+
+    // видео кончилось: область снята, тайлы досланы без потерь — картинка точная у всех
+    for (i, (_, v)) in viewers.iter().enumerate() {
+        wait_for(&format!("exact picture for viewer {i}"), 15_000, || vm.gfx.snapshot().2 == v.snapshot().2).await;
+    }
+    assert_eq!(vm.gfx.video_region(), None);
+    for (s, _) in &viewers {
+        s.close();
+    }
     let _ = std::fs::remove_dir_all(&dir);
 }

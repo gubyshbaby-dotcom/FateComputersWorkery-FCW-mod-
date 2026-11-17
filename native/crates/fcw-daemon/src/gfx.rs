@@ -11,6 +11,13 @@
 //! успевает или тайл меняется очень часто. Такие тайлы подписчик запоминает и
 //! позже, когда тайл успокоился, досылает без потерь ([`GfxScreen::collect`]
 //! с `refine`).
+//!
+//! Видеорежим: [`GfxScreen::commit`] следит за тем, какая часть экрана меняется
+//! кадр за кадром. Если большая область меняется несколько кадров подряд, она
+//! объявляется видеообластью ([`GfxScreen::video_region`]); её кадры забирает
+//! кодировщик ([`GfxScreen::capture_region`], модуль `video`), а подписчики с
+//! видеокодеком пропускают её тайлы (`EncodePolicy::skip`). Когда движение
+//! стихает, область снимается, и подписчики досылают её тайлы без потерь.
 
 use crate::spb;
 use parking_lot::Mutex;
@@ -31,6 +38,127 @@ pub const HOT_WINDOW_US: u64 = 1_000_000;
 /// Тайл «успокоился», если не менялся столько времени: можно досылать без потерь.
 pub const SETTLE_US: u64 = 400_000;
 pub const JPEG_QUALITY: u8 = 70;
+
+/// Сколько изменившихся тайлов кадра проверять на «пёстрость» (равномерно).
+const VIDEO_SAMPLE_TILES: usize = 32;
+/// «Большое» изменение считается видео, если такая доля проверенных тайлов —
+/// «пёстрые» (больше [`BUSY_COLORS`] цветов). Поток текста в терминале или
+/// прокрутка страницы меняют весь экран, но это не видео: их тайлы
+/// малоцветные и должны идти без потерь.
+const VIDEO_BUSY_FRACTION: f32 = 0.34;
+/// Видео начинается, когда столько «больших» изменений пришло за
+/// [`VIDEO_ON_WINDOW_US`] (при 30 к/с — около 0,2 с движения).
+pub const VIDEO_ON_FRAMES: usize = 6;
+pub const VIDEO_ON_WINDOW_US: u64 = 500_000;
+/// Видео кончилось, если столько времени в области ничего заметного не менялось.
+pub const VIDEO_IDLE_US: u64 = 1_500_000;
+/// «Заметное» изменение: такая доля тайлов видеообласти (тихая сцена фильма
+/// меняет меньше 20 % экрана, но режим не должен из-за неё выключаться).
+pub const VIDEO_KEEP_FRACTION: f32 = 0.05;
+/// Область, занявшая такую долю экрана, расширяется до всего экрана.
+pub const VIDEO_FULL_FRACTION: f32 = 0.75;
+/// Столько больших изменений подряд вышло за область — область растёт.
+pub const VIDEO_GROW_FRAMES: u32 = 3;
+/// Раз в такое время область сжимается, если движение заняло не больше
+/// [`VIDEO_SHRINK_FRACTION`] её площади (плеер вышел из полноэкранного режима).
+pub const VIDEO_SHRINK_WINDOW_US: u64 = 3_000_000;
+pub const VIDEO_SHRINK_FRACTION: f32 = 0.6;
+
+/// Настройки распознавания видео на экране.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct VideoDetect {
+    pub enabled: bool,
+    /// «Большое» изменение: такая доля тайлов экрана за один кадр (и эти
+    /// тайлы «пёстрые», как у фото и видео).
+    pub min_area: f32,
+}
+
+impl Default for VideoDetect {
+    fn default() -> Self {
+        VideoDetect { enabled: false, min_area: 0.2 }
+    }
+}
+
+/// Видеообласть экрана в пикселях: границы по тайлам (или по краю экрана).
+/// `id` меняется при каждой смене области.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct VideoRegion {
+    pub id: u64,
+    pub x: u32,
+    pub y: u32,
+    pub w: u32,
+    pub h: u32,
+}
+
+/// Прямоугольник в тайлах: [x0, x1) x [y0, y1).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct TileBox {
+    x0: u32,
+    y0: u32,
+    x1: u32,
+    y1: u32,
+}
+
+impl TileBox {
+    fn of_tile(tx: u32, ty: u32) -> Self {
+        TileBox { x0: tx, y0: ty, x1: tx + 1, y1: ty + 1 }
+    }
+
+    fn of_region(r: &VideoRegion) -> Self {
+        TileBox { x0: r.x / TILE, y0: r.y / TILE, x1: (r.x + r.w).div_ceil(TILE), y1: (r.y + r.h).div_ceil(TILE) }
+    }
+
+    fn area(&self) -> u32 {
+        (self.x1 - self.x0) * (self.y1 - self.y0)
+    }
+
+    fn union(self, o: TileBox) -> TileBox {
+        TileBox { x0: self.x0.min(o.x0), y0: self.y0.min(o.y0), x1: self.x1.max(o.x1), y1: self.y1.max(o.y1) }
+    }
+
+    fn contains(&self, o: &TileBox) -> bool {
+        self.x0 <= o.x0 && self.y0 <= o.y0 && self.x1 >= o.x1 && self.y1 >= o.y1
+    }
+
+    fn has_tile(&self, tx: u32, ty: u32) -> bool {
+        tx >= self.x0 && tx < self.x1 && ty >= self.y0 && ty < self.y1
+    }
+}
+
+fn join(a: Option<TileBox>, b: TileBox) -> TileBox {
+    a.map_or(b, |a| a.union(b))
+}
+
+/// Состояние распознавания видео (внутри [`Inner`]).
+#[derive(Default)]
+struct VideoState {
+    cfg: VideoDetect,
+    /// Недавние большие изменения: (время, охват).
+    big: std::collections::VecDeque<(u64, TileBox)>,
+    region: Option<(VideoRegion, TileBox)>,
+    ids: u64,
+    /// Время последнего заметного изменения в области.
+    active_us: u64,
+    /// Номер последнего изменения (seq), затронувшего область.
+    dirty_seq: u64,
+    /// Большие изменения подряд, вышедшие за область, и их охват.
+    grow: u32,
+    grow_box: Option<TileBox>,
+    /// Охват заметных изменений за текущее окно сжатия.
+    win_start_us: u64,
+    win_box: Option<TileBox>,
+}
+
+/// Результат [`GfxScreen::capture_region`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Capture {
+    /// Области больше нет (видео кончилось, область или размер экрана сменились).
+    Gone,
+    /// С прошлого захвата область не менялась.
+    Unchanged,
+    /// Кадр скопирован: номер изменения и время его фиксации (Unix, мкс).
+    Frame { seq: u64, capture_unix_us: u64 },
+}
 
 /// Форма аппаратного курсора гостя (RGBA).
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -74,6 +202,7 @@ struct Inner {
     cursor: Cursor,
     /// Время фиксации изменения `seq` (Unix, мкс).
     seq_time_us: u64,
+    video: VideoState,
 }
 
 impl Inner {
@@ -97,6 +226,135 @@ impl Inner {
         self.colors = vec![None; n];
         self.pending = false;
         self.seq_time_us = crate::unix_us();
+        let cfg = self.video.cfg;
+        let ids = self.video.ids;
+        self.video = VideoState { cfg, ids, ..Default::default() };
+    }
+
+    fn set_video_region(&mut self, b: TileBox, now: u64) {
+        let v = &mut self.video;
+        v.ids += 1;
+        let x = b.x0 * TILE;
+        let y = b.y0 * TILE;
+        let r = VideoRegion {
+            id: v.ids,
+            x,
+            y,
+            w: (b.x1 * TILE).min(self.width) - x,
+            h: (b.y1 * TILE).min(self.height) - y,
+        };
+        v.region = Some((r, b));
+        v.active_us = now;
+        v.dirty_seq = self.seq;
+        v.big.clear();
+        v.grow = 0;
+        v.grow_box = None;
+        v.win_start_us = now;
+        v.win_box = None;
+    }
+
+    /// Похоже ли изменение на фото или видео: выборка изменившихся тайлов
+    /// в основном «пёстрая». Число цветов запоминается для [`GfxScreen::collect`].
+    fn mostly_busy(&mut self, tiles: &[usize]) -> bool {
+        let step = tiles.len().div_ceil(VIDEO_SAMPLE_TILES).max(1);
+        let (mut busy, mut n) = (0usize, 0usize);
+        for &i in tiles.iter().step_by(step) {
+            let ver = self.tile_ver[i];
+            let colors = match self.colors[i] {
+                Some((v, c)) if v == ver => c as usize,
+                _ => {
+                    let c = count_colors(&self.copy_tile(i).4, BUSY_COLORS + 1);
+                    self.colors[i] = Some((ver, c as u16));
+                    c
+                }
+            };
+            busy += (colors > BUSY_COLORS) as usize;
+            n += 1;
+        }
+        busy as f32 >= VIDEO_BUSY_FRACTION * n as f32
+    }
+
+    /// Учитывает зафиксированное изменение тайлов `tiles` (см. шапку модуля).
+    fn detect_video(&mut self, tiles: &[usize], now: u64) {
+        if !self.video.cfg.enabled || tiles.is_empty() {
+            return;
+        }
+        let total = self.tiles_x * self.tiles_y;
+        let min_area = self.video.cfg.min_area;
+        let full = TileBox { x0: 0, y0: 0, x1: self.tiles_x, y1: self.tiles_y };
+        let region = self.video.region.map(|(_, b)| b);
+        let mut bbox: Option<TileBox> = None;
+        let mut inside_box: Option<TileBox> = None;
+        let mut inside = 0u32;
+        for &t in tiles {
+            let (tx, ty) = (t as u32 % self.tiles_x, t as u32 / self.tiles_x);
+            let b = TileBox::of_tile(tx, ty);
+            bbox = Some(join(bbox, b));
+            if region.is_some_and(|r| r.has_tile(tx, ty)) {
+                inside += 1;
+                inside_box = Some(join(inside_box, b));
+            }
+        }
+        let bbox = bbox.expect("tiles is not empty");
+        let big = tiles.len() as f32 >= min_area * total as f32 && self.mostly_busy(tiles);
+        let seq = self.seq;
+        let Some(rb) = region else {
+            let v = &mut self.video;
+            if big {
+                v.big.push_back((now, bbox));
+            }
+            while v.big.front().is_some_and(|(t, _)| now.saturating_sub(*t) > VIDEO_ON_WINDOW_US) {
+                v.big.pop_front();
+            }
+            if v.big.len() >= VIDEO_ON_FRAMES {
+                // охват — по последним кадрам: раньше могло случиться постороннее
+                // большое изменение (открылось окно плеера)
+                let mut b = v.big.iter().rev().take(3).map(|(_, b)| *b).reduce(TileBox::union).expect("not empty");
+                if b.area() as f32 >= VIDEO_FULL_FRACTION * total as f32 {
+                    b = full;
+                }
+                self.set_video_region(b, now);
+            }
+            return;
+        };
+        let v = &mut self.video;
+        if inside > 0 {
+            v.dirty_seq = seq;
+        }
+        if inside as f32 >= (VIDEO_KEEP_FRACTION * rb.area() as f32).max(2.0) {
+            v.active_us = now;
+            if let Some(b) = inside_box {
+                v.win_box = Some(join(v.win_box, b));
+            }
+        }
+        if big {
+            if rb.contains(&bbox) {
+                v.grow = 0;
+                v.grow_box = None;
+            } else {
+                v.grow += 1;
+                v.grow_box = Some(join(v.grow_box, bbox));
+                if v.grow >= VIDEO_GROW_FRAMES {
+                    let mut b = rb.union(v.grow_box.expect("set above"));
+                    if b.area() as f32 >= VIDEO_FULL_FRACTION * total as f32 {
+                        b = full;
+                    }
+                    self.set_video_region(b, now);
+                    return;
+                }
+            }
+        }
+        if now.saturating_sub(v.win_start_us) >= VIDEO_SHRINK_WINDOW_US {
+            let shrink = v.win_box.filter(|wb| {
+                wb.area() as f32 <= VIDEO_SHRINK_FRACTION * rb.area() as f32
+                    && wb.area() as f32 >= min_area * total as f32
+            });
+            v.win_start_us = now;
+            v.win_box = None;
+            if let Some(wb) = shrink {
+                self.set_video_region(wb, now);
+            }
+        }
     }
 
     fn tile_rect(&self, idx: usize) -> (u32, u32, u32, u32) {
@@ -135,6 +393,14 @@ pub struct EncodePolicy {
     pub lossy_ok: bool,
     /// Канал не успевает: все «пёстрые» тайлы — JPEG, не только «горячие».
     pub congested: bool,
+    /// Видеообласть, которую подписчик получает видеокодеком: её тайлы в
+    /// кадр не попадают.
+    pub skip: Option<VideoRegion>,
+    /// Если в кадр попадает не меньше такой доли тайлов экрана (смена сцены,
+    /// ключевой кадр), «пёстрые» тайлы идут JPEG, даже если меняются редко:
+    /// без потерь такой кадр — мегабайты, и канал с бюджетом встал бы на
+    /// секунды. Текст и интерфейс это не затрагивает. 0 — выключено.
+    pub bulk_fraction: f32,
 }
 
 /// Результат [`GfxScreen::collect`].
@@ -205,9 +471,64 @@ impl GfxScreen {
                 pending: false,
                 cursor: Cursor::default(),
                 seq_time_us: 0,
+                video: VideoState::default(),
             }),
             notify,
         }
+    }
+
+    /// Включает или выключает распознавание видео.
+    pub fn set_video_detect(&self, cfg: VideoDetect) {
+        let mut g = self.inner.lock();
+        g.video.cfg = cfg;
+        if !cfg.enabled {
+            g.video.region = None;
+        }
+    }
+
+    /// Текущая видеообласть. Заодно снимает её, если движение стихло.
+    pub fn video_region(&self) -> Option<VideoRegion> {
+        let mut g = self.inner.lock();
+        let (r, _) = g.video.region?;
+        if crate::unix_us().saturating_sub(g.video.active_us) > VIDEO_IDLE_US {
+            g.video.region = None;
+            g.video.big.clear();
+            return None;
+        }
+        Some(r)
+    }
+
+    /// Копирует пиксели видеообласти `id` в `out` (RGBA, `w * h * 4`), если
+    /// она менялась после изменения `last_seq`.
+    pub fn capture_region(&self, id: u64, last_seq: u64, out: &mut Vec<u8>) -> Capture {
+        let g = self.inner.lock();
+        let Some((r, _)) = g.video.region.filter(|(r, _)| r.id == id) else { return Capture::Gone };
+        if g.video.dirty_seq <= last_seq {
+            return Capture::Unchanged;
+        }
+        let stride = g.width as usize * 4;
+        let row_len = r.w as usize * 4;
+        out.clear();
+        out.reserve(row_len * r.h as usize);
+        for row in r.y..r.y + r.h {
+            let off = row as usize * stride + r.x as usize * 4;
+            out.extend_from_slice(&g.fb[off..off + row_len]);
+        }
+        Capture::Frame { seq: g.seq, capture_unix_us: g.seq_time_us }
+    }
+
+    /// Тайлы области и их текущие версии: (индекс, версия).
+    pub fn region_tiles(&self, r: &VideoRegion) -> Vec<(usize, u64)> {
+        let g = self.inner.lock();
+        let b = TileBox::of_region(r);
+        let mut out = Vec::with_capacity(b.area() as usize);
+        for ty in b.y0..b.y1.min(g.tiles_y) {
+            for tx in b.x0..b.x1.min(g.tiles_x) {
+                let i = (ty * g.tiles_x + tx) as usize;
+                out.push((i, g.tile_ver[i]));
+            }
+        }
+        out
     }
 
     pub fn subscribe(&self) -> watch::Receiver<u64> {
@@ -293,10 +614,12 @@ impl GfxScreen {
             g.seq += 1;
             let now = crate::unix_us();
             g.seq_time_us = now;
-            for t in std::mem::take(&mut g.pending_tiles) {
+            let tiles = std::mem::take(&mut g.pending_tiles);
+            for &t in &tiles {
                 let c = &mut g.changes[t];
                 *c = [now, c[0], c[1]];
             }
+            g.detect_video(&tiles, now);
             g.seq
         };
         self.notify.send_replace(seq);
@@ -343,6 +666,14 @@ impl GfxScreen {
             width = g.width;
             height = g.height;
             let mut taken = vec![false; g.tile_ver.len()];
+            // тайлы видеообласти подписчик получает видеокодеком
+            if let Some(b) = policy.skip.as_ref().map(TileBox::of_region) {
+                for ty in b.y0..b.y1.min(g.tiles_y) {
+                    for tx in b.x0..b.x1.min(g.tiles_x) {
+                        taken[(ty * g.tiles_x + tx) as usize] = true;
+                    }
+                }
+            }
             // lossy_above: JPEG, если цветов больше; None — только без потерь
             let push = |g: &Inner,
                         parts: &mut Vec<_>,
@@ -372,17 +703,25 @@ impl GfxScreen {
                 }
             };
             if delta {
-                for i in 0..g.tile_ver.len() {
+                let wanted = |taken: &[bool], i: usize| {
                     let ver = g.tile_ver[i];
-                    if !key && (ver <= cur.seq || ver > g.seq) {
+                    !taken[i] && (key || (ver > cur.seq && ver <= g.seq))
+                };
+                let bulk = policy.bulk_fraction > 0.0 && {
+                    let n = (0..g.tile_ver.len()).filter(|i| wanted(&taken, *i)).count();
+                    n > 1 && n as f32 >= policy.bulk_fraction * g.tile_ver.len() as f32
+                };
+                for i in 0..g.tile_ver.len() {
+                    if !wanted(&taken, i) {
                         continue;
                     }
                     taken[i] = true;
                     let hot = g.hot(i, now);
                     let lossy_above = match (policy.lossy_ok, hot, policy.congested) {
-                        (false, _, _) | (true, false, false) => None,
+                        (false, _, _) => None,
                         (true, true, true) => Some(HOT_COLORS),
                         (true, true, false) | (true, false, true) => Some(BUSY_COLORS),
+                        (true, false, false) => bulk.then_some(BUSY_COLORS),
                     };
                     push(&g, &mut parts, &mut jobs, i, lossy_above, false);
                 }
@@ -407,7 +746,15 @@ impl GfxScreen {
             if !key {
                 return None;
             }
-            let update = spb::FrameUpdate { seq, width, height, keyframe: true, rects: vec![], capture_unix_us };
+            let update = spb::FrameUpdate {
+                seq,
+                width,
+                height,
+                keyframe: true,
+                rects: vec![],
+                capture_unix_us,
+                ..Default::default()
+            };
             return Some(Collected { update, tiles: vec![] });
         }
         let encoded: Vec<(Arc<spb::Rect>, bool, Option<u16>)> = jobs
@@ -471,7 +818,15 @@ impl GfxScreen {
             cur.started = true;
         }
         Some(Collected {
-            update: spb::FrameUpdate { seq: fseq, width, height, keyframe: key, rects, capture_unix_us: capture },
+            update: spb::FrameUpdate {
+                seq: fseq,
+                width,
+                height,
+                keyframe: key,
+                rects,
+                capture_unix_us: capture,
+                ..Default::default()
+            },
             tiles,
         })
     }
@@ -519,7 +874,17 @@ pub fn encode_jpeg(x: u32, y: u32, w: u32, h: u32, rgba: &[u8]) -> spb::Rect {
     let mut out = Vec::with_capacity(4096);
     let enc = jpeg_encoder::Encoder::new(&mut out, JPEG_QUALITY);
     match enc.encode(rgba, w as u16, h as u16, jpeg_encoder::ColorType::Rgba) {
-        Ok(()) => spb::Rect { x, y, w, h, encoding: spb::RectEncoding::RectJpeg as i32, data: out, src_x: 0, src_y: 0 },
+        Ok(()) => spb::Rect {
+            x,
+            y,
+            w,
+            h,
+            encoding: spb::RectEncoding::RectJpeg as i32,
+            data: out,
+            src_x: 0,
+            src_y: 0,
+            ..Default::default()
+        },
         Err(_) => encode_tile(x, y, w, h, rgba),
     }
 }
@@ -538,10 +903,21 @@ pub fn encode_tile(x: u32, y: u32, w: u32, h: u32, rgba: &[u8]) -> spb::Rect {
             data: first.to_vec(),
             src_x: 0,
             src_y: 0,
+            ..Default::default()
         };
     }
     let data = zstd::bulk::compress(rgba, ZSTD_LEVEL).unwrap_or_default();
-    spb::Rect { x, y, w, h, encoding: spb::RectEncoding::RectRgbaZstd as i32, data, src_x: 0, src_y: 0 }
+    spb::Rect {
+        x,
+        y,
+        w,
+        h,
+        encoding: spb::RectEncoding::RectRgbaZstd as i32,
+        data,
+        src_x: 0,
+        src_y: 0,
+        ..Default::default()
+    }
 }
 
 #[cfg(test)]
@@ -620,7 +996,7 @@ mod tests {
         s.resize(128, 64);
         let mut cur = SubCursor::default();
         s.collect_lossless(&mut cur, false).unwrap();
-        let policy = EncodePolicy { lossy_ok: true, congested: false };
+        let policy = EncodePolicy { lossy_ok: true, ..Default::default() };
         // оба тайла меняются трижды подряд: «горячие»
         for t in 0..3 {
             s.apply_rgbx(0, 0, 64, 64, &plasma(t as f32));
@@ -667,9 +1043,11 @@ mod tests {
         s.commit();
         // одно изменение (не «горячее»): без перегрузки — без потерь
         let mut c2 = cur;
-        let calm = s.collect(&mut c2, false, EncodePolicy { lossy_ok: true, congested: false }, &[], 0).unwrap();
+        let calm = s.collect(&mut c2, false, EncodePolicy { lossy_ok: true, ..Default::default() }, &[], 0).unwrap();
         assert!(calm.tiles.iter().all(|t| !t.2));
-        let busy = s.collect(&mut cur, false, EncodePolicy { lossy_ok: true, congested: true }, &[], 0).unwrap();
+        let busy = s
+            .collect(&mut cur, false, EncodePolicy { lossy_ok: true, congested: true, ..Default::default() }, &[], 0)
+            .unwrap();
         assert_eq!(busy.tiles.iter().map(|t| t.2).collect::<Vec<_>>(), vec![true, false]);
         // JPEG заметно меньше zstd для такой картинки
         assert!(busy.update.rects[0].data.len() < calm.update.rects[0].data.len());
@@ -685,5 +1063,125 @@ mod tests {
         let k = s.collect_lossless(&mut cur, false).unwrap();
         assert!(k.keyframe);
         assert_eq!((k.width, k.height, k.rects.len()), (128, 64, 2));
+    }
+
+    /// Меняет тайлы [tx0, tx1) x [ty0, ty1) и фиксирует изменение: в каждом
+    /// пиксель (3, 3) цвета `v` и рядом «пёстрый» квадрат 10 x 10, как у видео.
+    fn touch(s: &GfxScreen, tx0: u32, ty0: u32, tx1: u32, ty1: u32, v: u8) {
+        let noise: Vec<u8> = (0..100u8).flat_map(|i| [i, v, i ^ v, 0]).collect();
+        for ty in ty0..ty1 {
+            for tx in tx0..tx1 {
+                s.apply_rgbx(tx * TILE + 3, ty * TILE + 3, 1, 1, &[v, v, v, 0]);
+                s.apply_rgbx(tx * TILE + 20, ty * TILE + 20, 10, 10, &noise);
+            }
+        }
+        s.commit();
+    }
+
+    #[test]
+    fn text_flood_is_not_video() {
+        let s = video_screen();
+        // весь экран меняется кадр за кадром, но в тайлах по два цвета (текст)
+        for v in 1..=20u8 {
+            let px: Vec<u8> = (0..640 * 480)
+                .flat_map(|i| if (i / 3 + v as usize).is_multiple_of(2) { [v; 4] } else { [0; 4] })
+                .collect();
+            s.apply_rgbx(0, 0, 640, 480, &px);
+            s.commit();
+        }
+        assert_eq!(s.video_region(), None);
+    }
+
+    fn video_screen() -> GfxScreen {
+        let s = GfxScreen::new();
+        s.set_video_detect(VideoDetect { enabled: true, min_area: 0.2 });
+        s.resize(640, 480); // 10 x 8 тайлов (нижний ряд неполный)
+        s
+    }
+
+    #[test]
+    fn video_region_appears_grows_and_ends() {
+        let s = video_screen();
+        // мелкие изменения — не видео
+        for v in 0..10 {
+            touch(&s, 0, 0, 2, 2, v);
+        }
+        assert_eq!(s.video_region(), None);
+        // окно 4 x 4 тайла (20 % экрана) меняется шесть кадров подряд
+        for v in 0..VIDEO_ON_FRAMES as u8 {
+            assert_eq!(s.video_region(), None);
+            touch(&s, 2, 1, 6, 5, 100 + v);
+        }
+        let r = s.video_region().expect("video region");
+        assert_eq!((r.x, r.y, r.w, r.h), (128, 64, 256, 256));
+        // кадр области: только после нового изменения
+        let mut buf = Vec::new();
+        let Capture::Frame { seq, .. } = s.capture_region(r.id, 0, &mut buf) else { panic!("no frame") };
+        assert_eq!(buf.len(), 256 * 256 * 4);
+        assert_eq!(&buf[(3 * 256 + 3) * 4..(3 * 256 + 3) * 4 + 3], &[105, 105, 105]);
+        assert_eq!(s.capture_region(r.id, seq, &mut buf), Capture::Unchanged);
+        touch(&s, 0, 0, 1, 1, 9); // вне области
+        assert_eq!(s.capture_region(r.id, seq, &mut buf), Capture::Unchanged);
+        touch(&s, 3, 3, 4, 4, 9);
+        assert!(matches!(s.capture_region(r.id, seq, &mut buf), Capture::Frame { .. }));
+        assert_eq!(s.capture_region(r.id + 1, 0, &mut buf), Capture::Gone);
+
+        // подписчик с видео не получает тайлы области, остальные получает
+        let mut cur = SubCursor::default();
+        let skip = EncodePolicy { skip: Some(r), ..Default::default() };
+        let k = s.collect(&mut cur, true, skip, &[], 0).unwrap();
+        assert_eq!(k.tiles.len(), 80 - 16);
+        touch(&s, 1, 1, 3, 3, 77); // два тайла вне области, два внутри
+        let d = s.collect(&mut cur, false, skip, &[], 0).unwrap();
+        assert_eq!(d.tiles.iter().map(|t| t.0).collect::<Vec<_>>(), vec![11, 21]);
+        assert_eq!(s.region_tiles(&r).len(), 16);
+
+        // видео развернули на весь экран: область растёт (новый id)
+        for v in 0..VIDEO_GROW_FRAMES as u8 {
+            touch(&s, 0, 0, 10, 8, 150 + v);
+        }
+        let full = s.video_region().expect("video region");
+        assert_ne!(full.id, r.id);
+        assert_eq!((full.x, full.y, full.w, full.h), (0, 0, 640, 480));
+        assert_eq!(s.capture_region(r.id, 0, &mut buf), Capture::Gone);
+
+        // движение стихло: мелочь режим не держит
+        std::thread::sleep(std::time::Duration::from_micros(VIDEO_IDLE_US / 2));
+        touch(&s, 0, 0, 1, 1, 1);
+        assert!(s.video_region().is_some());
+        std::thread::sleep(std::time::Duration::from_micros(VIDEO_IDLE_US / 2 + 50_000));
+        touch(&s, 0, 0, 1, 1, 2);
+        assert_eq!(s.video_region(), None);
+        assert_eq!(s.capture_region(full.id, 0, &mut buf), Capture::Gone);
+    }
+
+    #[test]
+    fn video_region_shrinks_and_resets_on_resize() {
+        let s = video_screen();
+        for v in 0..VIDEO_ON_FRAMES as u8 {
+            touch(&s, 0, 0, 10, 8, v + 1);
+        }
+        let full = s.video_region().unwrap();
+        assert_eq!((full.w, full.h), (640, 480));
+        // плеер вышел из полного экрана: дальше меняется только окно 5 x 4;
+        // по итогам окна наблюдения область сжимается до него
+        for v in 0..3u8 {
+            assert_eq!(s.video_region().map(|r| r.id), Some(full.id));
+            std::thread::sleep(std::time::Duration::from_micros(VIDEO_SHRINK_WINDOW_US / 3 + 50_000));
+            touch(&s, 3, 2, 8, 6, 100 + v);
+        }
+        let r = s.video_region().unwrap();
+        assert_ne!(r.id, full.id);
+        assert_eq!((r.x, r.y, r.w, r.h), (192, 128, 320, 256));
+        // смена размера экрана снимает область
+        s.resize(320, 240);
+        assert_eq!(s.video_region(), None);
+        // выключенное распознавание
+        let off = GfxScreen::new();
+        off.resize(640, 480);
+        for v in 0..20 {
+            touch(&off, 0, 0, 10, 8, v);
+        }
+        assert_eq!(off.video_region(), None);
     }
 }

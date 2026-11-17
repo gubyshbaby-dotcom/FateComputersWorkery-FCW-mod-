@@ -14,9 +14,12 @@ name = "fcw-daemon"
 path = "src/main.rs"
 
 [features]
-default = ["audio"]
+default = ["audio", "video"]
 # Звук: PCM из QEMU Audio (VNC) -> Opus. Требует сборки libopus (cmake).
 audio = ["dep:opus"]
+# Видеорежим экрана: H.264 (OpenH264 из исходников, нужен компилятор C++;
+# nasm желателен на x86: без него кодек собирается без ассемблера и медленнее).
+video = ["dep:openh264", "dep:openh264-sys2"]
 
 [dependencies]
 fcw-proto = { workspace = true }
@@ -45,6 +48,8 @@ tar = "0.4"
 iana-time-zone = "0.1"
 jpeg-encoder = { version = "0.7", default-features = false, features = ["std"] }
 opus = { workspace = true, optional = true }
+openh264 = { workspace = true, optional = true }
+openh264-sys2 = { workspace = true, optional = true }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
@@ -55,3 +60,7 @@ uds_windows = "1"
 [dev-dependencies]
 fcw-client = { workspace = true }
 png = { workspace = true }
+
+[[example]]
+name = "h264_bench"
+required-features = ["video"]

@@ -56,6 +56,8 @@ pub struct ScreenConfig {
     pub frame_acks: bool,
     /// Клиент на этом же хосте (loopback): без бюджета и без потерь, до 60 fps.
     pub local_unlimited: bool,
+    /// Видеорежим (`--video*`).
+    pub video: crate::video::VideoConfig,
 }
 
 impl Default for ScreenConfig {
@@ -66,6 +68,7 @@ impl Default for ScreenConfig {
             lossy: true,
             frame_acks: true,
             local_unlimited: true,
+            video: crate::video::VideoConfig::default(),
         }
     }
 }
@@ -214,6 +217,8 @@ pub struct Vm {
     pub dir: PathBuf,
     pub sock_dir: PathBuf,
     pub gfx: Arc<GfxScreen>,
+    /// Кодировщики видеорежима экрана gfx0.
+    pub video: crate::video::VideoHub,
     pub tty: Arc<TextScreen>,
     pub notices: broadcast::Sender<VmNotice>,
     env: Arc<Env>,
@@ -291,11 +296,18 @@ impl Vm {
         let dir = vms_dir.join(id);
         let sock_dir = socket_dir(&dir);
         let (notices, _) = broadcast::channel(512);
+        let gfx = Arc::new(GfxScreen::new());
+        let video_cfg = env.screen.video;
+        gfx.set_video_detect(crate::gfx::VideoDetect {
+            enabled: video_cfg.enabled && cfg!(feature = "video"),
+            min_area: video_cfg.min_area,
+        });
         Arc::new(Vm {
             id: id.to_string(),
             dir,
             sock_dir,
-            gfx: Arc::new(GfxScreen::new()),
+            video: crate::video::VideoHub::new(gfx.clone(), video_cfg),
+            gfx,
             tty: Arc::new(TextScreen::new()),
             notices,
             env,

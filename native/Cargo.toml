@@ -41,6 +41,8 @@ bytes = "1"
 clap = { version = "4", features = ["derive"] }
 png = "0.17"
 opus = "0.3"
+openh264 = { version = "0.9", default-features = false, features = ["source"] }
+openh264-sys2 = { version = "0.9", default-features = false, features = ["source"] }
 
 [profile.release]
 opt-level = 3
