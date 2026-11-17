@@ -191,7 +191,8 @@ public final class ServerPacketHandler {
                     return;
                 }
                 HelloResult hello = d.hello();
-                int port = hello != null && hello.getQuicPort() != 0 ? hello.getQuicPort() : FcwConfig.SERVER.quicPort.get();
+                int port = FcwConfig.SERVER.publicPort.get() != 0 ? FcwConfig.SERVER.publicPort.get()
+                        : hello != null && hello.getQuicPort() != 0 ? hello.getQuicPort() : FcwConfig.SERVER.quicPort.get();
                 String cert = hello != null ? hello.getCertSha256() : "";
                 String host = FcwConfig.SERVER.publicHost.get().trim();
                 PacketDistributor.sendToPlayer(player, new ScreenAccessPayload(pos, kind, vmId, tr.getToken().getToken(),

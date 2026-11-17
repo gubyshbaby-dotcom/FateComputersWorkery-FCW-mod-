@@ -96,8 +96,10 @@ public final class FcwCommands {
             }
         }
         String publicHost = FcwConfig.SERVER.publicHost.get();
+        int publicPort = FcwConfig.SERVER.publicPort.get() != 0 ? FcwConfig.SERVER.publicPort.get() : FcwConfig.SERVER.quicPort.get();
         src.sendSuccess(() -> Component.translatable("command.fcw.status.public_host",
-                publicHost.isEmpty() ? Component.translatable("command.fcw.status.public_host.auto") : Component.literal(publicHost)).withStyle(ChatFormatting.GRAY), false);
+                publicHost.isEmpty() ? Component.translatable("command.fcw.status.public_host.auto") : Component.literal(publicHost),
+                publicPort, FcwConfig.SERVER.quicPort.get()).withStyle(ChatFormatting.GRAY), false);
         src.sendSuccess(() -> Component.translatable("command.fcw.status.dirs", d.imagesDir().toString(), d.vmsDir().toString()).withStyle(ChatFormatting.GRAY), false);
         int loaded = ComputerTracker.all().size();
         long running = ComputerTracker.all().stream().filter(ComputerBlockEntity::isMachineOn).count();

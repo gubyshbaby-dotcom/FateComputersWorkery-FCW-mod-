@@ -49,7 +49,7 @@
   "command.fcw.status.network": "Guest network: %s, names *.%s, %s",
   "command.fcw.status.network_off": "Guest network: off",
   "command.fcw.status.none": "FCW: the server is not running",
-  "command.fcw.status.public_host": "Address for clients: %s",
+  "command.fcw.status.public_host": "Address for clients (QUIC, UDP): %s, port %s (daemon listens on %s)",
   "command.fcw.status.public_host.auto": "same as the Minecraft server",
   "command.fcw.vms.header": "Machines known to the daemon: %s",
   "command.fcw.vms.update": "[OS update available]",

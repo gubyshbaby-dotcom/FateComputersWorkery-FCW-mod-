@@ -20,6 +20,7 @@ public final class FcwConfig {
         public final ModConfigSpec.ConfigValue<String> qemuPath;
         public final ModConfigSpec.IntValue quicPort;
         public final ModConfigSpec.ConfigValue<String> publicHost;
+        public final ModConfigSpec.IntValue publicPort;
         public final ModConfigSpec.IntValue maxVms;
         public final ModConfigSpec.ConfigValue<String> accelerator;
         public final ModConfigSpec.IntValue startupTimeoutSeconds;
@@ -57,11 +58,15 @@ public final class FcwConfig {
             qemuPath = b.comment("Path to qemu-system-x86_64. Empty = $FCW_QEMU, then the portable QEMU in <gameDir>/fcw/qemu,",
                             "then qemu-system-x86_64 from PATH.")
                     .define("qemuPath", "");
-            quicPort = b.comment("UDP port of the QUIC server that players' clients connect to for screens and input.")
+            quicPort = b.comment("UDP port the daemon's QUIC server listens on (screens, input and sound go directly to it).")
                     .defineInRange("quicPort", 25600, 1, 65535);
             publicHost = b.comment("Host name or IP that clients use to reach the QUIC port.",
-                            "Empty = the address the client used to join this Minecraft server (127.0.0.1 in single player).")
+                            "Empty = the address the client used to join this Minecraft server (127.0.0.1 in single player).",
+                            "Behind NAT / frp / a proxy: the public address of the machine that forwards UDP to this server.")
                     .define("publicHost", "");
+            publicPort = b.comment("UDP port that clients connect to, if it differs from quicPort",
+                            "(port forwarding or frp remotePort). 0 = same as quicPort.")
+                    .defineInRange("publicPort", 0, 0, 65535);
             maxVms = b.comment("Maximum number of virtual machines running at the same time.")
                     .defineInRange("maxVms", 4, 1, 256);
             accelerator = b.comment("Virtualization accelerator: auto, kvm, whpx, hvf or tcg (software).")
