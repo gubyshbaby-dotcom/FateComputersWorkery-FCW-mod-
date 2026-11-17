@@ -82,6 +82,7 @@ public final class FcwServerEvents {
         if (d != null) {
             d.tick();
         }
+        ComputerTracker.tick();
         tick++;
         if (tick % 5 == 0) {
             pushStatus(event.getServer(), tick % 40 == 0);

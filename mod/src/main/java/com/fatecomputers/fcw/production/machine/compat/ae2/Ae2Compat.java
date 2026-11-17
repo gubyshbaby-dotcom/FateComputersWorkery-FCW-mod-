@@ -39,6 +39,7 @@ public final class Ae2Compat {
 
     public static void init(IEventBus modBus) {
         MachineControllerBlockEntity.setNetworkPowerFactory(Link::new);
+        Ae2ComputerPower.init(modBus);
         modBus.addListener((RegisterCapabilitiesEvent event) -> event.registerBlock(AECapabilities.IN_WORLD_GRID_NODE_HOST,
                 (level, pos, state, be, context) -> {
                     MachineCellBlock block = (MachineCellBlock) state.getBlock();
@@ -50,6 +51,17 @@ public final class Ae2Compat {
                     MachineControllerBlockEntity controller = block.controller(level, pos, state);
                     return controller != null && controller.networkPower() instanceof Link link ? link : null;
                 }, ProductionMachines.cellBlocks()));
+    }
+
+    /** Takes up to {@code wantFe} from the node's ME network at AE2's rate; returns the FE actually taken. */
+    static int pull(IManagedGridNode node, int wantFe) {
+        int[] fe = {0};
+        node.ifPresent(grid -> {
+            double ae = PowerUnit.FE.convertTo(PowerUnit.AE, wantFe);
+            double got = grid.getEnergyService().extractAEPower(ae, Actionable.MODULATE, PowerMultiplier.ONE);
+            fe[0] = (int) Math.floor(PowerUnit.AE.convertTo(PowerUnit.FE, got) + 1e-6);
+        });
+        return fe[0];
     }
 
     /** The grid node of one machine, standing in its power port cell and open on the port's face. */
@@ -89,11 +101,7 @@ public final class Ae2Compat {
             if (want <= 0) {
                 return;
             }
-            node.ifPresent(grid -> {
-                double ae = PowerUnit.FE.convertTo(PowerUnit.AE, want);
-                double got = grid.getEnergyService().extractAEPower(ae, Actionable.MODULATE, PowerMultiplier.ONE);
-                machine.acceptEnergy((int) Math.floor(PowerUnit.AE.convertTo(PowerUnit.FE, got) + 1e-6));
-            });
+            machine.acceptEnergy(pull(node, want));
         }
 
         @Override

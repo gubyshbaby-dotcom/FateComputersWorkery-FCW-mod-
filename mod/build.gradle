@@ -114,6 +114,7 @@ dependencies {
 //  1. ../native/target/release/{fcw-daemon,libfcw_client.so,...}: the host build
 //     of the Cargo workspace, packed under the host platform;
 //  2. -Pfcw.nativesDir=<dir> with <dir>/<os>-<arch>/... (CI for Windows/macOS).
+//     The same directory may carry guest-x86_64/fcw, the guest agent.
 // Both are optional: without natives the mod still builds and works (no VMs).
 static String fcwHostPlatform() {
     String os = System.getProperty('os.name').toLowerCase(Locale.ROOT)
@@ -124,6 +125,10 @@ static String fcwHostPlatform() {
 }
 
 def nativeReleaseDir = file('../native/target/release')
+// The guest agent (static musl binary `fcw`, crate fcw-agent) rides in the jar as
+// /natives/guest-x86_64/fcw: the mod pushes it into guests whose agent differs (CONTRACT.md §7).
+// Optional like the other natives: without it guests simply keep the agent of their OS image.
+def guestAgentDir = file('../native/target/x86_64-unknown-linux-musl/release')
 def nativeFileNames = ['fcw-daemon', 'fcw-daemon.exe', 'libfcw_client.so', 'fcw_client.dll', 'libfcw_client.dylib']
 def extraNativesDir = project.findProperty('fcw.nativesDir')
 
@@ -132,6 +137,10 @@ processResources {
         include nativeFileNames
         into "natives/${fcwHostPlatform()}"
     }
+    from(guestAgentDir) {
+        include 'fcw'
+        into 'natives/guest-x86_64'
+    }
     if (extraNativesDir != null) {
         def dir = file(extraNativesDir)
         if (!dir.isDirectory()) {
@@ -139,7 +148,7 @@ processResources {
         }
         // A missing source directory is simply skipped by the copy.
         from(dir) {
-            include '*/fcw-daemon', '*/fcw-daemon.exe', '*/libfcw_client.so', '*/fcw_client.dll', '*/libfcw_client.dylib'
+            include '*/fcw-daemon', '*/fcw-daemon.exe', '*/libfcw_client.so', '*/fcw_client.dll', '*/libfcw_client.dylib', 'guest-x86_64/fcw'
             into 'natives'
         }
     }

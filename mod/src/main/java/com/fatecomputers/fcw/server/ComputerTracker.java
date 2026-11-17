@@ -72,6 +72,16 @@ public final class ComputerTracker {
         return best;
     }
 
+    /** Раз в тик сервера: питание компьютеров и таймеры обновления агента. */
+    public static void tick() {
+        if (BY_VM.isEmpty()) {
+            return;
+        }
+        for (ComputerBlockEntity be : new ArrayList<>(BY_VM.values())) {
+            be.serverTick();
+        }
+    }
+
     public static void onDaemonReady() {
         for (ComputerBlockEntity be : new ArrayList<>(BY_VM.values())) {
             be.onDaemonReady();
