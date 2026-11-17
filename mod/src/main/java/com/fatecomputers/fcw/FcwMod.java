@@ -1,6 +1,7 @@
 package com.fatecomputers.fcw;
 
 import com.fatecomputers.fcw.network.FcwNetwork;
+import com.fatecomputers.fcw.production.machine.ProductionMachines;
 import com.fatecomputers.fcw.registry.ModBlockEntities;
 import com.fatecomputers.fcw.registry.ModBlocks;
 import com.fatecomputers.fcw.registry.ModCreativeTabs;
@@ -35,6 +36,7 @@ public final class FcwMod {
         ModBlockEntities.BLOCK_ENTITIES.register(modBus);
         ModMenus.MENUS.register(modBus);
         ModCreativeTabs.TABS.register(modBus);
+        ProductionMachines.register(modBus);
         modBus.addListener(FcwNetwork::register);
 
         container.registerConfig(ModConfig.Type.SERVER, FcwConfig.SERVER_SPEC);

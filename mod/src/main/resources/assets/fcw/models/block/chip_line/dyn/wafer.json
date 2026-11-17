@@ -1,0 +1,1 @@
+{"credit":"PC mod: EUV scanner (generated)","parent":"minecraft:block/block","render_type":"minecraft:cutout","ambientocclusion":false,"texture_size":[1024,1024],"textures":{"particle":"fcw:block/chip_line/particle","main":"fcw:block/chip_line/main"},"elements":[{"name":"wafer","from":[7,13,11],"to":[15,14,19],"faces":{"up":{"uv":[0.25,5.0625,0.5,5.3125],"texture":"#main"}}}]}

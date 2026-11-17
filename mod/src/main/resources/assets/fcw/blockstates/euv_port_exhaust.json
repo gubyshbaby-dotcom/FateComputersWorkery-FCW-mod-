@@ -1,0 +1,10 @@
+{
+	"variants": {
+		"facing=north": {"model": "fcw:block/euv_port_exhaust"},
+		"facing=east": {"model": "fcw:block/euv_port_exhaust", "y": 90},
+		"facing=south": {"model": "fcw:block/euv_port_exhaust", "y": 180},
+		"facing=west": {"model": "fcw:block/euv_port_exhaust", "y": 270},
+		"facing=up": {"model": "fcw:block/euv_port_exhaust", "x": 270},
+		"facing=down": {"model": "fcw:block/euv_port_exhaust", "x": 90}
+	}
+}

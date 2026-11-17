@@ -1,0 +1,10 @@
+{
+	"variants": {
+		"facing=north": {"model": "fcw:block/euv_port_data"},
+		"facing=east": {"model": "fcw:block/euv_port_data", "y": 90},
+		"facing=south": {"model": "fcw:block/euv_port_data", "y": 180},
+		"facing=west": {"model": "fcw:block/euv_port_data", "y": 270},
+		"facing=up": {"model": "fcw:block/euv_port_data", "x": 270},
+		"facing=down": {"model": "fcw:block/euv_port_data", "x": 90}
+	}
+}
