@@ -1,0 +1,133 @@
+{
+	"credit": "PC mod trial models (generated)",
+	"parent": "minecraft:block/block",
+	"texture_size": [64, 64],
+	"textures": {"0": "fcw:block/monitor", "particle": "fcw:block/monitor"},
+	"elements": [
+		{
+			"name": "base",
+			"from": [4.5, 0, 5.5],
+			"to": [11.5, 0.5, 11.5],
+			"faces": {
+				"north": {"uv": [12, 9.5, 15.5, 9.75], "texture": "#0"},
+				"east": {"uv": [0, 9.75, 3, 10], "texture": "#0"},
+				"south": {"uv": [12, 9.5, 15.5, 9.75], "texture": "#0"},
+				"west": {"uv": [0, 9.75, 3, 10], "texture": "#0"},
+				"up": {"uv": [5.25, 5.25, 8.75, 8.25], "texture": "#0"},
+				"down": {"uv": [5.25, 5.25, 8.75, 8.25], "texture": "#0", "cullface": "down"}
+			}
+		},
+		{
+			"name": "base_riser",
+			"from": [6.5, 0.5, 7.5],
+			"to": [9.5, 1, 10.5],
+			"faces": {
+				"north": {"uv": [3, 9.75, 4.5, 10], "texture": "#0"},
+				"east": {"uv": [3, 9.75, 4.5, 10], "texture": "#0"},
+				"south": {"uv": [3, 9.75, 4.5, 10], "texture": "#0"},
+				"west": {"uv": [3, 9.75, 4.5, 10], "texture": "#0"},
+				"up": {"uv": [8.75, 5.25, 10.25, 6.75], "texture": "#0"}
+			}
+		},
+		{
+			"name": "neck",
+			"from": [7.5, 1, 8.5],
+			"to": [8.5, 10.5, 9.5],
+			"faces": {
+				"north": {"uv": [7.5, 0, 8, 4.75], "texture": "#0"},
+				"east": {"uv": [7.5, 0, 8, 4.75], "texture": "#0"},
+				"south": {"uv": [7.5, 0, 8, 4.75], "texture": "#0"},
+				"west": {"uv": [7.5, 0, 8, 4.75], "texture": "#0"},
+				"up": {"uv": [14, 9, 14.5, 9.5], "texture": "#0"}
+			}
+		},
+		{
+			"name": "mount",
+			"from": [7, 7.5, 8],
+			"to": [9, 10.5, 8.5],
+			"faces": {
+				"east": {"uv": [11.25, 5.25, 11.5, 6.75], "texture": "#0"},
+				"south": {"uv": [10.25, 5.25, 11.25, 6.75], "texture": "#0"},
+				"west": {"uv": [11.25, 5.25, 11.5, 6.75], "texture": "#0"},
+				"up": {"uv": [4.5, 9.75, 5.5, 10], "texture": "#0"},
+				"down": {"uv": [4.5, 9.75, 5.5, 10], "texture": "#0"}
+			}
+		},
+		{
+			"name": "panel_back",
+			"from": [1, 4.5, 6.5],
+			"to": [15, 15, 7.5],
+			"faces": {
+				"east": {"uv": [7, 0, 7.5, 5.25], "texture": "#0"},
+				"south": {"uv": [0, 0, 7, 5.25], "texture": "#0"},
+				"west": {"uv": [7, 0, 7.5, 5.25], "texture": "#0"},
+				"up": {"uv": [7, 9, 14, 9.5], "texture": "#0"},
+				"down": {"uv": [7, 9, 14, 9.5], "texture": "#0"}
+			}
+		},
+		{
+			"name": "back_bulge",
+			"from": [3, 6, 7.5],
+			"to": [13, 13.5, 8],
+			"faces": {
+				"east": {"uv": [5, 5.25, 5.25, 9], "texture": "#0"},
+				"south": {"uv": [0, 5.25, 5, 9], "texture": "#0"},
+				"west": {"uv": [5, 5.25, 5.25, 9], "texture": "#0"},
+				"up": {"uv": [7, 9.5, 12, 9.75], "texture": "#0"},
+				"down": {"uv": [7, 9.5, 12, 9.75], "texture": "#0"}
+			}
+		},
+		{
+			"name": "bezel_top",
+			"from": [1, 14.5, 6],
+			"to": [15, 15, 6.5],
+			"faces": {
+				"north": {"uv": [0, 9.5, 7, 9.75], "texture": "#0"},
+				"east": {"uv": [5.5, 9.75, 5.75, 10], "texture": "#0"},
+				"west": {"uv": [5.5, 9.75, 5.75, 10], "texture": "#0"},
+				"up": {"uv": [0, 9.5, 7, 9.75], "texture": "#0"},
+				"down": {"uv": [0, 9.5, 7, 9.75], "texture": "#0"}
+			}
+		},
+		{
+			"name": "bezel_bottom",
+			"from": [1, 4.5, 6],
+			"to": [15, 5.5, 6.5],
+			"faces": {
+				"north": {"uv": [0, 9, 7, 9.5], "texture": "#0"},
+				"east": {"uv": [14.5, 9, 14.75, 9.5], "texture": "#0"},
+				"west": {"uv": [14.5, 9, 14.75, 9.5], "texture": "#0"},
+				"up": {"uv": [0, 9.5, 7, 9.75], "texture": "#0"},
+				"down": {"uv": [0, 9.5, 7, 9.75], "texture": "#0"}
+			}
+		},
+		{
+			"name": "bezel_left",
+			"from": [14.5, 5.5, 6],
+			"to": [15, 14.5, 6.5],
+			"faces": {
+				"north": {"uv": [14.5, 0, 14.75, 4.5], "texture": "#0"},
+				"east": {"uv": [14.5, 0, 14.75, 4.5], "texture": "#0"},
+				"west": {"uv": [14.5, 0, 14.75, 4.5], "texture": "#0"}
+			}
+		},
+		{
+			"name": "bezel_right",
+			"from": [1, 5.5, 6],
+			"to": [1.5, 14.5, 6.5],
+			"faces": {
+				"north": {"uv": [14.5, 0, 14.75, 4.5], "texture": "#0"},
+				"east": {"uv": [14.5, 0, 14.75, 4.5], "texture": "#0"},
+				"west": {"uv": [14.5, 0, 14.75, 4.5], "texture": "#0"}
+			}
+		},
+		{
+			"name": "screen",
+			"from": [1.5, 5.5, 6.5],
+			"to": [14.5, 14.5, 7],
+			"faces": {
+				"north": {"uv": [8, 0, 14.5, 4.5], "texture": "#0"}
+			}
+		}
+	]
+}

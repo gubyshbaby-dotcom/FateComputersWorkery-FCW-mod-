@@ -1,0 +1,7 @@
+{
+	"parent": "fcw:block/speaker_tower",
+	"textures": {
+		"0": "fcw:block/speaker_tower_on",
+		"particle": "fcw:block/speaker_tower_on"
+	}
+}

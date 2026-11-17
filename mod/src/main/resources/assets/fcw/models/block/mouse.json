@@ -1,0 +1,85 @@
+{
+	"credit": "PC mod trial models (generated)",
+	"parent": "minecraft:block/block",
+	"texture_size": [64, 64],
+	"textures": {"0": "fcw:block/mouse", "particle": "fcw:block/mouse"},
+	"elements": [
+		{
+			"name": "pad",
+			"from": [2.5, 0, 3],
+			"to": [13.5, 0.5, 13],
+			"faces": {
+				"north": {"uv": [4.5, 5, 10, 5.25], "texture": "#0"},
+				"east": {"uv": [10, 5, 15, 5.25], "texture": "#0"},
+				"south": {"uv": [4.5, 5, 10, 5.25], "texture": "#0"},
+				"west": {"uv": [10, 5, 15, 5.25], "texture": "#0"},
+				"up": {"uv": [5.5, 0, 11, 5], "texture": "#0"},
+				"down": {"uv": [0, 0, 5.5, 5], "texture": "#0", "cullface": "down"}
+			}
+		},
+		{
+			"name": "body",
+			"from": [6.5, 0.5, 5.5],
+			"to": [9.5, 1.5, 10.5],
+			"faces": {
+				"north": {"uv": [2.5, 5, 4, 5.5], "texture": "#0"},
+				"east": {"uv": [0, 5, 2.5, 5.5], "texture": "#0"},
+				"south": {"uv": [2.5, 5, 4, 5.5], "texture": "#0"},
+				"west": {"uv": [0, 5, 2.5, 5.5], "texture": "#0"},
+				"up": {"uv": [11, 0, 12.5, 2.5], "texture": "#0"}
+			}
+		},
+		{
+			"name": "hump",
+			"from": [6.5, 1.5, 6],
+			"to": [9.5, 2, 10],
+			"faces": {
+				"north": {"uv": [3.5, 5.5, 5, 5.75], "texture": "#0"},
+				"east": {"uv": [0, 5.5, 2, 5.75], "texture": "#0"},
+				"south": {"uv": [3.5, 5.5, 5, 5.75], "texture": "#0"},
+				"west": {"uv": [0, 5.5, 2, 5.75], "texture": "#0"},
+				"up": {"uv": [12.5, 0, 14, 2], "texture": "#0"}
+			}
+		},
+		{
+			"name": "wheel",
+			"from": [7.5, 2, 8.5],
+			"to": [8.5, 2.5, 9.5],
+			"faces": {
+				"north": {"uv": [6.75, 5.5, 7.25, 5.75], "texture": "#0"},
+				"east": {"uv": [6.75, 5.5, 7.25, 5.75], "texture": "#0"},
+				"south": {"uv": [6.75, 5.5, 7.25, 5.75], "texture": "#0"},
+				"west": {"uv": [6.75, 5.5, 7.25, 5.75], "texture": "#0"},
+				"up": {"uv": [4, 5, 4.5, 5.5], "texture": "#0"}
+			}
+		},
+		{
+			"name": "cable_on_pad",
+			"from": [7.5, 0.5, 10.5],
+			"to": [8.5, 1, 13],
+			"faces": {
+				"east": {"uv": [5, 5.5, 6.25, 5.75], "texture": "#0"},
+				"south": {"uv": [6.25, 5.5, 6.75, 5.75], "texture": "#0"},
+				"west": {"uv": [5, 5.5, 6.25, 5.75], "texture": "#0"},
+				"up": {"uv": [14.5, 0, 15, 1.25], "texture": "#0"}
+			}
+		},
+		{
+			"name": "cable",
+			"from": [7.5, 0, 13],
+			"to": [8.5, 0.5, 16],
+			"faces": {
+				"east": {"uv": [2, 5.5, 3.5, 5.75], "texture": "#0"},
+				"south": {"uv": [6.25, 5.5, 6.75, 5.75], "texture": "#0", "cullface": "south"},
+				"west": {"uv": [2, 5.5, 3.5, 5.75], "texture": "#0"},
+				"up": {"uv": [14, 0, 14.5, 1.5], "texture": "#0"},
+				"down": {"uv": [14, 0, 14.5, 1.5], "texture": "#0", "cullface": "down"}
+			}
+		}
+	],
+	"display": {
+		"gui": {"rotation": [30, 225, 0], "translation": [0, 4.5, 0], "scale": [0.769, 0.769, 0.769]},
+		"ground": {"translation": [0, 3, 0], "scale": [0.5, 0.5, 0.5]},
+		"fixed": {"translation": [0, 5.4, 0], "scale": [0.8, 0.8, 0.8]}
+	}
+}

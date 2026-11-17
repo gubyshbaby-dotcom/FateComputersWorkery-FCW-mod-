@@ -1,0 +1,7 @@
+{
+	"parent": "fcw:block/case_desktop",
+	"textures": {
+		"0": "fcw:block/case_desktop_on",
+		"particle": "fcw:block/case_desktop_on"
+	}
+}

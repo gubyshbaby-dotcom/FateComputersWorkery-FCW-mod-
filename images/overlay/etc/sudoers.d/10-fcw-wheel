@@ -1,0 +1,3 @@
+# FCW: пользователь user в группе wheel/sudo может пользоваться sudo (пароль: fcw)
+%wheel ALL=(ALL:ALL) ALL
+%sudo ALL=(ALL:ALL) ALL

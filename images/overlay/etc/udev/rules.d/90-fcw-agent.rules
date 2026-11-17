@@ -1,0 +1,2 @@
+# Канал агента FCW (virtio-serial): при появлении порта запускаем агента
+SUBSYSTEM=="virtio-ports", ATTR{name}=="fcw.agent", SYMLINK+="fcw-agent", TAG+="systemd", ENV{SYSTEMD_WANTS}+="fcw-agent.service"

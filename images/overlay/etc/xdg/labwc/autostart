@@ -1,0 +1,3 @@
+# FCW: обои и панель LXQt
+swaybg -i /usr/share/fcw/wallpaper.png -m fill -c '#1b1f27' >/dev/null 2>&1 &
+lxqt-panel >/dev/null 2>&1 &

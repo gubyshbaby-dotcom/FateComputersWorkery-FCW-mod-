@@ -1,0 +1,7 @@
+{
+	"parent": "fcw:block/soundbar",
+	"textures": {
+		"0": "fcw:block/soundbar_on",
+		"particle": "fcw:block/soundbar_on"
+	}
+}

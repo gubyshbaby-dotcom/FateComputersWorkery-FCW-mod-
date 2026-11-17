@@ -1,0 +1,160 @@
+plugins {
+    id 'java-library'
+    id 'idea'
+    id 'net.neoforged.moddev' version '2.0.148'
+    id 'com.google.protobuf' version '0.9.5'
+}
+
+version = mod_version
+group = mod_group_id
+
+base {
+    archivesName = mod_id
+}
+
+java.toolchain.languageVersion = JavaLanguageVersion.of(21)
+
+repositories {
+    mavenCentral()
+}
+
+neoForge {
+    version = project.neo_version
+
+    parchment {
+        mappingsVersion = project.parchment_mappings_version
+        minecraftVersion = project.parchment_minecraft_version
+    }
+
+    runs {
+        client {
+            client()
+            gameDirectory = project.file('run/client')
+        }
+        server {
+            server()
+            gameDirectory = project.file('run/server')
+            programArgument '--nogui'
+        }
+        configureEach {
+            systemProperty 'forge.logging.markers', 'REGISTRIES'
+            logLevel = org.slf4j.event.Level.INFO
+        }
+    }
+
+    mods {
+        "${mod_id}" {
+            sourceSet(sourceSets.main)
+        }
+    }
+}
+
+// ---------------------------------------------------------------- protobuf
+// The control channel schema lives next to the daemon (native/proto) and is
+// shared with it; only control.proto is compiled here. The QUIC stream
+// protocol (stream.proto) is handled entirely inside the native client library.
+sourceSets {
+    main {
+        proto {
+            srcDirs = ['../native/proto']
+            include 'control.proto'
+        }
+    }
+}
+
+protobuf {
+    protoc {
+        artifact = "com.google.protobuf:protoc:${protobuf_version}"
+    }
+}
+
+dependencies {
+    // Shipped inside the mod jar (Jar-in-Jar) so that servers need nothing extra.
+    jarJar(implementation("com.google.protobuf:protobuf-java:${protobuf_version}")) {
+        version {
+            strictly "[${protobuf_version},5)"
+            prefer protobuf_version
+        }
+    }
+    additionalRuntimeClasspath "com.google.protobuf:protobuf-java:${protobuf_version}"
+}
+
+// ---------------------------------------------------------------- natives
+// Native files are packed as /natives/<os>-<arch>/... (docs/CONTRACT.md §6).
+//  1. ../native/target/release/{fcw-daemon,libfcw_client.so,...}: the host build
+//     of the Cargo workspace, packed under the host platform;
+//  2. -Pfcw.nativesDir=<dir> with <dir>/<os>-<arch>/... (CI for Windows/macOS).
+// Both are optional: without natives the mod still builds and works (no VMs).
+static String fcwHostPlatform() {
+    String os = System.getProperty('os.name').toLowerCase(Locale.ROOT)
+    String arch = System.getProperty('os.arch').toLowerCase(Locale.ROOT)
+    String o = os.contains('win') ? 'windows' : (os.contains('mac') || os.contains('darwin')) ? 'macos' : 'linux'
+    String a = (arch == 'amd64' || arch == 'x86_64') ? 'x86_64' : (arch == 'aarch64' || arch == 'arm64') ? 'aarch64' : arch
+    return "${o}-${a}"
+}
+
+def nativeReleaseDir = file('../native/target/release')
+def nativeFileNames = ['fcw-daemon', 'fcw-daemon.exe', 'libfcw_client.so', 'fcw_client.dll', 'libfcw_client.dylib']
+def extraNativesDir = project.findProperty('fcw.nativesDir')
+
+processResources {
+    from(nativeReleaseDir) {
+        include nativeFileNames
+        into "natives/${fcwHostPlatform()}"
+    }
+    if (extraNativesDir != null) {
+        from(file(extraNativesDir)) {
+            include '*/fcw-daemon', '*/fcw-daemon.exe', '*/libfcw_client.so', '*/fcw_client.dll', '*/libfcw_client.dylib'
+            into 'natives'
+        }
+        inputs.dir(file(extraNativesDir)).optional().withPropertyName('fcwExtraNatives')
+    }
+    // The .proto files are not needed at runtime.
+    exclude '**/*.proto'
+    duplicatesStrategy = DuplicatesStrategy.INCLUDE
+}
+
+// ---------------------------------------------------------------- metadata
+def generateModMetadata = tasks.register('generateModMetadata', ProcessResources) {
+    def replaceProperties = [
+            minecraft_version      : minecraft_version,
+            minecraft_version_range: minecraft_version_range,
+            neo_version            : neo_version,
+            neo_version_range      : neo_version_range,
+            loader_version_range   : loader_version_range,
+            mod_id                 : mod_id,
+            mod_name               : mod_name,
+            mod_license            : mod_license,
+            mod_version            : mod_version,
+            mod_authors            : mod_authors,
+            mod_description        : mod_description
+    ]
+    inputs.properties replaceProperties
+    expand replaceProperties
+    from 'src/main/templates'
+    into 'build/generated/sources/modMetadata'
+}
+sourceSets.main.resources.srcDir generateModMetadata
+neoForge.ideSyncTask generateModMetadata
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    options.compilerArgs << '-Xlint:deprecation'
+}
+
+jar {
+    manifest {
+        attributes([
+                'Specification-Title'   : mod_id,
+                'Implementation-Title'  : mod_name,
+                'Implementation-Version': mod_version
+        ])
+    }
+}
+
+idea {
+    module {
+        downloadSources = true
+        downloadJavadoc = false
+    }
+}

@@ -1,0 +1,8 @@
+window.active.title.bg.color: @ACCENT@
+window.active.label.text.color: #ffffff
+window.inactive.title.bg.color: #2b303b
+window.inactive.label.text.color: #aab2bf
+window.active.border.color: @ACCENT@
+window.inactive.border.color: #2b303b
+menu.items.active.bg.color: @ACCENT@
+osd.border.color: @ACCENT@

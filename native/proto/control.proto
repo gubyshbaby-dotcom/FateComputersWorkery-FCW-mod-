@@ -1,0 +1,239 @@
+// Канал управления: сервер Minecraft (мод) <-> демон ВМ.
+// Транспорт: Unix-сокет (stream). Кадр = u32 big-endian длина + Envelope.
+// Запрос несёт id; ответ приходит с тем же id. События идут с id = 0.
+syntax = "proto3";
+
+package fcw.control.v1;
+
+option java_package = "com.fatecomputers.fcw.proto";
+option java_outer_classname = "ControlProto";
+option java_multiple_files = false;
+
+message Envelope {
+  uint64 id = 1;
+  oneof body {
+    Request request = 2;
+    Response response = 3;
+    Event event = 4;
+  }
+}
+
+// ---------------------------------------------------------------- запросы
+
+message Request {
+  oneof kind {
+    Hello hello = 1;
+    ListImages list_images = 2;
+    CreateVm create_vm = 3;
+    StartVm start_vm = 4;
+    StopVm stop_vm = 5;
+    PauseVm pause_vm = 6;
+    ResumeVm resume_vm = 7;
+    DeleteVm delete_vm = 8;
+    GetVm get_vm = 9;
+    ListVms list_vms = 10;
+    IssueToken issue_token = 11;
+    RevokeTokens revoke_tokens = 12;
+    AgentSend agent_send = 13;
+    SetRedstoneInputs set_redstone_inputs = 14;
+    FetchImage fetch_image = 15;
+    Shutdown shutdown = 16;
+  }
+}
+
+message Hello {
+  string client_name = 1;      // "fcw-mod 0.1.0"
+  uint32 protocol_version = 2; // 1
+}
+
+message ListImages {}
+
+// Создать (или обновить конфигурацию) машины. Диск создаётся при первом
+// запуске как qcow2-слой поверх базы образа. Если машина уже есть,
+// меняются только параметры железа; reinstall=true пересоздаёт диск.
+message CreateVm {
+  string vm_id = 1;          // UUID, его хранит блок-сущность компьютера
+  string image_id = 2;       // "fedora" | "ubuntu" | "arch" | ...
+  uint32 cpus = 3;
+  uint32 memory_mb = 4;
+  bool gpu = 5;              // есть видеокарта: virtio-gpu + рабочий стол
+  uint32 disk_gb = 6;        // 0 = по умолчанию из образа
+  string lang = 7;           // "ru_RU.UTF-8" (fcw.lang= в cmdline ядра)
+  string kbd_layout = 8;     // "us,ru" (fcw.kbd=)
+  bool sound = 9;            // есть колонки: virtio-sound
+  bool network = 10;         // есть сетевая карта/роутер: virtio-net
+  bool reinstall = 11;
+  uint32 display_width = 12; // 0 = 1024
+  uint32 display_height = 13;// 0 = 768
+}
+
+message StartVm { string vm_id = 1; }
+message StopVm { string vm_id = 1; bool force = 2; uint32 timeout_ms = 3; }
+message PauseVm { string vm_id = 1; }
+message ResumeVm { string vm_id = 1; }
+message DeleteVm { string vm_id = 1; }
+message GetVm { string vm_id = 1; }
+message ListVms {}
+
+enum Permission {
+  PERM_NONE = 0;
+  PERM_VIEW = 1;      // смотреть экраны, слышать звук
+  PERM_KEYBOARD = 2;  // клавиатура и текстовый ввод
+  PERM_MOUSE = 4;     // мышь
+}
+
+message IssueToken {
+  string vm_id = 1;
+  string player_uuid = 2;
+  string player_name = 3;
+  uint32 permissions = 4;    // битовая маска Permission
+  uint32 ttl_seconds = 5;    // 0 = 120
+}
+
+message RevokeTokens {
+  string vm_id = 1;          // пусто = все машины
+  string player_uuid = 2;    // пусто = все игроки
+}
+
+message AgentSend {
+  string vm_id = 1;
+  string json = 2;           // одна строка JSON для агента гостя
+}
+
+// Уровни редстоуна на входах компьютера, стороны относительно блока.
+message SetRedstoneInputs {
+  string vm_id = 1;
+  repeated uint32 levels = 2; // 6 значений: front, back, left, right, top, bottom
+}
+
+message FetchImage {
+  string image_id = 1;
+  string url = 2;            // tar.zst из images/build-image.sh
+  string sha256 = 3;         // необязательно
+}
+
+message Shutdown {}
+
+// ---------------------------------------------------------------- ответы
+
+message Response {
+  bool ok = 1;
+  string error = 2;
+  oneof kind {
+    HelloResult hello = 10;
+    ImageList images = 11;
+    VmInfo vm = 12;
+    VmList vms = 13;
+    TokenResult token = 14;
+  }
+}
+
+message HelloResult {
+  string daemon_version = 1;
+  uint32 protocol_version = 2;
+  uint32 quic_port = 3;        // UDP-порт QUIC-сервера
+  string cert_sha256 = 4;      // hex SHA-256 DER-сертификата сервера
+  string accelerator = 5;      // "kvm" | "whpx" | "hvf" | "tcg"
+  uint32 max_vms = 6;
+  uint32 host_cpus = 7;
+  uint64 host_memory_mb = 8;
+}
+
+message ImageInfo {
+  string id = 1;
+  string name = 2;
+  string version = 3;
+  string desktop = 4;
+  string terminal = 5;
+  uint32 min_memory_mb = 6;
+  uint32 recommended_memory_mb = 7;
+  bool installed = 8;
+}
+message ImageList { repeated ImageInfo images = 1; }
+
+enum VmState {
+  VM_STATE_UNKNOWN = 0;
+  VM_STATE_STOPPED = 1;
+  VM_STATE_STARTING = 2;
+  VM_STATE_RUNNING = 3;
+  VM_STATE_PAUSED = 4;
+  VM_STATE_STOPPING = 5;
+  VM_STATE_CRASHED = 6;
+}
+
+enum ScreenKind {
+  SCREEN_KIND_UNKNOWN = 0;
+  SCREEN_KIND_GRAPHICAL = 1;  // кадры из virtio-gpu
+  SCREEN_KIND_TEXT = 2;       // сетка ячеек из virtio-console (hvc0)
+}
+
+message ScreenInfo {
+  string screen_id = 1;       // "gfx0" | "tty0"
+  ScreenKind kind = 2;
+  uint32 width = 3;           // пиксели (для текста: cols*8)
+  uint32 height = 4;          // пиксели (для текста: rows*16)
+  uint32 cols = 5;            // только для текста
+  uint32 rows = 6;
+}
+
+message VmInfo {
+  string vm_id = 1;
+  VmState state = 2;
+  string image_id = 3;
+  uint32 cpus = 4;
+  uint32 memory_mb = 5;
+  bool gpu = 6;
+  repeated ScreenInfo screens = 7;
+  uint64 uptime_ms = 8;
+  string last_error = 9;
+  bool agent_connected = 10;
+  string controller_player = 11; // кто сейчас держит ввод
+}
+message VmList { repeated VmInfo vms = 1; }
+
+message TokenResult {
+  string token = 1;            // base64url, 32 случайных байта
+  uint64 expires_unix_ms = 2;
+}
+
+// ---------------------------------------------------------------- события
+
+message Event {
+  oneof kind {
+    VmStateChanged vm_state = 1;
+    AgentMessage agent_message = 2;
+    RedstoneOutput redstone_output = 3;
+    ImageProgress image_progress = 4;
+    LogLine log = 5;
+  }
+}
+
+message VmStateChanged {
+  string vm_id = 1;
+  VmState state = 2;
+  string reason = 3;
+}
+
+message AgentMessage {
+  string vm_id = 1;
+  string json = 2;
+}
+
+message RedstoneOutput {
+  string vm_id = 1;
+  uint32 side = 2;   // 0..5: front, back, left, right, top, bottom
+  uint32 level = 3;  // 0..15
+}
+
+message ImageProgress {
+  string image_id = 1;
+  uint64 done_bytes = 2;
+  uint64 total_bytes = 3;
+  bool finished = 4;
+  string error = 5;
+}
+
+message LogLine {
+  string level = 1;
+  string message = 2;
+}

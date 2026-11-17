@@ -1,0 +1,243 @@
+// Клиент игрока (нативная библиотека) <-> демон ВМ напрямую по QUIC.
+// ALPN "fcw/1". Сертификат демона самоподписанный; клиент сверяет SHA-256
+// DER-сертификата с отпечатком, который ему передал сервер Minecraft.
+//
+// Потоки:
+//   управление  первый двунаправленный поток, открывает клиент;
+//               кадры u32 BE длина + ClientMsg / ServerMsg
+//   экран       однонаправленный поток от демона на каждую подписку;
+//               первый кадр StreamHeader, дальше FrameUpdate или TextUpdate
+//   ввод        однонаправленный поток от клиента; первый кадр StreamHeader
+//               (kind = STREAM_INPUT), дальше InputEvent
+//   датаграммы  Datagram: движение мыши (клиент -> демон),
+//               позиция курсора и звук (демон -> клиент)
+syntax = "proto3";
+
+package fcw.stream.v1;
+
+// ------------------------------------------------------------ управление
+
+message ClientMsg {
+  oneof kind {
+    Attach attach = 1;
+    Subscribe subscribe = 2;
+    Unsubscribe unsubscribe = 3;
+    RequestKeyframe request_keyframe = 4;
+    Ping ping = 5;
+    Detach detach = 6;
+  }
+}
+
+// Предъявить токен, выданный демоном через IssueToken. Одно соединение
+// может держать несколько токенов (смотреть несколько машин).
+message Attach { string token = 1; }
+message Detach { string vm_id = 1; }
+
+message Subscribe {
+  string vm_id = 1;
+  string screen_id = 2;    // "gfx0" | "tty0"
+  uint32 max_fps = 3;      // 0 = 30; дальний зритель просит меньше
+  bool audio = 4;          // присылать звук этой машины
+}
+message Unsubscribe { string vm_id = 1; string screen_id = 2; }
+message RequestKeyframe { string vm_id = 1; string screen_id = 2; }
+message Ping { uint64 nonce = 1; }
+
+message ServerMsg {
+  oneof kind {
+    AttachResult attach_result = 1;
+    ScreenChanged screen_changed = 2;
+    CursorShape cursor_shape = 3;
+    VmStateNotice vm_state = 4;
+    Pong pong = 5;
+    ErrorNotice error = 6;
+  }
+}
+
+message AttachResult {
+  bool ok = 1;
+  string error = 2;
+  string vm_id = 3;
+  uint32 permissions = 4;  // маска fcw.control.v1.Permission
+  repeated Screen screens = 5;
+}
+
+enum ScreenKind {
+  SCREEN_KIND_UNKNOWN = 0;
+  SCREEN_KIND_GRAPHICAL = 1;
+  SCREEN_KIND_TEXT = 2;
+}
+
+message Screen {
+  string screen_id = 1;
+  ScreenKind kind = 2;
+  uint32 width = 3;
+  uint32 height = 4;
+  uint32 cols = 5;
+  uint32 rows = 6;
+}
+
+// Экран поменял размер или появился/пропал (гость переключил режим).
+message ScreenChanged {
+  string vm_id = 1;
+  Screen screen = 2;
+  bool removed = 3;
+}
+
+// Форма аппаратного курсора гостя. RGBA8, строки сверху вниз.
+message CursorShape {
+  string vm_id = 1;
+  string screen_id = 2;
+  uint32 width = 3;
+  uint32 height = 4;
+  uint32 hotspot_x = 5;
+  uint32 hotspot_y = 6;
+  bytes rgba = 7;          // пусто = курсор скрыт
+}
+
+message VmStateNotice {
+  string vm_id = 1;
+  uint32 state = 2;        // fcw.control.v1.VmState
+}
+
+message Pong { uint64 nonce = 1; }
+message ErrorNotice { string message = 1; }
+
+// ------------------------------------------------------------ потоки
+
+enum StreamKind {
+  STREAM_UNKNOWN = 0;
+  STREAM_SCREEN = 1;
+  STREAM_INPUT = 2;
+}
+
+message StreamHeader {
+  StreamKind kind = 1;
+  string vm_id = 2;
+  string screen_id = 3;
+}
+
+enum RectEncoding {
+  RECT_UNKNOWN = 0;
+  RECT_RGBA_ZSTD = 1;      // w*h*4 байт RGBA8, сжато zstd
+  RECT_SOLID = 2;          // data = 4 байта RGBA, залить весь прямоугольник
+  RECT_COPY = 3;           // скопировать из (src_x, src_y) того же кадра
+}
+
+message Rect {
+  uint32 x = 1;
+  uint32 y = 2;
+  uint32 w = 3;
+  uint32 h = 4;
+  RectEncoding encoding = 5;
+  bytes data = 6;
+  uint32 src_x = 7;
+  uint32 src_y = 8;
+}
+
+// Графический кадр: дельта тайлов без потерь. keyframe = весь экран.
+message FrameUpdate {
+  uint64 seq = 1;
+  uint32 width = 2;
+  uint32 height = 3;
+  bool keyframe = 4;
+  repeated Rect rects = 5;
+}
+
+// Текстовый экран: изменённые строки сетки.
+message TextUpdate {
+  uint64 seq = 1;
+  uint32 cols = 2;
+  uint32 rows = 3;
+  uint32 cursor_x = 4;
+  uint32 cursor_y = 5;
+  bool cursor_visible = 6;
+  bool full = 7;
+  repeated TextRow rows_changed = 8;
+}
+
+message TextRow {
+  uint32 y = 1;
+  // cols кодовых точек Unicode (0 = пусто)
+  repeated uint32 chars = 2 [packed = true];
+  // атрибуты по ячейкам, отрезками: len ячеек подряд с одним стилем
+  repeated AttrRun runs = 3;
+}
+
+message AttrRun {
+  uint32 len = 1;
+  uint32 fg = 2;           // 0xRRGGBB
+  uint32 bg = 3;           // 0xRRGGBB
+  uint32 flags = 4;        // 1 bold, 2 italic, 4 underline, 8 inverse
+}
+
+// ------------------------------------------------------------ ввод
+
+message InputEvent {
+  oneof kind {
+    Key key = 1;
+    Text text = 2;
+    PointerButtons buttons = 3;
+    Wheel wheel = 4;
+    PointerAbs pointer = 5;
+    ReleaseAll release_all = 6;
+  }
+}
+
+// Физическая клавиша, код Linux evdev (KEY_A = 30). Клиент переводит
+// коды GLFW в evdev. Для графического экрана демон шлёт клавишу в QEMU;
+// для текстового превращает непечатные клавиши (стрелки, Enter, F1...,
+// Ctrl+буква) в управляющие последовательности, печатные берёт из Text.
+message Key {
+  uint32 evdev = 1;
+  bool down = 2;
+}
+
+// Набранный текст (UTF-8). Нужен только текстовым экранам.
+message Text { string utf8 = 1; }
+
+message PointerButtons {
+  uint32 mask = 1;         // 1 левая, 2 правая, 4 средняя, 8 назад, 16 вперёд
+  uint32 x = 2;            // позиция в пикселях экрана
+  uint32 y = 3;
+}
+
+message Wheel { int32 dx = 1; int32 dy = 2; uint32 x = 3; uint32 y = 4; }
+
+message PointerAbs { uint32 x = 1; uint32 y = 2; }
+
+// Отпустить все нажатые клавиши и кнопки (игрок ушёл из захвата ввода).
+message ReleaseAll {}
+
+// ------------------------------------------------------------ датаграммы
+
+message Datagram {
+  oneof kind {
+    PointerMove pointer_move = 1;    // клиент -> демон
+    CursorPos cursor_pos = 2;        // демон -> клиент
+    AudioPacket audio = 3;           // демон -> клиент
+  }
+}
+
+message PointerMove {
+  string vm_id = 1;
+  uint64 seq = 2;          // старые (меньший seq) отбрасываются
+  uint32 x = 3;
+  uint32 y = 4;
+}
+
+message CursorPos {
+  string vm_id = 1;
+  string screen_id = 2;
+  uint32 x = 3;
+  uint32 y = 4;
+  bool visible = 5;
+}
+
+// Opus, 48 кГц, стерео, кадр 20 мс.
+message AudioPacket {
+  string vm_id = 1;
+  uint64 seq = 2;
+  uint64 pts_us = 3;
+  bytes opus = 4;
+}

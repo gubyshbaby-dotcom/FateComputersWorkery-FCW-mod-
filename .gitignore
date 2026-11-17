@@ -1,0 +1,18 @@
+# сборка
+native/target/
+mod/build/
+mod/.gradle/
+mod/run/
+mod/runs/
+mod/out/
+.gradle/
+*.class
+
+# образы (большие, раздаются через релиз)
+images/out/
+images/work/
+
+# IDE
+.idea/
+*.iml
+.vscode/

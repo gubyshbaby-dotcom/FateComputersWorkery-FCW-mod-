@@ -1,0 +1,7 @@
+{
+	"parent": "fcw:block/subwoofer",
+	"textures": {
+		"0": "fcw:block/subwoofer_on",
+		"particle": "fcw:block/subwoofer_on"
+	}
+}

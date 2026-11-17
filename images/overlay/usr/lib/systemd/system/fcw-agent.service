@@ -1,0 +1,12 @@
+[Unit]
+Description=FCW guest agent (redstone, status, world bus)
+BindsTo=dev-virtio\x2dports-fcw.agent.device
+After=dev-virtio\x2dports-fcw.agent.device
+
+[Service]
+ExecStart=/usr/local/bin/fcw agent
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=dev-virtio\x2dports-fcw.agent.device
