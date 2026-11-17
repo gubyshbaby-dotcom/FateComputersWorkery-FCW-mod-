@@ -1,0 +1,8 @@
+# Windows (MSVC): статический CRT. В демоне и клиентской библиотеке есть C++ (OpenH264,
+# видеорежим экрана); без этого им нужны vcruntime140.dll и msvcp140.dll, которых на машине
+# игрока может не быть. Крейт cc видит crt-static и собирает C/C++ с /MT.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
+
+[target.aarch64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
