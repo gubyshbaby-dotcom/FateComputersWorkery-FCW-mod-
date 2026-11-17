@@ -70,7 +70,27 @@ public static String name(MachineControllerBlockEntity machine);            // �
 
 // production/machine/net/MachineLinks.java — владелец B
 public static List<MachineControllerBlockEntity> reachable(ServerLevel level, BlockPos computerPos);
+public enum Via { CABLE, RADIO }
+public record Link(MachineControllerBlockEntity machine, Via via) {}
+public static List<Link> links(ServerLevel level, BlockPos computerPos);    // то же, с пометкой для list
 ```
+
+Сеть данных (`production/machine/net/`): `fcw:data_cable` и `fcw:router` — блоки без блок-сущностей.
+`MachineLinks` обходит сеть в ширину от корпуса компьютера по соседству граней: узлы — кабели и
+роутеры, только загруженные чанки, не больше 4096 узлов. Машина видна по кабелю (`cable`), если любая
+её клетка касается узла сети или самого корпуса; по радио (`radio`) — если её пульт не дальше
+`production.routerRadius` (32) блоков от любого роутера этой сети (учитывается до 32 роутеров).
+Машина, видимая обоими способами, считается кабельной. Чужие компьютеры сеть не продолжают.
+Роутер — готовая модель набора 01 (`router` / `router_on`): `powered = true`, когда он касается кабеля
+данных или корпуса компьютера, то есть подключён и работает. Модель кабеля данных временная
+(`mod/tools/network/gen.py`), настоящая заказана художнику. Оператору: `/fcw net <x y z компьютера>`
+показывает, какие машины видит компьютер и как.
+
+Мост — `MachineBridge` (тот же пакет), по экземпляру на компьютер: `machine_req` из
+`ComputerBlockEntity.onAgentMessage` → `MachineShell` → `machine_resp`. Частота запросов одной ВМ
+ограничена (`production.machineRequestsPerSecond`, по умолчанию 20, запас на 2 с): лишние получают
+`exit` 2 «слишком много запросов», а если гость не унимается — остаются без ответа. Список машин
+компьютера кэшируется на 10 тиков. `actor` = имя компьютера в сети гостей (`fedora-1.mc`).
 
 `exec` вызывается на сервере в главном потоке. `line` — команда без имени машины (`status`,
 `recipe auto`, `log 5`). `lang` — код языка клиента (`ru_ru`, `en_us`); сервер переводит сам (на
@@ -95,12 +115,23 @@ public static List<MachineControllerBlockEntity> reachable(ServerLevel level, Bl
 {"type":"machine_resp","id":18,"exit":0,"text":"состояние  работа: …","json":null}
 ```
 
-- `list` — машины из `MachineLinks.reachable`: `json` = `{"machines":[{"name":"euv-1","kind":"euv_scanner_mk2","state":"run","link":"cable|radio"}]}`.
+- `list` — машины из `MachineLinks.links`: `json` = `{"machines":[{"name":"euv-1","kind":"euv_scanner_mk2","state":"run","link":"cable|radio"}]}`,
+  `state` = `off | idle | run | fault`; `text` — по строке на машину: имя, тип, состояние (как в
+  примере `fcw machine list` из MACHINE_UI.md), для пустой сети — «в сети этого компьютера нет машин».
+  Список собирает мост, а не `MachineShell`.
+- Ответ, который не помещается в строку агента (60 000 байт), урезается по тексту; если не помещается
+  `json` — `exit` 2.
 - Нет такой машины или она не видна: `exit` 2, текст «нет машины euv-9 в сети этого компьютера».
 - Компьютер выключен или агент не ответил — ответа нет; CLI ждёт 5 с и пишет «агент не отвечает».
 - `lang` CLI берёт из `LC_ALL` / `LC_MESSAGES` / `LANG` гостя (`ru_RU.UTF-8` → `ru_ru`), иначе `en_us`.
 - `wait` и `--follow` CLI делает сам опросом `status --json` / `log --json` раз в секунду; для
   этого `log --json` отдаёт записи с возрастающим `seq`, а `log --since <seq>` — только новые.
+  `wait <состояние>` сравнивает слово с полем `state` ответа `status --json` (`error` считается
+  `fault`); код 0 — дождался, 1 — вышел `--timeout`, 2 — машины нет или мир молчит.
+  `log [n] --follow` печатает `log [n]`, берёт наибольший `seq` из его `json` (в любом месте
+  ответа) и дальше раз в секунду спрашивает `log --since <seq>`.
+- Код выхода `fcw machine` = `exit` ответа; при `exit` ≠ 0 текст идёт в stderr. С `--json` в stdout
+  печатается `json` ответа (если он есть), иначе текст.
 - Зарезервировано для работы C (программы): `machine_watch` / `machine_unwatch` (подписка) и
   `machine_frame` (снимок состояния машины, несколько раз в секунду).
 
@@ -111,3 +142,17 @@ public static List<MachineControllerBlockEntity> reachable(ServerLevel level, Bl
 числа — в `docs/design/ENERGY_BLOCKS.md`, если там нет — предложить и записать туда. Без энергии:
 предупреждение на экране, через 5 с жёсткое выключение ВМ (как у настоящего ПК — в этом и роль
 ИБП). Настройка `computers.onPowerLoss = off | pause` (по умолчанию `off`).
+
+Как сделано:
+
+- Буфер корпуса 4 000 FE, приём до 1 000 FE/t (capability `EnergyStorage` у блок-сущности
+  компьютера, все стороны). При `requirePower = false` буфер ничего не принимает.
+- Расход, FE/t: `12 + 6 × ядра + 2 × ГиБ памяти (с округлением вверх) + 16 за видеокарту`; идёт,
+  пока ВМ запускается или работает (на паузе и в выключенном виде — ноль).
+- Включить компьютер можно, когда в буфере есть секунда работы; иначе ошибка «Нет питания».
+- Энергия кончилась: в строке состояния окна компьютера и над хотбаром игроков в 16 блоках —
+  «нет питания, выключение через 5 с». Вернулась за эти 5 с — предупреждение снимается.
+- Через 5 с: `off` — `StopVm` с `force` (без ACPI); `pause` — `PauseVm` (QMP `stop`), а когда в
+  буфере снова есть секунда работы — `ResumeVm`. Запросы паузы в `control.proto` уже были.
+- AE2: корпус — узел ME-сети со всех сторон (`compat/ae2/Ae2ComputerPower`), буфер пополняется из
+  энергии сети по курсу AE2; общая с машинами часть — `Ae2Compat.pull`.

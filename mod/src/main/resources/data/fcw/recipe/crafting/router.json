@@ -1,0 +1,30 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "pattern": [
+    " A ",
+    "KDK",
+    "IBI"
+  ],
+  "key": {
+    "A": {
+      "item": "minecraft:lightning_rod"
+    },
+    "K": {
+      "item": "fcw:data_cable"
+    },
+    "D": {
+      "item": "fcw:cpu_dip"
+    },
+    "I": {
+      "item": "minecraft:iron_ingot"
+    },
+    "B": {
+      "item": "fcw:pcb_blank"
+    }
+  },
+  "result": {
+    "id": "fcw:router",
+    "count": 1
+  }
+}

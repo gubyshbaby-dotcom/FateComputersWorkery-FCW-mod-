@@ -96,7 +96,7 @@ jobs:
           path: native/target/x86_64-unknown-linux-musl/release/fcw
 
   mod:
-    needs: natives
+    needs: [natives, agent]
     # собираем jar с теми нативами, что получились (ARM-раннеры есть не везде)
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
@@ -112,6 +112,12 @@ jobs:
           pattern: natives-*
           path: natives
           merge-multiple: true
+      # агент гостя едет в jar как natives/guest-x86_64/fcw: мод обновляет им агент внутри ВМ
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: fcw-agent
+          path: natives/guest-x86_64
       - run: ls -R natives
       - name: Build mod jar
         working-directory: mod

@@ -1,0 +1,7 @@
+{
+	"parent": "fcw:block/router",
+	"textures": {
+		"0": "fcw:block/router_on",
+		"particle": "fcw:block/router_on"
+	}
+}

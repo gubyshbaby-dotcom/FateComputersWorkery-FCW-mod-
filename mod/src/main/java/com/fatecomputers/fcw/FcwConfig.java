@@ -46,6 +46,7 @@ public final class FcwConfig {
         public final ModConfigSpec.IntValue displayWidth;
         public final ModConfigSpec.IntValue displayHeight;
         public final ModConfigSpec.BooleanValue restartRunningOnLoad;
+        public final ModConfigSpec.BooleanValue updateGuestAgent;
 
         public final ModConfigSpec.IntValue linkRadius;
         public final ModConfigSpec.IntValue viewDistance;
@@ -54,6 +55,10 @@ public final class FcwConfig {
 
         public final ModConfigSpec.BooleanValue productionRequirePower;
         public final ModConfigSpec.DoubleValue productionSpeedMultiplier;
+        public final ModConfigSpec.IntValue routerRadius;
+        public final ModConfigSpec.IntValue machineRequestsPerSecond;
+
+        public final ModConfigSpec.ConfigValue<String> onPowerLoss;
 
         Server(ModConfigSpec.Builder b) {
             b.comment("VM daemon (native fcw-daemon process started by the server)").push("daemon");
@@ -125,6 +130,9 @@ public final class FcwConfig {
                     .defineInRange("displayHeight", 768, 200, 4320);
             restartRunningOnLoad = b.comment("Start machines that were running when the world was saved (after a server restart).")
                     .define("restartRunningOnLoad", true);
+            updateGuestAgent = b.comment("Replace the fcw agent inside a guest with the one bundled in the mod jar when they differ",
+                            "(new commands such as `fcw machine` reach existing machines without rebuilding the OS images).")
+                    .define("updateGuestAgent", true);
             b.pop();
 
             b.comment("Guest network (daemon flags --internet, --net-rate-limit, --net-allow, --net-deny)").push("network");
@@ -155,6 +163,19 @@ public final class FcwConfig {
                     .define("requirePower", false);
             productionSpeedMultiplier = b.comment("Speed of all machine recipes: 2.0 = twice as fast, 0.5 = twice as slow.")
                     .defineInRange("speedMultiplier", 1.0, 0.01, 100.0);
+            routerRadius = b.comment("Radius in blocks around a router in which machines join its data network without a cable",
+                            "(measured to the machine's control panel).")
+                    .defineInRange("routerRadius", 32, 1, 128);
+            machineRequestsPerSecond = b.comment("How many `fcw machine` requests per second one computer may send to machines.",
+                            "Requests above the limit are refused, so a script in a tight loop cannot stall the server.")
+                    .defineInRange("machineRequestsPerSecond", 20, 1, 1000);
+            b.pop();
+
+            b.comment("Computers as power consumers (only with production.requirePower = true)").push("computers");
+            onPowerLoss = b.comment("What happens to a running computer five seconds after it ran out of FE:",
+                            "off   = hard power-off, like pulling the plug (unsaved data in the guest is lost);",
+                            "pause = the virtual machine is frozen and continues when the power is back.")
+                    .defineInList("onPowerLoss", "off", Arrays.asList("off", "pause"));
             b.pop();
         }
     }

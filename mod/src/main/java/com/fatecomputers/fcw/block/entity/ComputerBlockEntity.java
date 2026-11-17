@@ -5,6 +5,7 @@ import com.fatecomputers.fcw.FcwMod;
 import com.fatecomputers.fcw.block.DeviceBlock;
 import com.fatecomputers.fcw.block.PeripheralKind;
 import com.fatecomputers.fcw.menu.ComputerMenu;
+import com.fatecomputers.fcw.production.machine.net.MachineBridge;
 import com.fatecomputers.fcw.proto.ControlProto.AgentSend;
 import com.fatecomputers.fcw.proto.ControlProto.CreateVm;
 import com.fatecomputers.fcw.proto.ControlProto.DeleteVm;
@@ -20,6 +21,7 @@ import com.fatecomputers.fcw.proto.ControlProto.StopVm;
 import com.fatecomputers.fcw.proto.ControlProto.VmInfo;
 import com.fatecomputers.fcw.proto.ControlProto.VmState;
 import com.fatecomputers.fcw.registry.ModBlockEntities;
+import com.fatecomputers.fcw.server.AgentUpdate;
 import com.fatecomputers.fcw.server.ComputerTracker;
 import com.fatecomputers.fcw.server.FcwServerEvents;
 import com.fatecomputers.fcw.server.FcwWorldData;
@@ -36,6 +38,7 @@ import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.NbtUtils;
 import net.minecraft.nbt.Tag;
 import net.minecraft.network.chat.Component;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.Containers;
 import net.minecraft.world.MenuProvider;
@@ -46,6 +49,10 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
+import net.neoforged.neoforge.capabilities.Capabilities;
+import net.neoforged.neoforge.capabilities.RegisterCapabilitiesEvent;
+import net.neoforged.neoforge.energy.EnergyStorage;
+import net.neoforged.neoforge.energy.IEnergyStorage;
 
 import javax.annotation.Nullable;
 import java.io.IOException;
@@ -58,6 +65,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.function.Function;
 import java.util.stream.Stream;
 
 /**
@@ -98,6 +106,50 @@ public class ComputerBlockEntity extends BlockEntity implements MenuProvider {
     private boolean busy;
     private boolean pausedByUnload;
     private int statusVersion;
+
+    // Питание (только при production.requirePower): небольшой буфер, как конденсаторы блока питания.
+    public static final int ENERGY_CAPACITY = 4_000;
+    public static final int ENERGY_MAX_RECEIVE = 1_000;
+    /** Сколько тиков машина держится без энергии, прежде чем её выключат (5 с). */
+    public static final int POWER_GRACE_TICKS = 100;
+    private final Energy energy = new Energy();
+    private int powerLossTicks;
+    private boolean pausedByPower;
+    /** Сейчас в строке ошибки стоит наше сообщение о питании (его можно снять, когда энергия вернётся). */
+    private boolean powerError;
+    @Nullable
+    private static Function<ComputerBlockEntity, ComputerPowerSource> networkPowerFactory;
+    @Nullable
+    private ComputerPowerSource networkPower;
+    private boolean networkPowerAsked;
+
+    // Мост к машинам и самообновление агента гостя.
+    private final MachineBridge machineBridge = new MachineBridge();
+    @Nullable
+    private AgentUpdate agentUpdate;
+
+    /** Буфер FE корпуса: принимает с любой стороны, наружу не отдаёт. */
+    private final class Energy extends EnergyStorage {
+        Energy() {
+            super(ENERGY_CAPACITY, ENERGY_MAX_RECEIVE, 0);
+        }
+
+        @Override
+        public int receiveEnergy(int toReceive, boolean simulate) {
+            if (!powerRequired()) {
+                return 0; // питание не нужно: кабели других модов ничего не тратят
+            }
+            int got = super.receiveEnergy(toReceive, simulate);
+            if (got > 0 && !simulate) {
+                setChanged();
+            }
+            return got;
+        }
+
+        void set(int value) {
+            energy = Math.max(0, Math.min(capacity, value));
+        }
+    }
 
     public ComputerBlockEntity(BlockPos pos, BlockState state) {
         super(ModBlockEntities.COMPUTER.get(), pos, state);
@@ -153,6 +205,7 @@ public class ComputerBlockEntity extends BlockEntity implements MenuProvider {
             return;
         }
         ComputerTracker.remove(this);
+        leavePowerNetwork();
         DaemonManager d = DaemonManager.get();
         if (d != null && DaemonManager.isReady() && !FcwServerEvents.isStopping()
                 && (vmState == VmState.VM_STATE_RUNNING_VALUE || vmState == VmState.VM_STATE_STARTING_VALUE)) {
@@ -166,6 +219,7 @@ public class ComputerBlockEntity extends BlockEntity implements MenuProvider {
         super.setRemoved();
         if (level != null && !level.isClientSide) {
             ComputerTracker.remove(this);
+            leavePowerNetwork();
         }
     }
 
@@ -275,8 +329,11 @@ public class ComputerBlockEntity extends BlockEntity implements MenuProvider {
                 }
                 return;
             }
-            if (state == VmState.VM_STATE_PAUSED_VALUE) {
+            if (state == VmState.VM_STATE_PAUSED_VALUE && pausedByPower && powerRequired() && !hasPowerToStart()) {
+                pausedByUnload = false; // стоит на паузе без питания: продолжит serverTick, когда энергия вернётся
+            } else if (state == VmState.VM_STATE_PAUSED_VALUE) {
                 pausedByUnload = false;
+                pausedByPower = false;
                 d.request(Request.newBuilder().setResumeVm(ResumeVm.newBuilder().setVmId(vmIdString())).build(), rr -> {
                     if (rr.getOk() && rr.hasVm()) {
                         applyVmInfo(rr.getVm());
@@ -338,6 +395,9 @@ public class ComputerBlockEntity extends BlockEntity implements MenuProvider {
         }
         if (inventory.memoryMb() <= 0) {
             return Component.translatable("gui.fcw.error.no_ram");
+        }
+        if (powerRequired() && !isMachineOn() && !hasPowerToStart()) {
+            return Component.translatable("gui.fcw.error.no_power", powerDraw());
         }
         DaemonManager d = DaemonManager.get();
         if (d == null || !DaemonManager.isReady()) {
@@ -605,6 +665,11 @@ public class ComputerBlockEntity extends BlockEntity implements MenuProvider {
         int old = vmState;
         vmState = state;
         if (!isOnState(state)) {
+            powerLossTicks = 0;
+            pausedByPower = false;
+            if (agentUpdate != null) {
+                agentUpdate.reset();
+            }
             controller = "";
             ipAddress = "";
             agentConnected = false;
@@ -644,12 +709,14 @@ public class ComputerBlockEntity extends BlockEntity implements MenuProvider {
     private void setError(Component c) {
         lastErrorComponent = c;
         lastError = "";
+        powerError = false;
         bump();
     }
 
     private void clearError() {
         lastErrorComponent = null;
         lastError = "";
+        powerError = false;
     }
 
     private void failWith(Component c, @Nullable ServerPlayer actor) {
@@ -925,6 +992,19 @@ public class ComputerBlockEntity extends BlockEntity implements MenuProvider {
                     bump();
                     updateRedstoneInputs(true);
                     sendAgentTime();
+                    if (FcwConfig.SERVER.updateGuestAgent.get()) {
+                        agentUpdate().onHello(o, this::sendAgent);
+                    }
+                }
+                case "update_ack" -> agentUpdate().onAck(o, this::sendAgent);
+                case "update_result" -> agentUpdate().onResult(o);
+                case "machine_req" -> {
+                    if (level instanceof ServerLevel sl) {
+                        JsonObject resp = machineBridge.handle(sl, worldPosition, agentActor(), o);
+                        if (resp != null) {
+                            sendAgent(resp);
+                        }
+                    }
                 }
                 case "redstone_set" -> {
                     String side = o.has("side") ? o.get("side").getAsString() : "";
@@ -942,12 +1022,229 @@ public class ComputerBlockEntity extends BlockEntity implements MenuProvider {
     }
 
     private void sendAgentTime() {
+        JsonObject o = new JsonObject();
+        o.addProperty("type", "time");
+        o.addProperty("unix_ms", System.currentTimeMillis());
+        sendAgent(o);
+    }
+
+    /** Одна строка JSON агенту гостя (через демон). */
+    private void sendAgent(JsonObject o) {
         DaemonManager d = DaemonManager.get();
         if (d != null && DaemonManager.isReady()) {
-            JsonObject o = new JsonObject();
-            o.addProperty("type", "time");
-            o.addProperty("unix_ms", System.currentTimeMillis());
             d.send(Request.newBuilder().setAgentSend(AgentSend.newBuilder().setVmId(vmIdString()).setJson(o.toString())).build());
+        }
+    }
+
+    /** Кем компьютер подписывается в журнале машин: «fedora-1.mc». */
+    private String agentActor() {
+        DaemonManager d = DaemonManager.get();
+        String zone = d == null ? "" : d.dnsZone();
+        return zone.isEmpty() ? effectiveHostname() : effectiveHostname() + "." + zone;
+    }
+
+    private AgentUpdate agentUpdate() {
+        if (agentUpdate == null) {
+            agentUpdate = new AgentUpdate(AgentUpdate.bundled(), effectiveHostname());
+        }
+        return agentUpdate;
+    }
+
+    // ------------------------------------------------------------------ power (production.requirePower)
+
+    public static void registerCapabilities(RegisterCapabilitiesEvent event) {
+        event.registerBlockEntity(Capabilities.EnergyStorage.BLOCK, ModBlockEntities.COMPUTER.get(), (be, side) -> be.energy);
+    }
+
+    /** Ставится пакетом совместимости (AE2): делает источник сетевого питания для корпуса. */
+    public static void setNetworkPowerFactory(Function<ComputerBlockEntity, ComputerPowerSource> factory) {
+        networkPowerFactory = factory;
+    }
+
+    @Nullable
+    public ComputerPowerSource networkPower() {
+        return networkPower;
+    }
+
+    private void leavePowerNetwork() {
+        if (networkPower != null) {
+            networkPower.remove();
+            networkPower = null;
+        }
+        networkPowerAsked = false;
+    }
+
+    public static boolean powerRequired() {
+        return FcwConfig.SERVER.productionRequirePower.get();
+    }
+
+    public IEnergyStorage energy() {
+        return energy;
+    }
+
+    /**
+     * Расход работающего компьютера, FE/t (docs/design/ENERGY_BLOCKS.md): 12 на плату, 6 на каждое
+     * ядро, 2 на каждый начатый гигабайт памяти, 16 на видеокарту.
+     */
+    public int powerDraw() {
+        return powerDraw(Math.max(1, effectiveCpus()), effectiveMemoryMb(), inventory.hasGpu());
+    }
+
+    public static int powerDraw(int cpus, int memoryMb, boolean gpu) {
+        return 12 + 6 * cpus + 2 * ((memoryMb + 1023) / 1024) + (gpu ? 16 : 0);
+    }
+
+    /** В буфере есть хотя бы секунда работы: можно включать или снимать с паузы. */
+    private boolean hasPowerToStart() {
+        return energy.getEnergyStored() >= Math.min(ENERGY_CAPACITY, powerDraw() * 20);
+    }
+
+    /** Сколько FE корпус взял бы сейчас из энергосети (AE2). */
+    public int wantedEnergy() {
+        return powerRequired() ? Math.min(ENERGY_MAX_RECEIVE, ENERGY_CAPACITY - energy.getEnergyStored()) : 0;
+    }
+
+    /** Энергия, принесённая {@link ComputerPowerSource}. */
+    public void acceptEnergy(int fe) {
+        if (fe > 0) {
+            energy.set(energy.getEnergyStored() + fe);
+            setChanged();
+        }
+    }
+
+    /** Раз в тик сервера для каждого загруженного компьютера. */
+    public void serverTick() {
+        if (level == null || level.isClientSide || isRemoved()) {
+            return;
+        }
+        if (agentUpdate != null) {
+            agentUpdate.tick();
+        }
+        if (!powerRequired()) {
+            if (pausedByPower) {
+                resumeAfterPowerLoss();
+            }
+            if (powerLossTicks > 0) {
+                powerLossTicks = 0;
+                clearPowerError();
+            }
+            return;
+        }
+        if (!networkPowerAsked) {
+            networkPowerAsked = true;
+            if (networkPowerFactory != null) {
+                networkPower = networkPowerFactory.apply(this);
+            }
+        }
+        if (networkPower != null) {
+            networkPower.tick(this);
+        }
+        if (pausedByPower) {
+            if (vmState == VmState.VM_STATE_PAUSED_VALUE && hasPowerToStart()) {
+                resumeAfterPowerLoss();
+            }
+            return;
+        }
+        boolean consuming = vmState == VmState.VM_STATE_RUNNING_VALUE || vmState == VmState.VM_STATE_STARTING_VALUE;
+        if (!consuming) {
+            return;
+        }
+        int draw = powerDraw();
+        if (energy.getEnergyStored() >= draw) {
+            energy.set(energy.getEnergyStored() - draw);
+            setChanged();
+            if (powerLossTicks > 0) {
+                powerLossTicks = 0;
+                clearPowerError();
+            }
+            return;
+        }
+        if (powerLossTicks++ == 0) {
+            // что будет через пять секунд, зависит от computers.onPowerLoss
+            String what = "pause".equals(FcwConfig.SERVER.onPowerLoss.get()) ? "power_low_pause" : "power_low";
+            setPowerError(Component.translatable("gui.fcw.error." + what, POWER_GRACE_TICKS / 20));
+            tellNearby(Component.translatable("message.fcw." + what, getDisplayName(), POWER_GRACE_TICKS / 20));
+        }
+        if (powerLossTicks >= POWER_GRACE_TICKS) {
+            powerLossTicks = 0;
+            cutPower();
+        }
+    }
+
+    /** Энергии не было пять секунд: выключить жёстко или поставить на паузу (computers.onPowerLoss). */
+    private void cutPower() {
+        DaemonManager d = DaemonManager.get();
+        if ("pause".equals(FcwConfig.SERVER.onPowerLoss.get()) && vmState == VmState.VM_STATE_RUNNING_VALUE
+                && d != null && DaemonManager.isReady()) {
+            pausedByPower = true;
+            setChanged();
+            setPowerError(Component.translatable("gui.fcw.error.power_paused"));
+            tellNearby(Component.translatable("message.fcw.power_paused", getDisplayName()));
+            d.request(Request.newBuilder().setPauseVm(PauseVm.newBuilder().setVmId(vmIdString())).build(), r -> {
+                if (isRemoved()) {
+                    return;
+                }
+                if (r.getOk() && r.hasVm()) {
+                    applyVmInfo(r.getVm());
+                } else if (r.getOk()) {
+                    applyState(VmState.VM_STATE_PAUSED_VALUE, true);
+                } else {
+                    pausedByPower = false;
+                    FcwMod.LOGGER.warn("PauseVm {} failed: {}", vmIdString(), r.getError());
+                    powerOff(true);
+                    setPowerError(Component.translatable("gui.fcw.error.power_lost"));
+                }
+            });
+            return;
+        }
+        powerOff(true);
+        setPowerError(Component.translatable("gui.fcw.error.power_lost"));
+        tellNearby(Component.translatable("message.fcw.power_lost", getDisplayName()));
+    }
+
+    private void resumeAfterPowerLoss() {
+        pausedByPower = false;
+        setChanged();
+        clearPowerError();
+        DaemonManager d = DaemonManager.get();
+        if (d == null || !DaemonManager.isReady() || vmState != VmState.VM_STATE_PAUSED_VALUE) {
+            return;
+        }
+        d.request(Request.newBuilder().setResumeVm(ResumeVm.newBuilder().setVmId(vmIdString())).build(), r -> {
+            if (isRemoved()) {
+                return;
+            }
+            if (r.getOk() && r.hasVm()) {
+                applyVmInfo(r.getVm());
+            } else if (r.getOk()) {
+                applyState(VmState.VM_STATE_RUNNING_VALUE, true);
+            } else {
+                FcwMod.LOGGER.warn("ResumeVm {} failed: {}", vmIdString(), r.getError());
+            }
+        });
+    }
+
+    private void setPowerError(Component c) {
+        setError(c);
+        powerError = true;
+    }
+
+    private void clearPowerError() {
+        if (powerError) {
+            clearError();
+            bump();
+        }
+    }
+
+    /** Строка над хотбаром игрокам рядом с корпусом. */
+    private void tellNearby(Component message) {
+        if (level == null) {
+            return;
+        }
+        for (Player p : level.players()) {
+            if (p.distanceToSqr(worldPosition.getX() + 0.5, worldPosition.getY() + 0.5, worldPosition.getZ() + 0.5) <= 16.0 * 16.0) {
+                p.displayClientMessage(message, true);
+            }
         }
     }
 
@@ -986,6 +1283,12 @@ public class ComputerBlockEntity extends BlockEntity implements MenuProvider {
         tag.putString("InstalledImage", installedImage);
         tag.putBoolean("WantRunning", wantRunning);
         tag.putIntArray("RedstoneOut", redstoneOut);
+        if (energy.getEnergyStored() > 0) {
+            tag.putInt("Energy", energy.getEnergyStored());
+        }
+        if (pausedByPower) {
+            tag.putBoolean("PausedByPower", true);
+        }
         if (lastErrorComponent != null) {
             tag.putString("LastErrorJson", Component.Serializer.toJson(lastErrorComponent, registries));
         } else if (!lastError.isEmpty()) {
@@ -1015,6 +1318,8 @@ public class ComputerBlockEntity extends BlockEntity implements MenuProvider {
         imageId = tag.getString("Image");
         installedImage = tag.getString("InstalledImage");
         wantRunning = tag.getBoolean("WantRunning");
+        energy.set(tag.getInt("Energy"));
+        pausedByPower = tag.getBoolean("PausedByPower");
         int[] out = tag.getIntArray("RedstoneOut");
         Arrays.fill(redstoneOut, 0);
         System.arraycopy(out, 0, redstoneOut, 0, Math.min(out.length, 6));
@@ -1039,6 +1344,9 @@ public class ComputerBlockEntity extends BlockEntity implements MenuProvider {
         l.add(effectiveMemoryMb() + " MB");
         if (inventory.hasGpu()) {
             l.add("GPU");
+        }
+        if (powerRequired()) {
+            l.add(powerDraw() + " FE/t");
         }
         return l;
     }

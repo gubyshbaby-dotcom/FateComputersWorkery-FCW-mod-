@@ -1,0 +1,12 @@
+{
+	"variants": {
+		"facing=north,powered=false": {"model": "fcw:block/router"},
+		"facing=north,powered=true": {"model": "fcw:block/router_on"},
+		"facing=east,powered=false": {"model": "fcw:block/router", "y": 90},
+		"facing=east,powered=true": {"model": "fcw:block/router_on", "y": 90},
+		"facing=south,powered=false": {"model": "fcw:block/router", "y": 180},
+		"facing=south,powered=true": {"model": "fcw:block/router_on", "y": 180},
+		"facing=west,powered=false": {"model": "fcw:block/router", "y": 270},
+		"facing=west,powered=true": {"model": "fcw:block/router_on", "y": 270}
+	}
+}
