@@ -126,7 +126,7 @@ impl Firewall {
     pub fn check(&self, dst: Ipv4Addr, dport: u16) -> Verdict {
         let addrs = if self.cfg.block_host_addresses {
             let mut h = self.host.lock();
-            if h.0.map_or(true, |t| t.elapsed() > HOST_ADDRS_TTL) {
+            if h.0.is_none_or(|t| t.elapsed() > HOST_ADDRS_TTL) {
                 h.1 = host_ipv4_addrs();
                 h.0 = Some(Instant::now());
             }

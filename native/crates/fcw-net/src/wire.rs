@@ -118,11 +118,11 @@ pub fn build_arp(a: &Arp) -> Vec<u8> {
 
 /// Сумма 16-битных слов (без свёртки и инверсии).
 pub fn csum_partial(mut sum: u32, data: &[u8]) -> u32 {
-    let mut chunks = data.chunks_exact(2);
-    for c in &mut chunks {
-        sum = sum.wrapping_add(u32::from(be16(c)));
+    let (chunks, rest) = data.as_chunks::<2>();
+    for c in chunks {
+        sum = sum.wrapping_add(u32::from(u16::from_be_bytes(*c)));
     }
-    if let [last] = chunks.remainder() {
+    if let [last] = rest {
         sum = sum.wrapping_add(u32::from(*last) << 8);
     }
     sum
