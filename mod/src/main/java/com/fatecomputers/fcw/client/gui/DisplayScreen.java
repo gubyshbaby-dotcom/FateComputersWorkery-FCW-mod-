@@ -6,9 +6,9 @@ import com.fatecomputers.fcw.client.nativelib.NativeLoader;
 import com.fatecomputers.fcw.client.view.ScreenViewManager;
 import com.fatecomputers.fcw.client.view.ViewTexture;
 import com.fatecomputers.fcw.network.ScreenAccessPayload;
-import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import org.lwjgl.glfw.GLFW;
 
@@ -23,7 +23,9 @@ public class DisplayScreen extends Screen {
     private static final int BAR = 12;
 
     private final String vmId;
+    private final BlockPos devicePos;
     private int permissions;
+    private long lastRetake;
     private int buttons;
     private int lastGuestX = -1;
     private int lastGuestY = -1;
@@ -35,18 +37,56 @@ public class DisplayScreen extends Screen {
     private float imgW;
     private float imgH;
 
-    public DisplayScreen(String vmId, int permissions) {
+    public DisplayScreen(String vmId, int permissions, BlockPos devicePos) {
         super(Component.translatable("screen.fcw.display"));
         this.vmId = vmId;
         this.permissions = permissions;
+        this.devicePos = devicePos.immutable();
+    }
+
+    public String vmId() {
+        return vmId;
+    }
+
+    /** A new control token was accepted while the display is open. */
+    public void grant(int perms) {
+        permissions |= perms;
+    }
+
+    /** False while another player holds the input of this machine (InputControl). */
+    private boolean inControl() {
+        ScreenViewManager.Link l = link();
+        return l == null || l.inputActive();
+    }
+
+    @Nullable
+    private String otherController() {
+        ScreenViewManager.Link l = link();
+        if (l == null || l.inputActive()) {
+            return null;
+        }
+        return l.controllerName().isEmpty() ? "?" : l.controllerName();
     }
 
     private boolean keyboard() {
-        return (permissions & ScreenAccessPayload.PERM_KEYBOARD) != 0;
+        return (permissions & ScreenAccessPayload.PERM_KEYBOARD) != 0 && inControl();
     }
 
     private boolean mouse() {
-        return (permissions & ScreenAccessPayload.PERM_MOUSE) != 0;
+        return (permissions & ScreenAccessPayload.PERM_MOUSE) != 0 && inControl();
+    }
+
+    private boolean mayControl() {
+        return (permissions & (ScreenAccessPayload.PERM_KEYBOARD | ScreenAccessPayload.PERM_MOUSE)) != 0;
+    }
+
+    /** Ask the server for a fresh control token: the daemon gives the input to the last token holder. */
+    private void retakeControl() {
+        long now = System.currentTimeMillis();
+        if (now - lastRetake > 1000) {
+            lastRetake = now;
+            ScreenViewManager.get().requestControl(devicePos);
+        }
     }
 
     @Nullable
@@ -124,9 +164,21 @@ public class DisplayScreen extends Screen {
         Component keyName = FcwKeys.RELEASE_INPUT.getTranslatedKeyMessage();
         Component hint = Component.translatable("screen.fcw.release_hint", keyName);
         g.drawString(font, hint, 4, 2, 0xFFFFFF55, false);
-        Component caps = Component.translatable(keyboard() ? "screen.fcw.cap.keyboard_on" : "screen.fcw.cap.keyboard_off")
+        String other = otherController();
+        Component caps = other != null
+                ? Component.translatable("screen.fcw.cap.controlled_by", other)
+                : Component.translatable(keyboard() ? "screen.fcw.cap.keyboard_on" : "screen.fcw.cap.keyboard_off")
                 .append("  ").append(Component.translatable(mouse() ? "screen.fcw.cap.mouse_on" : "screen.fcw.cap.mouse_off"));
-        g.drawString(font, caps, width - font.width(caps) - 4, 2, 0xFFBBBBBB, false);
+        g.drawString(font, caps, width - font.width(caps) - 4, 2, other != null ? 0xFFFF8855 : 0xFFBBBBBB, false);
+        if (other != null && status == null) {
+            Component msg = Component.translatable("screen.fcw.controlled_by", other);
+            Component hint = Component.translatable(mayControl() ? "screen.fcw.click_to_retake" : "screen.fcw.view_only");
+            int bw = Math.max(font.width(msg), font.width(hint)) + 16;
+            int by = height - 40;
+            g.fill((width - bw) / 2, by - 4, (width + bw) / 2, by + 22, 0xC0000000);
+            g.drawCenteredString(font, msg, width / 2, by, 0xFFFF8855);
+            g.drawCenteredString(font, hint, width / 2, by + 11, 0xFFDDDDDD);
+        }
 
         if (status != null) {
             int w = font.width(status);
@@ -248,6 +300,10 @@ public class DisplayScreen extends Screen {
 
     @Override
     public boolean mouseClicked(double x, double y, int button) {
+        if (otherController() != null && mayControl()) {
+            retakeControl();
+            return true;
+        }
         long s = session();
         if (mouse() && s != 0 && insideImage(x, y)) {
             buttons |= buttonBit(button);
@@ -286,7 +342,5 @@ public class DisplayScreen extends Screen {
         return true;
     }
 
-    public static void open(String vmId, int permissions) {
-        Minecraft.getInstance().setScreen(new DisplayScreen(vmId, permissions));
-    }
+
 }

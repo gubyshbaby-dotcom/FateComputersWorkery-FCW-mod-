@@ -39,13 +39,19 @@ public record ComputerStatusPayload(
         boolean speakers,
         List<ImageEntry> images,
         Component imagesError,
-        String vmId
+        String vmId,
+        String hostname,           // name in the guest network (without the DNS zone)
+        String ipAddress,          // empty until the guest got an address by DHCP
+        String dnsZone,            // "mc"; empty if the daemon has no network
+        boolean network,           // this machine gets a network card
+        String imageVersion,       // build of the image the machine's disk is based on
+        boolean imageUpdateAvailable
 ) implements CustomPacketPayload {
     public static final Type<ComputerStatusPayload> TYPE =
             new Type<>(ResourceLocation.fromNamespaceAndPath(FcwMod.MODID, "computer_status"));
 
     public record ImageEntry(String id, String name, String version, String desktop, int minMemoryMb,
-                             int recommendedMemoryMb, boolean installed) {
+                             int recommendedMemoryMb, boolean installed, String imageVersion) {
         void write(RegistryFriendlyByteBuf buf) {
             buf.writeUtf(id);
             buf.writeUtf(name);
@@ -54,10 +60,12 @@ public record ComputerStatusPayload(
             buf.writeVarInt(minMemoryMb);
             buf.writeVarInt(recommendedMemoryMb);
             buf.writeBoolean(installed);
+            buf.writeUtf(imageVersion);
         }
 
         static ImageEntry read(RegistryFriendlyByteBuf buf) {
-            return new ImageEntry(buf.readUtf(), buf.readUtf(), buf.readUtf(), buf.readUtf(), buf.readVarInt(), buf.readVarInt(), buf.readBoolean());
+            return new ImageEntry(buf.readUtf(), buf.readUtf(), buf.readUtf(), buf.readUtf(), buf.readVarInt(), buf.readVarInt(),
+                    buf.readBoolean(), buf.readUtf());
         }
     }
 
@@ -91,6 +99,12 @@ public record ComputerStatusPayload(
         }
         ComponentSerialization.STREAM_CODEC.encode(buf, imagesError);
         buf.writeUtf(vmId);
+        buf.writeUtf(hostname);
+        buf.writeUtf(ipAddress);
+        buf.writeUtf(dnsZone);
+        buf.writeBoolean(network);
+        buf.writeUtf(imageVersion);
+        buf.writeBoolean(imageUpdateAvailable);
     }
 
     private static ComputerStatusPayload read(RegistryFriendlyByteBuf buf) {
@@ -121,9 +135,15 @@ public record ComputerStatusPayload(
         }
         Component imagesError = ComponentSerialization.STREAM_CODEC.decode(buf);
         String vmId = buf.readUtf();
+        String hostname = buf.readUtf();
+        String ip = buf.readUtf();
+        String zone = buf.readUtf();
+        boolean network = buf.readBoolean();
+        String imageVersion = buf.readUtf();
+        boolean update = buf.readBoolean();
         return new ComputerStatusPayload(pos, daemonStatus, daemonMessage, accelerator, vmState, busy, wantRunning, error,
                 controller, agentInfo, uptime, imageId, installed, cpus, mem, gpu, keyboard, mouse, monitors, speakers,
-                images, imagesError, vmId);
+                images, imagesError, vmId, hostname, ip, zone, network, imageVersion, update);
     }
 
     @Override

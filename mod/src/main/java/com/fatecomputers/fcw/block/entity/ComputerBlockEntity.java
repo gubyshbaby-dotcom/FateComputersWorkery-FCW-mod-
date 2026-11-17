@@ -28,6 +28,8 @@ import com.google.gson.JsonParser;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.HolderLookup;
+import net.minecraft.core.component.DataComponentMap;
+import net.minecraft.core.component.DataComponents;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.NbtUtils;
@@ -83,6 +85,12 @@ public class ComputerBlockEntity extends BlockEntity implements MenuProvider {
     private long uptimeMs;
     private long uptimeAt;
     private boolean agentConnected;
+    @Nullable
+    private Component customName;
+    private String netHostname = "";
+    private String ipAddress = "";
+    private String imageVersion = "";
+    private boolean imageUpdateAvailable;
     private final int[] redstoneIn = new int[6];
     private final int[] redstoneOut = new int[6];
     private final Map<BlockPos, PeripheralKind> peripherals = new HashMap<>();
@@ -329,6 +337,11 @@ public class ComputerBlockEntity extends BlockEntity implements MenuProvider {
         return null;
     }
 
+    private static boolean networkSwitchUp() {
+        DaemonManager d = DaemonManager.get();
+        return d != null && d.networkEnabled();
+    }
+
     private CreateVm buildCreate(boolean reinstall) {
         boolean gpu = inventory.hasGpu();
         return CreateVm.newBuilder()
@@ -341,10 +354,11 @@ public class ComputerBlockEntity extends BlockEntity implements MenuProvider {
                 .setLang(FcwConfig.SERVER.guestLang.get())
                 .setKbdLayout(FcwConfig.SERVER.guestKeyboardLayouts.get())
                 .setSound(hasPeripheral(PeripheralKind.SPEAKER))
-                .setNetwork(FcwConfig.SERVER.guestNetwork.get())
+                .setNetwork(FcwConfig.SERVER.guestNetwork.get() && networkSwitchUp())
                 .setReinstall(reinstall)
                 .setDisplayWidth(gpu ? FcwConfig.SERVER.displayWidth.get() : 0)
                 .setDisplayHeight(gpu ? FcwConfig.SERVER.displayHeight.get() : 0)
+                .setHostname(hostname())
                 .build();
     }
 
@@ -521,6 +535,10 @@ public class ComputerBlockEntity extends BlockEntity implements MenuProvider {
 
     public void applyVmInfo(VmInfo info) {
         controller = info.getControllerPlayer();
+        netHostname = info.getHostname();
+        ipAddress = info.getIpAddress();
+        imageVersion = info.getImageVersion();
+        imageUpdateAvailable = info.getImageUpdateAvailable();
         uptimeMs = info.getUptimeMs();
         uptimeAt = System.currentTimeMillis();
         agentConnected = info.getAgentConnected();
@@ -549,6 +567,7 @@ public class ComputerBlockEntity extends BlockEntity implements MenuProvider {
         vmState = state;
         if (!isOnState(state)) {
             controller = "";
+            ipAddress = "";
             agentConnected = false;
             uptimeMs = 0;
             if (Arrays.stream(redstoneOut).anyMatch(v -> v != 0)) {
@@ -611,6 +630,94 @@ public class ComputerBlockEntity extends BlockEntity implements MenuProvider {
 
     public String controller() {
         return controller;
+    }
+
+    // ------------------------------------------------------------------ name and network
+
+    @Nullable
+    public Component customName() {
+        return customName;
+    }
+
+    /**
+     * Network name requested from the daemon: the anvil name of the computer reduced to
+     * [a-z0-9-] (Cyrillic is transliterated), at most 63 characters. Empty = daemon default "pc-xxxxxxxx".
+     */
+    public String hostname() {
+        return customName == null ? "" : sanitizeHostname(customName.getString());
+    }
+
+    /** Name in the guest network: what the daemon reported, otherwise what it will use. */
+    public String effectiveHostname() {
+        if (!netHostname.isEmpty()) {
+            return netHostname;
+        }
+        String h = hostname();
+        return h.isEmpty() ? "pc-" + vmIdString().substring(0, 8) : h;
+    }
+
+    public String ipAddress() {
+        return ipAddress;
+    }
+
+    public String imageVersion() {
+        return imageVersion;
+    }
+
+    public boolean imageUpdateAvailable() {
+        return imageUpdateAvailable;
+    }
+
+    private static final String[] CYRILLIC = {
+            "а", "a", "б", "b", "в", "v", "г", "g", "д", "d", "е", "e", "ё", "e", "ж", "zh", "з", "z", "и", "i",
+            "й", "y", "к", "k", "л", "l", "м", "m", "н", "n", "о", "o", "п", "p", "р", "r", "с", "s", "т", "t",
+            "у", "u", "ф", "f", "х", "h", "ц", "ts", "ч", "ch", "ш", "sh", "щ", "sch", "ъ", "", "ы", "y", "ь", "",
+            "э", "e", "ю", "yu", "я", "ya", "і", "i", "ї", "yi", "є", "ye", "ґ", "g"};
+
+    public static String sanitizeHostname(String name) {
+        String lower = name.toLowerCase(java.util.Locale.ROOT);
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < lower.length(); i++) {
+            char c = lower.charAt(i);
+            if ((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')) {
+                sb.append(c);
+                continue;
+            }
+            String repl = "-";
+            for (int k = 0; k < CYRILLIC.length; k += 2) {
+                if (CYRILLIC[k].charAt(0) == c) {
+                    repl = CYRILLIC[k + 1];
+                    break;
+                }
+            }
+            sb.append(repl);
+        }
+        String h = sb.toString().replaceAll("-{2,}", "-").replaceAll("^-+|-+$", "");
+        if (h.length() > 63) {
+            h = h.substring(0, 63).replaceAll("-+$", "");
+        }
+        return h;
+    }
+
+    @Override
+    protected void applyImplicitComponents(DataComponentInput input) {
+        super.applyImplicitComponents(input);
+        customName = input.get(DataComponents.CUSTOM_NAME);
+    }
+
+    @Override
+    protected void collectImplicitComponents(DataComponentMap.Builder components) {
+        super.collectImplicitComponents(components);
+        if (customName != null) {
+            components.set(DataComponents.CUSTOM_NAME, customName);
+        }
+    }
+
+    @SuppressWarnings("deprecation")
+    @Override
+    public void removeComponentsFromTag(CompoundTag tag) {
+        super.removeComponentsFromTag(tag);
+        tag.remove("CustomName");
     }
 
     public String agentInfo() {
@@ -809,7 +916,7 @@ public class ComputerBlockEntity extends BlockEntity implements MenuProvider {
 
     @Override
     public Component getDisplayName() {
-        return getBlockState().getBlock().getName();
+        return customName != null ? customName : getBlockState().getBlock().getName();
     }
 
     @Nullable
@@ -829,6 +936,9 @@ public class ComputerBlockEntity extends BlockEntity implements MenuProvider {
     protected void saveAdditional(CompoundTag tag, HolderLookup.Provider registries) {
         super.saveAdditional(tag, registries);
         tag.putUUID("VmId", vmId());
+        if (customName != null) {
+            tag.putString("CustomName", Component.Serializer.toJson(customName, registries));
+        }
         if (owner != null) {
             tag.putUUID("Owner", owner);
         }
@@ -859,6 +969,7 @@ public class ComputerBlockEntity extends BlockEntity implements MenuProvider {
             vmId = tag.getUUID("VmId");
         }
         owner = tag.hasUUID("Owner") ? tag.getUUID("Owner") : null;
+        customName = tag.contains("CustomName", Tag.TAG_STRING) ? parseCustomNameSafe(tag.getString("CustomName"), registries) : null;
         if (tag.contains("Inventory")) {
             inventory.deserializeNBT(registries, tag.getCompound("Inventory"));
         }

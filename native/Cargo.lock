@@ -446,7 +446,6 @@ dependencies = [
  "futures-util",
  "hex",
  "iana-time-zone",
- "ipnet",
  "libc",
  "opus",
  "parking_lot",

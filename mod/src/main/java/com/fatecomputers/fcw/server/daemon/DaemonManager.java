@@ -196,11 +196,59 @@ public final class DaemonManager {
             cmd.addAll(List.of("--qemu", qemu));
         }
         cmd.addAll(List.of("--max-vms", Integer.toString(maxVms), "--accel", accel));
+        // Guest network (docs/CONTRACT.md §3 "Сеть гостей"); only passed if this daemon knows the flags.
+        List<String[]> netArgs = new ArrayList<>();
+        netArgs.add(new String[]{"--network", FcwConfig.SERVER.guestNetwork.get() ? "on" : "off"});
+        netArgs.add(new String[]{"--internet", FcwConfig.SERVER.internet.get() ? "on" : "off"});
+        int rate = FcwConfig.SERVER.rateLimitKiBps.get();
+        if (rate > 0) {
+            netArgs.add(new String[]{"--net-rate-limit", Long.toString(rate * 1024L)});
+        }
+        for (String cidr : FcwConfig.SERVER.netAllow.get()) {
+            netArgs.add(new String[]{"--net-allow", cidr.trim()});
+        }
+        for (String cidr : FcwConfig.SERVER.netDeny.get()) {
+            netArgs.add(new String[]{"--net-deny", cidr.trim()});
+        }
         status = Status.STARTING;
         reason = Component.translatable("daemon.fcw.starting");
-        Thread t = new Thread(() -> startupThread(cmd, socket, startupTimeout), "fcw-daemon-start");
+        final Path bin = binary;
+        Thread t = new Thread(() -> {
+            addSupportedFlags(bin, cmd, netArgs);
+            startupThread(cmd, socket, startupTimeout);
+        }, "fcw-daemon-start");
         t.setDaemon(true);
         t.start();
+    }
+
+    /**
+     * Appends optional flags that this daemon build understands (it rejects unknown flags), judged
+     * by its --help output. Lets the mod run with an older daemon.
+     */
+    private static void addSupportedFlags(Path binary, List<String> cmd, List<String[]> optional) {
+        String help = "";
+        try {
+            Process p = new ProcessBuilder(binary.toString(), "--help").redirectErrorStream(true).start();
+            p.getOutputStream().close();
+            byte[] out = p.getInputStream().readAllBytes();
+            p.waitFor(5, TimeUnit.SECONDS);
+            help = new String(out, StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            FcwMod.LOGGER.warn("Could not ask the VM daemon for its options: {}", e.toString());
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+        List<String> skipped = new ArrayList<>();
+        for (String[] arg : optional) {
+            if (help.contains(arg[0])) {
+                cmd.addAll(List.of(arg));
+            } else if (!skipped.contains(arg[0])) {
+                skipped.add(arg[0]);
+            }
+        }
+        if (!skipped.isEmpty()) {
+            FcwMod.LOGGER.warn("This VM daemon does not support {}; the guest network settings are not applied", String.join(", ", skipped));
+        }
     }
 
     private void startupThread(List<String> cmd, Path socket, int timeoutSeconds) {
@@ -311,8 +359,10 @@ public final class DaemonManager {
         if (h.getProtocolVersion() != PROTOCOL_VERSION) {
             FcwMod.LOGGER.warn("VM daemon speaks protocol {}, the mod expects {}", h.getProtocolVersion(), PROTOCOL_VERSION);
         }
-        FcwMod.LOGGER.info("Connected to VM daemon {} (protocol {}, accelerator {}, QUIC port {}, {} host CPUs, {} MB)",
-                h.getDaemonVersion(), h.getProtocolVersion(), accelerator, h.getQuicPort(), h.getHostCpus(), h.getHostMemoryMb());
+        FcwMod.LOGGER.info("Connected to VM daemon {} (protocol {}, accelerator {}, QUIC port {}, {} host CPUs, {} MB, network {}{})",
+                h.getDaemonVersion(), h.getProtocolVersion(), accelerator, h.getQuicPort(), h.getHostCpus(), h.getHostMemoryMb(),
+                h.getNetworkEnabled() ? h.getNetworkSubnet() : "off",
+                h.getNetworkEnabled() ? (h.getInternetAllowed() ? ", internet" : ", no internet") : "");
         mainThreadQueue.add(() -> {
             if (status != Status.STARTING) {
                 return;
@@ -673,6 +723,17 @@ public final class DaemonManager {
             }
         }
         return null;
+    }
+
+    /** DNS zone of the guest network ("mc"), empty if the daemon has no network. */
+    public String dnsZone() {
+        HelloResult h = hello;
+        return h == null || !h.getNetworkEnabled() ? "" : h.getDnsZone();
+    }
+
+    public boolean networkEnabled() {
+        HelloResult h = hello;
+        return h != null && h.getNetworkEnabled();
     }
 
     public int hostCpus() {

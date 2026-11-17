@@ -78,6 +78,10 @@ public final class FcwCommands {
             String cert = h.getCertSha256();
             src.sendSuccess(() -> Component.translatable("command.fcw.status.host", h.getHostCpus(), human(h.getHostMemoryMb()),
                     h.getMaxVms(), cert.length() > 16 ? cert.substring(0, 16) + "…" : cert).withStyle(ChatFormatting.GRAY), false);
+            src.sendSuccess(() -> h.getNetworkEnabled()
+                    ? Component.translatable("command.fcw.status.network", h.getNetworkSubnet(), h.getDnsZone(),
+                    Component.translatable(h.getInternetAllowed() ? "command.fcw.status.internet_on" : "command.fcw.status.internet_off"))
+                    : Component.translatable("command.fcw.status.network_off"), false);
         }
         String publicHost = FcwConfig.SERVER.publicHost.get();
         src.sendSuccess(() -> Component.translatable("command.fcw.status.public_host",
@@ -221,11 +225,18 @@ public final class FcwCommands {
                 MutableComponent line = Component.literal(" " + v.getVmId().substring(0, Math.min(8, v.getVmId().length())))
                         .withStyle(ChatFormatting.AQUA)
                         .append(Component.literal(" " + stateName(v)).withStyle(ChatFormatting.WHITE))
-                        .append(Component.literal(" " + v.getImageId() + ", " + v.getCpus() + " vCPU, " + human(v.getMemoryMb())
+                        .append(Component.literal(" " + v.getImageId()
+                                + (v.getImageVersion().isEmpty() ? "" : " [" + v.getImageVersion() + "]")
+                                + ", " + v.getCpus() + " vCPU, " + human(v.getMemoryMb())
                                 + (v.getGpu() ? ", GPU" : "") + ", " + (v.getUptimeMs() / 1000) + " s"
+                                + (v.getHostname().isEmpty() ? "" : ", " + v.getHostname() + (d.dnsZone().isEmpty() ? "" : "." + d.dnsZone()))
+                                + (v.getIpAddress().isEmpty() ? "" : " " + v.getIpAddress())
                                 + (v.getControllerPlayer().isEmpty() ? "" : ", @" + v.getControllerPlayer())
                                 + (v.getLastError().isEmpty() ? "" : ", " + v.getLastError())
                                 + ", " + where).withStyle(ChatFormatting.GRAY));
+                if (v.getImageUpdateAvailable()) {
+                    line.append(Component.literal(" ")).append(Component.translatable("command.fcw.vms.update").withStyle(ChatFormatting.GOLD));
+                }
                 src.sendSuccess(() -> line, false);
             }
         });

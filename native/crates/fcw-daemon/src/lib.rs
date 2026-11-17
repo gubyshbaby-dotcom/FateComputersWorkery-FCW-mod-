@@ -14,6 +14,7 @@ pub mod images;
 pub mod keymap;
 pub mod localsock;
 pub mod logfwd;
+pub mod net;
 pub mod qmp;
 pub mod quic;
 pub mod rfb;

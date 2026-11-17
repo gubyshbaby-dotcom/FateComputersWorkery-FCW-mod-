@@ -83,7 +83,7 @@ public final class ServerPacketHandler {
         if (d != null) {
             for (ImageInfo i : d.images()) {
                 images.add(new ComputerStatusPayload.ImageEntry(i.getId(), i.getName(), i.getVersion(), i.getDesktop(),
-                        i.getMinMemoryMb(), i.getRecommendedMemoryMb(), i.getInstalled()));
+                        i.getMinMemoryMb(), i.getRecommendedMemoryMb(), i.getInstalled(), i.getImageVersion()));
             }
             imagesError = d.imagesError();
         }
@@ -92,7 +92,10 @@ public final class ServerPacketHandler {
                 c.vmState(), c.isBusy(), c.wantRunning(), c.lastError(), c.controller(), c.agentInfo(), c.uptimeMs(),
                 c.imageId(), c.installedImage(), c.effectiveCpus(), c.effectiveMemoryMb(), c.inventory().hasGpu(),
                 c.hasPeripheral(PeripheralKind.KEYBOARD), c.hasPeripheral(PeripheralKind.MOUSE), monitors,
-                c.hasPeripheral(PeripheralKind.SPEAKER), images, imagesError, c.vmIdString());
+                c.hasPeripheral(PeripheralKind.SPEAKER), images, imagesError, c.vmIdString(),
+                c.effectiveHostname(), c.ipAddress(), d == null ? "" : d.dnsZone(),
+                FcwConfig.SERVER.guestNetwork.get() && (d == null || !DaemonManager.isReady() || d.networkEnabled()),
+                c.imageVersion(), c.imageUpdateAvailable());
     }
 
     // ------------------------------------------------------------------ screen access tokens

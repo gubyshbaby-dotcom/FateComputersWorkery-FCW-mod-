@@ -82,6 +82,9 @@ public final class ScreenViewManager {
         long lastWanted;
         long lastVisible;
         boolean wantedByDisplay;
+        /** This client holds the machine's input (InputControl from the daemon); optimistic after a control token. */
+        boolean inputActive = true;
+        String controllerName = "";
         @Nullable
         BlockPos requestPos;
         Component error = Component.empty();
@@ -108,6 +111,14 @@ public final class ScreenViewManager {
 
         public String vmId() {
             return vmId;
+        }
+
+        public boolean inputActive() {
+            return inputActive;
+        }
+
+        public String controllerName() {
+            return controllerName;
         }
 
         public long sessionHandle() {
@@ -352,7 +363,7 @@ public final class ScreenViewManager {
         }
         if (control && !NativeLoader.isLoaded()) {
             // Still open the display: it explains why there is no picture.
-            mc.setScreen(new DisplayScreen(p.vmId(), p.permissions()));
+            openDisplay(mc, p);
             return;
         }
         if (!NativeLoader.isLoaded()) {
@@ -372,6 +383,9 @@ public final class ScreenViewManager {
         if (control) {
             l.permissions |= p.permissions();
             l.wantedByDisplay = true;
+            // Presenting a control token makes us the controller (the daemon confirms with InputControl).
+            l.inputActive = true;
+            l.controllerName = "";
         } else {
             l.permissions |= p.permissions() & ScreenAccessPayload.PERM_VIEW;
         }
@@ -391,7 +405,15 @@ public final class ScreenViewManager {
             l.setState(LinkState.ATTACHING);
         }
         if (control) {
-            mc.setScreen(new DisplayScreen(p.vmId(), p.permissions()));
+            openDisplay(mc, p);
+        }
+    }
+
+    private static void openDisplay(Minecraft mc, ScreenAccessPayload p) {
+        if (mc.screen instanceof DisplayScreen ds && ds.vmId().equals(p.vmId())) {
+            ds.grant(p.permissions()); // took the control back from inside the display
+        } else {
+            mc.setScreen(new DisplayScreen(p.vmId(), p.permissions(), p.pos()));
         }
     }
 
@@ -490,13 +512,22 @@ public final class ScreenViewManager {
             case "attach", "attach_result" -> {
                 boolean ok = !o.has("ok") || o.get("ok").getAsBoolean();
                 String error = str(o, "error", "message");
+                List<ScreenAccessPayload.Screen> attached = screensOf(o);
                 for (Link l : linksOf(s, vm)) {
+                    if (ok && !attached.isEmpty()) {
+                        l.screens = attached;
+                    }
                     if (ok) {
                         if (o.has("permissions") && o.get("permissions").isJsonPrimitive()) {
                             l.permissions |= o.get("permissions").getAsInt();
                         }
                         if (l.state != LinkState.ATTACHED || l.view == 0) {
                             l.setState(LinkState.ATTACHED);
+                            tryOpenView(l);
+                        } else if (!chooseScreen(l.screens).equals(l.screenId)) {
+                            // the real screen list differs from the guess (e.g. a graphics card after all)
+                            FcwNative.closeView(l.view);
+                            l.view = 0;
                             tryOpenView(l);
                         }
                     } else if (l.view == 0) {
@@ -514,6 +545,14 @@ public final class ScreenViewManager {
                     }
                 }
             }
+            case "input_control" -> {
+                Link l = links.get(vm);
+                if (l != null && l.session == s) {
+                    l.inputActive = !o.has("active") || o.get("active").getAsBoolean();
+                    l.controllerName = str(o, "controller_player", "controller");
+                    FcwMod.LOGGER.debug("Input of {}: {} (controller {})", vm, l.inputActive ? "ours" : "lost", l.controllerName);
+                }
+            }
             case "screen_changed" -> {
                 Link l = links.get(vm);
                 if (l == null || l.session != s) {
@@ -528,6 +567,27 @@ public final class ScreenViewManager {
                 // vm_state and anything newer: the block states already tell us whether the machine runs.
             }
         }
+    }
+
+    private static List<ScreenAccessPayload.Screen> screensOf(JsonObject o) {
+        List<ScreenAccessPayload.Screen> out = new ArrayList<>();
+        if (o.has("screens") && o.get("screens").isJsonArray()) {
+            for (JsonElement e : o.getAsJsonArray("screens")) {
+                if (!e.isJsonObject()) {
+                    continue;
+                }
+                JsonObject so = e.getAsJsonObject();
+                String id = str(so, "id", "screen_id", "screenId");
+                if (id.isEmpty()) {
+                    continue;
+                }
+                int kind = so.has("kind") && so.get("kind").isJsonPrimitive() ? parseKind(so.get("kind").getAsString()) : 0;
+                int w = so.has("width") ? so.get("width").getAsInt() : 0;
+                int h = so.has("height") ? so.get("height").getAsInt() : 0;
+                out.add(new ScreenAccessPayload.Screen(id, kind, w, h));
+            }
+        }
+        return out;
     }
 
     private List<Link> linksOf(Session s, String vm) {

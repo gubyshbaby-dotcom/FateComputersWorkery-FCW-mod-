@@ -6,6 +6,7 @@ use crate::audio::{AudioEncoder, OpusPacket};
 use crate::gfx::{Cursor, GfxScreen};
 use crate::images::{self, Image};
 use crate::localsock::{self, MAX_SOCK_PATH};
+use crate::net::{self, NetAttach, NetEnv, NetPort};
 use crate::qmp::{Qmp, QmpEvent};
 use crate::rfb::{self, RfbCmd, RfbEvent};
 use crate::text::{self, Mods, TextScreen};
@@ -37,6 +38,10 @@ pub struct Env {
     pub accel: Accel,
     /// Часовой пояс хоста (IANA), уходит гостю как `fcw.tz=`.
     pub tz: Option<String>,
+    /// Версия QEMU (major, minor, micro), если её удалось узнать.
+    pub qemu_version: Option<(u32, u32, u32)>,
+    /// Свитч сети гостей; `None` — сеть выключена (`--network off`).
+    pub net: Option<Arc<NetEnv>>,
 }
 
 /// Часовой пояс хоста в формате IANA ("Europe/Moscow") или `None`.
@@ -67,6 +72,8 @@ pub struct VmConfig {
     /// Версия образа, за которой закреплён диск (ключ из images::version_key).
     /// Пусто — диск ещё не создан или машина создана до закрепления версий.
     pub image_version: String,
+    /// Имя в сети (уже очищенное); пусто — `pc-<8 символов vm_id>`.
+    pub hostname: String,
 }
 
 impl VmConfig {
@@ -85,6 +92,16 @@ impl VmConfig {
             display_width: r.display_width,
             display_height: r.display_height,
             image_version: String::new(),
+            hostname: net::sanitize_hostname(&r.hostname),
+        }
+    }
+    /// Итоговое имя машины: из CreateVm.hostname или по умолчанию.
+    pub fn hostname(&self) -> String {
+        let h = net::sanitize_hostname(&self.hostname);
+        if h.is_empty() {
+            net::default_hostname(&self.vm_id)
+        } else {
+            h
         }
     }
     pub fn width(&self) -> u32 {
@@ -144,6 +161,8 @@ struct Run {
     exit_rx: watch::Receiver<bool>,
     stderr_tail: Arc<Mutex<VecDeque<String>>>,
     _tasks: Vec<AbortOnDrop<()>>,
+    /// Порт машины на свитче сети (сокет удаляется вместе с Run).
+    _net: Option<NetPort>,
     stopping: bool,
 }
 
@@ -158,6 +177,8 @@ struct Inner {
     redstone_in: [u32; 6],
     run: Option<Run>,
     gen: u64,
+    /// Остановку запросили во время запуска (StopVm/DeleteVm).
+    stop_requested: bool,
 }
 
 pub struct Vm {
@@ -197,6 +218,15 @@ pub struct AudioSubGuard(Arc<Vm>);
 impl Drop for AudioSubGuard {
     fn drop(&mut self) {
         self.0.audio_subs.fetch_sub(1, Ordering::Relaxed);
+    }
+}
+
+/// MAC машины на свитче (детерминированный по vm_id).
+struct NetSwitchMac;
+
+impl NetSwitchMac {
+    fn of(vm_id: &str) -> [u8; 6] {
+        fcw_net::NetSwitch::mac_for_vm(vm_id)
     }
 }
 
@@ -253,6 +283,7 @@ impl Vm {
                 redstone_in: [0; 6],
                 run: None,
                 gen: 0,
+                stop_requested: false,
             }),
             input: Mutex::new(InputState::default()),
             op: Arc::new(tokio::sync::Mutex::new(())),
@@ -370,6 +401,16 @@ impl Vm {
             && images::load(&self.env.images_dir, &cfg.image_id)
                 .map(|i| i.version != cfg.image_version)
                 .unwrap_or(false);
+        // адрес — только пока порт подключён и гость получил его по DHCP
+        let ip = self
+            .env
+            .net
+            .as_ref()
+            .and_then(|n| n.switch.stats(&self.id))
+            .filter(|st| st.connected && st.ip_configured)
+            .and_then(|st| st.ip)
+            .map(|ip| ip.to_string())
+            .unwrap_or_default();
         let g = self.inner.lock();
         pb::VmInfo {
             vm_id: self.id.clone(),
@@ -385,6 +426,8 @@ impl Vm {
             controller_player: g.controller.as_ref().map(|c| c.player_name.clone()).unwrap_or_default(),
             image_version: g.config.image_version.clone(),
             image_update_available: update_available,
+            hostname: g.config.hostname(),
+            ip_address: ip,
         }
     }
 
@@ -423,9 +466,21 @@ impl Vm {
         if self.is_active() {
             return Ok(());
         }
+        self.inner.lock().stop_requested = false;
         match self.start_inner(op).await {
             Ok(()) => Ok(()),
             Err(e) => {
+                if self.inner.lock().stop_requested {
+                    // запуск прерван принудительной остановкой — это не сбой
+                    let run = self.inner.lock().run.as_ref().map(|r| (r.kill_tx.clone(), r.exit_rx.clone()));
+                    if let Some((kill, mut exit)) = run {
+                        let _ = kill.send(());
+                        let _ = tokio::time::timeout(Duration::from_secs(5), exit.wait_for(|e| *e)).await;
+                    }
+                    self.inner.lock().run = None;
+                    self.set_state(pb::VmState::Stopped, "stopped during start");
+                    return Err(anyhow!("machine was stopped during start"));
+                }
                 let msg = format!("{e:#}");
                 tracing::error!(vm = %self.id, "start failed: {msg}");
                 let run = {
@@ -497,10 +552,25 @@ impl Vm {
         let (img, disk) = self.prepare_image(op).await?;
         let cfg = self.config();
         std::fs::create_dir_all(&self.sock_dir)?;
-        for s in ["qmp.sock", "vnc.sock", "tty.sock", "agent.sock"] {
+        for s in ["qmp.sock", "vnc.sock", "tty.sock", "agent.sock", "net.sock"] {
             let _ = std::fs::remove_file(self.sock(s));
         }
-        let args = self.qemu_args(&cfg, &img, &disk);
+        // порт на свитче сети: слушаем до запуска QEMU, он подключится сам
+        let net_port = match (&self.env.net, cfg.network) {
+            (Some(n), true) => Some(
+                net::open_port(n, &self.sock("net.sock"), &self.id, &cfg.hostname(), NetSwitchMac::of(&self.id))
+                    .await?,
+            ),
+            (None, true) => {
+                tracing::warn!(vm = %self.id, "network requested but the daemon network is off (--network off)");
+                None
+            }
+            _ => None,
+        };
+        if self.inner.lock().stop_requested {
+            bail!("machine was stopped during start");
+        }
+        let args = self.qemu_args(&cfg, &img, &disk, net_port.as_ref().map(|p| &p.attach));
         tracing::info!(vm = %self.id, "starting: {} {}", qemu.display(), args.join(" "));
 
         {
@@ -556,6 +626,7 @@ impl Vm {
                 exit_rx: exit_rx.clone(),
                 stderr_tail: stderr_tail.clone(),
                 _tasks: Vec::new(),
+                _net: net_port,
                 stopping: false,
             });
             g.agent_connected = false;
@@ -689,7 +760,7 @@ impl Vm {
         Ok(())
     }
 
-    pub fn qemu_args(&self, cfg: &VmConfig, img: &Image, disk: &Path) -> Vec<String> {
+    pub fn qemu_args(&self, cfg: &VmConfig, img: &Image, disk: &Path, net: Option<&NetAttach>) -> Vec<String> {
         let host_cpus = std::thread::available_parallelism().map(|n| n.get() as u32).unwrap_or(1);
         let cpus = if cfg.cpus == 0 { 2.min(host_cpus) } else { cfg.cpus.min(host_cpus.max(1) * 2) };
         let mem = if cfg.memory_mb != 0 {
@@ -713,6 +784,7 @@ impl Vm {
         if let Some(tz) = &self.env.tz {
             cmdline.push_str(&format!(" fcw.tz={tz}"));
         }
+        cmdline.push_str(&format!(" systemd.hostname={}", cfg.hostname()));
         let mut a: Vec<String> = vec!["-name".into(), format!("fcw-{}", self.id), "-machine".into(), "q35".into()];
         a.extend(self.env.accel.qemu_args());
         a.extend(
@@ -769,8 +841,14 @@ impl Vm {
         if cfg.sound {
             a.extend(["-audiodev", "none,id=snd0", "-device", "virtio-sound-pci,audiodev=snd0"].map(String::from));
         }
-        if cfg.network {
-            a.extend(["-netdev", "user,id=net0", "-device", "virtio-net-pci,netdev=net0"].map(String::from));
+        if let Some(attach) = net {
+            a.push("-netdev".into());
+            a.push(net::netdev_arg(attach, self.env.qemu_version));
+            a.push("-device".into());
+            a.push(format!(
+                "virtio-net-pci,netdev=net0,mac={},romfile=",
+                net::mac_string(NetSwitchMac::of(&self.id))
+            ));
         }
         a
     }
@@ -792,6 +870,9 @@ impl Vm {
         self.input.lock().pressed.clear();
         for s in ["qmp.sock", "vnc.sock", "tty.sock", "agent.sock"] {
             let _ = std::fs::remove_file(self.sock(s));
+        }
+        if let Some(n) = &self.env.net {
+            n.switch.disconnect(&self.id);
         }
         let ok = matches!(&status, Ok(s) if s.success());
         if stopping || ok {
@@ -844,6 +925,7 @@ impl Vm {
 
     fn run_handles(&self) -> Option<RunHandles> {
         let mut g = self.inner.lock();
+        g.stop_requested = true;
         let r = g.run.as_mut()?;
         r.stopping = true;
         Some((r.qmp.clone(), r.kill_tx.clone(), r.exit_rx.clone(), r.agent_tx.clone()))
@@ -886,6 +968,22 @@ impl Vm {
         }
         let _ = kill.send(());
         if wait(&mut exit, Duration::from_secs(5)).await {
+            Ok(())
+        } else {
+            bail!("QEMU did not exit")
+        }
+    }
+
+    /// Принудительная остановка без очереди операций: QEMU убивается сразу,
+    /// даже если идёт мягкая остановка или запуск (они завершатся сами).
+    pub async fn kill_now(&self) -> Result<()> {
+        let Some((_, kill, exit, _)) = self.run_handles() else {
+            return Ok(());
+        };
+        self.set_state(pb::VmState::Stopping, "force stop");
+        let _ = kill.send(());
+        let mut exit = exit;
+        if tokio::time::timeout(Duration::from_secs(10), exit.wait_for(|e| *e)).await.is_ok() {
             Ok(())
         } else {
             bail!("QEMU did not exit")
@@ -1379,6 +1477,8 @@ mod tests {
             qemu_img: None,
             accel: Accel::Tcg,
             tz: Some("Europe/Moscow".into()),
+            qemu_version: Some((8, 2, 2)),
+            net: None,
         });
         let (ev, _) = broadcast::channel(8);
         let cfg = VmConfig {
@@ -1405,7 +1505,7 @@ mod tests {
     #[test]
     fn args_contract() {
         let (vm, img) = test_vm(true, true);
-        let a = vm.qemu_args(&vm.config(), &img, Path::new("/vms/vm1/disk.qcow2")).join(" ");
+        let a = vm.qemu_args(&vm.config(), &img, Path::new("/vms/vm1/disk.qcow2"), Some(&NetAttach::Unix("/vms/vm1/net.sock".into()))).join(" ");
         assert!(a.contains("-machine q35"));
         assert!(a.contains("-accel tcg,thread=multi -cpu max"));
         assert!(a.contains("-m 512"));
@@ -1419,14 +1519,17 @@ mod tests {
         assert!(a.contains("virtio-gpu-pci,xres=1024,yres=768,edid=on"));
         assert!(a.contains("-vnc unix:/vms/vm1/vnc.sock,audiodev=snd0"));
         assert!(a.contains("-audiodev none,id=snd0 -device virtio-sound-pci,audiodev=snd0"));
-        assert!(a.contains("virtio-net-pci"));
+        assert!(a.contains("fcw.tz=Europe/Moscow systemd.hostname=pc-vm1"));
+        assert!(a.contains("-netdev stream,id=net0,server=off,addr.type=unix,addr.path=/vms/vm1/net.sock,reconnect=1"));
+        let mac = net::mac_string(fcw_net::NetSwitch::mac_for_vm("vm1"));
+        assert!(a.contains(&format!("-device virtio-net-pci,netdev=net0,mac={mac},romfile=")));
         let (vm, img) = test_vm(false, false);
-        let a = vm.qemu_args(&vm.config(), &img, Path::new("/d.qcow2")).join(" ");
+        let a = vm.qemu_args(&vm.config(), &img, Path::new("/d.qcow2"), None).join(" ");
         assert!(!a.contains("-vnc"));
         assert!(!a.contains("virtio-gpu"));
         // звук без видеокарты: VNC только ради звука
         let (vm, img) = test_vm(false, true);
-        let a = vm.qemu_args(&vm.config(), &img, Path::new("/d.qcow2")).join(" ");
+        let a = vm.qemu_args(&vm.config(), &img, Path::new("/d.qcow2"), None).join(" ");
         assert!(a.contains("-vnc unix:/vms/vm1/vnc.sock,audiodev=snd0"));
         assert!(!a.contains("virtio-gpu"));
     }
