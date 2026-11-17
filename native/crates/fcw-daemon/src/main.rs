@@ -1,14 +1,15 @@
 use anyhow::{anyhow, Context, Result};
 use clap::Parser;
-use fcw_daemon::accel::{self, Accel};
+use fcw_daemon::accel::Accel;
 use fcw_daemon::args::Args;
 use fcw_daemon::daemon::Daemon;
 use fcw_daemon::localsock::LocalListener;
+use fcw_daemon::qemu::QemuLocator;
 use fcw_daemon::vm::Env;
 use fcw_daemon::{cert, control, logfwd, pb, quic};
 use std::io::Write;
 use std::net::SocketAddr;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::broadcast;
@@ -43,53 +44,6 @@ fn main() -> std::process::ExitCode {
     }
 }
 
-fn exe(name: &str) -> String {
-    if cfg!(windows) {
-        format!("{name}.exe")
-    } else {
-        name.to_string()
-    }
-}
-
-fn search_path(name: &str) -> Option<PathBuf> {
-    let file = exe(name);
-    let mut dirs: Vec<PathBuf> =
-        std::env::var_os("PATH").map(|p| std::env::split_paths(&p).collect()).unwrap_or_default();
-    if cfg!(windows) {
-        dirs.push(PathBuf::from(r"C:\Program Files\qemu"));
-    }
-    if cfg!(target_os = "macos") {
-        dirs.push(PathBuf::from("/opt/homebrew/bin"));
-        dirs.push(PathBuf::from("/usr/local/bin"));
-    }
-    dirs.into_iter().map(|d| d.join(&file)).find(|p| p.is_file())
-}
-
-/// QEMU: --qemu, $FCW_QEMU, qemu-system-x86_64 в PATH.
-fn find_qemu(arg: Option<PathBuf>) -> Option<PathBuf> {
-    if let Some(p) = arg {
-        return Some(p);
-    }
-    if let Some(p) = std::env::var_os("FCW_QEMU").filter(|p| !p.is_empty()) {
-        return Some(PathBuf::from(p));
-    }
-    search_path("qemu-system-x86_64")
-}
-
-/// qemu-img рядом с QEMU, $FCW_QEMU_IMG или в PATH.
-fn find_qemu_img(qemu: Option<&Path>) -> Option<PathBuf> {
-    if let Some(dir) = qemu.and_then(|q| q.parent()) {
-        let p = dir.join(exe("qemu-img"));
-        if p.is_file() {
-            return Some(p);
-        }
-    }
-    if let Some(p) = std::env::var_os("FCW_QEMU_IMG").filter(|p| !p.is_empty()) {
-        return Some(PathBuf::from(p));
-    }
-    search_path("qemu-img")
-}
-
 /// Идентичность файла (устройство + inode на Unix).
 fn file_id(p: &Path) -> Option<(u64, u64)> {
     let m = std::fs::symlink_metadata(p).ok()?;
@@ -108,16 +62,28 @@ fn file_id(p: &Path) -> Option<(u64, u64)> {
 
 async fn run(args: Args, events: broadcast::Sender<pb::Event>) -> Result<()> {
     let accel_req = Accel::parse(&args.accel).ok_or_else(|| anyhow!("unknown --accel {:?}", args.accel))?;
-    let qemu = find_qemu(args.qemu.clone());
-    let qemu_img = find_qemu_img(qemu.as_deref());
-    match &qemu {
-        Some(q) => tracing::info!("qemu: {}", q.display()),
-        None => tracing::warn!("qemu-system-x86_64 not found: machines will not start"),
+    // переносимый QEMU: --qemu-dir, по умолчанию <images-dir>/../qemu
+    let qemu_dir = args.qemu_dir.clone().unwrap_or_else(|| {
+        args.images_dir.parent().filter(|p| !p.as_os_str().is_empty()).unwrap_or(Path::new(".")).join("qemu")
+    });
+    let locator = QemuLocator::from_env(args.qemu.clone(), qemu_dir, accel_req);
+    let found = locator.find().await;
+    match &found {
+        Some(q) => tracing::info!(
+            "qemu: {} ({}{}), qemu-img: {}",
+            q.qemu.display(),
+            if q.version_str.is_empty() { "unknown version" } else { &q.version_str },
+            if q.bundled { ", portable" } else { "" },
+            q.qemu_img.as_ref().map(|p| p.display().to_string()).unwrap_or_else(|| "not found".into())
+        ),
+        None => tracing::warn!(
+            "qemu-system-x86_64 not found (portable QEMU dir: {}): machines will not start until QEMU is installed",
+            locator.dir.display()
+        ),
     }
-    let accel = match (accel_req, &qemu) {
-        (Some(a), _) => a,
-        (None, Some(q)) => accel::detect(q).await,
-        (None, None) => Accel::Tcg,
+    let accel = match &found {
+        Some(q) => q.accel,
+        None => locator.accel_for(None).await,
     };
     tracing::info!("accelerator: {}", accel.name());
 
@@ -137,12 +103,8 @@ async fn run(args: Args, events: broadcast::Sender<pb::Event>) -> Result<()> {
 
     let tz = fcw_daemon::vm::host_timezone();
     tracing::info!("host time zone: {}", tz.as_deref().unwrap_or("unknown"));
-    let qemu_version = qemu.as_deref().and_then(fcw_daemon::net::qemu_version);
-    if let Some((a, b, c)) = qemu_version {
-        tracing::info!("qemu version: {a}.{b}.{c}");
-    }
     let net = fcw_daemon::net::build(&args)?;
-    let env = Arc::new(Env { images_dir: args.images_dir.clone(), qemu, qemu_img, accel, tz, qemu_version, net });
+    let env = Arc::new(Env { images_dir: args.images_dir.clone(), qemu: locator, tz, net });
     let d = Daemon::new(env, args.vms_dir.clone(), args.max_vms, quic_port, cert.sha256_hex.clone(), events);
 
     if let Some(dir) = args.control.parent().filter(|p| !p.as_os_str().is_empty()) {

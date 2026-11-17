@@ -45,7 +45,8 @@ public record ComputerStatusPayload(
         String dnsZone,            // "mc"; empty if the daemon has no network
         boolean network,           // this machine gets a network card
         String imageVersion,       // build of the image the machine's disk is based on
-        boolean imageUpdateAvailable
+        boolean imageUpdateAvailable,
+        Component qemuProblem      // empty if QEMU is there
 ) implements CustomPacketPayload {
     public static final Type<ComputerStatusPayload> TYPE =
             new Type<>(ResourceLocation.fromNamespaceAndPath(FcwMod.MODID, "computer_status"));
@@ -105,6 +106,7 @@ public record ComputerStatusPayload(
         buf.writeBoolean(network);
         buf.writeUtf(imageVersion);
         buf.writeBoolean(imageUpdateAvailable);
+        ComponentSerialization.STREAM_CODEC.encode(buf, qemuProblem);
     }
 
     private static ComputerStatusPayload read(RegistryFriendlyByteBuf buf) {
@@ -141,9 +143,10 @@ public record ComputerStatusPayload(
         boolean network = buf.readBoolean();
         String imageVersion = buf.readUtf();
         boolean update = buf.readBoolean();
+        Component qemu = ComponentSerialization.STREAM_CODEC.decode(buf);
         return new ComputerStatusPayload(pos, daemonStatus, daemonMessage, accelerator, vmState, busy, wantRunning, error,
                 controller, agentInfo, uptime, imageId, installed, cpus, mem, gpu, keyboard, mouse, monitors, speakers,
-                images, imagesError, vmId, hostname, ip, zone, network, imageVersion, update);
+                images, imagesError, vmId, hostname, ip, zone, network, imageVersion, update, qemu);
     }
 
     @Override

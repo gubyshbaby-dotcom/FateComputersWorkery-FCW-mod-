@@ -241,21 +241,31 @@ pub async fn fetch(
     sha256: String,
     progress: impl Fn(u64, u64) + Send,
 ) -> Result<()> {
-    use futures_util::StreamExt;
-    use tokio::io::AsyncWriteExt;
-
     if !valid_id(&id) {
         bail!("invalid image id {id:?}");
     }
     tokio::fs::create_dir_all(&images_dir).await?;
+    let tmp = images_dir.join(format!(".fetch-{id}.tar.zst.part"));
+    download(&url, &sha256, &tmp, progress).await?;
+    let tmp2 = tmp.clone();
+    let r = tokio::task::spawn_blocking(move || extract(&tmp2, &images_dir, &id)).await.map_err(|e| anyhow!(e))?;
+    let _ = tokio::fs::remove_file(&tmp).await;
+    r
+}
+
+/// Скачивает `url` в файл `tmp` (HTTPS_PROXY учитывается), проверяет SHA-256,
+/// если он задан. `progress(done, total)` — по ходу скачивания.
+pub async fn download(url: &str, sha256: &str, tmp: &Path, progress: impl Fn(u64, u64) + Send) -> Result<()> {
+    use futures_util::StreamExt;
+    use tokio::io::AsyncWriteExt;
+
     let client = reqwest::Client::builder()
         .connect_timeout(std::time::Duration::from_secs(30))
         .user_agent(concat!("fcw-daemon/", env!("CARGO_PKG_VERSION")))
         .build()?;
-    let resp = client.get(&url).send().await.context("request")?.error_for_status().context("HTTP")?;
+    let resp = client.get(url).send().await.context("request")?.error_for_status().context("HTTP")?;
     let total = resp.content_length().unwrap_or(0);
-    let tmp = images_dir.join(format!(".fetch-{id}.tar.zst.part"));
-    let mut file = tokio::fs::File::create(&tmp).await.with_context(|| format!("create {}", tmp.display()))?;
+    let mut file = tokio::fs::File::create(tmp).await.with_context(|| format!("create {}", tmp.display()))?;
     let mut hasher = Sha256::new();
     let mut done = 0u64;
     let mut last = std::time::Instant::now();
@@ -278,19 +288,39 @@ pub async fn fetch(
     .await;
     drop(file);
     if let Err(e) = res {
-        let _ = tokio::fs::remove_file(&tmp).await;
+        let _ = tokio::fs::remove_file(tmp).await;
         return Err(e);
     }
     progress(done, total.max(done));
     let digest = hex::encode(hasher.finalize());
-    if !sha256.is_empty() && !sha256.eq_ignore_ascii_case(&digest) {
-        let _ = tokio::fs::remove_file(&tmp).await;
+    if !sha256.is_empty() && !sha256.trim().eq_ignore_ascii_case(&digest) {
+        let _ = tokio::fs::remove_file(tmp).await;
         bail!("sha256 mismatch: expected {sha256}, got {digest}");
     }
-    let tmp2 = tmp.clone();
-    let r = tokio::task::spawn_blocking(move || extract(&tmp2, &images_dir, &id)).await.map_err(|e| anyhow!(e))?;
-    let _ = tokio::fs::remove_file(&tmp).await;
-    r
+    Ok(())
+}
+
+/// Распаковывает tar.zst в `staging`, беря только записи внутри `top/`
+/// (остальные пропускаются, небезопасные пути — ошибка).
+pub fn unpack_tar_zst(archive: &Path, staging: &Path, top: &str) -> Result<()> {
+    let f = std::fs::File::open(archive)?;
+    let mut dec = zstd::stream::read::Decoder::new(f)?;
+    dec.window_log_max(31)?;
+    let mut ar = tar::Archive::new(dec);
+    ar.set_preserve_permissions(true);
+    for entry in ar.entries()? {
+        let mut e = entry?;
+        let path = e.path()?.into_owned();
+        let first = path.components().next().map(|c| c.as_os_str().to_string_lossy().to_string());
+        if first.as_deref() != Some(top) {
+            tracing::warn!("unpack: skipping entry outside {top}/: {}", path.display());
+            continue;
+        }
+        if !e.unpack_in(staging)? {
+            bail!("unsafe path in archive: {}", path.display());
+        }
+    }
+    Ok(())
 }
 
 /// Распаковка tar.zst в `images_dir/<id>` через промежуточный каталог.
@@ -299,23 +329,7 @@ pub fn extract(archive: &Path, images_dir: &Path, id: &str) -> Result<()> {
     let _ = std::fs::remove_dir_all(&staging);
     std::fs::create_dir_all(&staging)?;
     let res = (|| -> Result<()> {
-        let f = std::fs::File::open(archive)?;
-        let mut dec = zstd::stream::read::Decoder::new(f)?;
-        dec.window_log_max(31)?;
-        let mut ar = tar::Archive::new(dec);
-        ar.set_preserve_permissions(true);
-        for entry in ar.entries()? {
-            let mut e = entry?;
-            let path = e.path()?.into_owned();
-            let first = path.components().next().map(|c| c.as_os_str().to_string_lossy().to_string());
-            if first.as_deref() != Some(id) {
-                tracing::warn!("fetch {id}: skipping entry outside {id}/: {}", path.display());
-                continue;
-            }
-            if !e.unpack_in(&staging)? {
-                bail!("unsafe path in archive: {}", path.display());
-            }
-        }
+        unpack_tar_zst(archive, &staging, id)?;
         let img = load(&staging, id).context("archive has no valid manifest")?;
         if !img.installed() {
             bail!("archive is missing kernel/initrd/rootfs");

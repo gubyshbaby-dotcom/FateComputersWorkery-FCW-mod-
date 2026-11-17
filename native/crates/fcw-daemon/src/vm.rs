@@ -1,12 +1,12 @@
 //! Машина: конфигурация, диск, процесс QEMU, QMP, экраны, ввод, агент.
 
-use crate::accel::Accel;
 use crate::agent::{self, GuestMsg};
 use crate::audio::{AudioEncoder, OpusPacket};
 use crate::gfx::{Cursor, GfxScreen};
 use crate::images::{self, Image};
 use crate::localsock::{self, MAX_SOCK_PATH};
 use crate::net::{self, NetAttach, NetEnv, NetPort};
+use crate::qemu::{QemuInfo, QemuLocator};
 use crate::qmp::{Qmp, QmpEvent};
 use crate::rfb::{self, RfbCmd, RfbEvent};
 use crate::text::{self, Mods, TextScreen};
@@ -30,16 +30,13 @@ pub const SCREEN_GFX: &str = "gfx0";
 pub const SCREEN_TTY: &str = "tty0";
 
 /// Параметры окружения, общие для всех машин.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Env {
     pub images_dir: PathBuf,
-    pub qemu: Option<PathBuf>,
-    pub qemu_img: Option<PathBuf>,
-    pub accel: Accel,
+    /// Поиск QEMU (заново при каждом запуске машины).
+    pub qemu: QemuLocator,
     /// Часовой пояс хоста (IANA), уходит гостю как `fcw.tz=`.
     pub tz: Option<String>,
-    /// Версия QEMU (major, minor, micro), если её удалось узнать.
-    pub qemu_version: Option<(u32, u32, u32)>,
     /// Свитч сети гостей; `None` — сеть выключена (`--network off`).
     pub net: Option<Arc<NetEnv>>,
 }
@@ -163,6 +160,8 @@ struct Run {
     _tasks: Vec<AbortOnDrop<()>>,
     /// Порт машины на свитче сети (сокет удаляется вместе с Run).
     _net: Option<NetPort>,
+    /// Машина запущена переносимым QEMU из --qemu-dir.
+    bundled_qemu: bool,
     stopping: bool,
 }
 
@@ -307,6 +306,11 @@ impl Vm {
 
     pub fn state(&self) -> pb::VmState {
         self.inner.lock().state
+    }
+
+    /// Запущена переносимым QEMU из --qemu-dir (его нельзя заменять).
+    pub fn uses_bundled_qemu(&self) -> bool {
+        self.inner.lock().run.as_ref().map(|r| r.bundled_qemu).unwrap_or(false)
     }
 
     pub fn is_active(&self) -> bool {
@@ -517,7 +521,8 @@ impl Vm {
             let img = tokio::task::spawn_blocking(move || images::ensure_stored(&images_dir, &id))
                 .await
                 .map_err(|e| anyhow!("store task: {e}"))??;
-            self.create_disk(&img, &disk, cfg.disk_gb).await?;
+            let qemu_img = self.env.qemu.find().await.and_then(|q| q.qemu_img);
+            self.create_disk(qemu_img.as_deref(), &img, &disk, cfg.disk_gb).await?;
             let mut pinned = cfg.clone();
             pinned.image_version = img.version.clone();
             if let Err(e) = self.save_config(&pinned) {
@@ -548,7 +553,14 @@ impl Vm {
     }
 
     async fn start_inner(self: &Arc<Self>, op: &OwnedMutexGuard<()>) -> Result<()> {
-        let qemu = self.env.qemu.clone().ok_or_else(|| anyhow!("QEMU not found (use --qemu or FCW_QEMU)"))?;
+        let q = self.env.qemu.find().await.ok_or_else(|| {
+            anyhow!(
+                "QEMU not found: install qemu-system-x86_64, download the portable QEMU (FetchQemu) \
+                 into {}, or use --qemu / FCW_QEMU",
+                self.env.qemu.dir.display()
+            )
+        })?;
+        let qemu = q.qemu.clone();
         let (img, disk) = self.prepare_image(op).await?;
         let cfg = self.config();
         std::fs::create_dir_all(&self.sock_dir)?;
@@ -570,7 +582,7 @@ impl Vm {
         if self.inner.lock().stop_requested {
             bail!("machine was stopped during start");
         }
-        let args = self.qemu_args(&cfg, &img, &disk, net_port.as_ref().map(|p| &p.attach));
+        let args = self.qemu_args(&cfg, &img, &disk, net_port.as_ref().map(|p| &p.attach), &q);
         tracing::info!(vm = %self.id, "starting: {} {}", qemu.display(), args.join(" "));
 
         {
@@ -627,6 +639,7 @@ impl Vm {
                 stderr_tail: stderr_tail.clone(),
                 _tasks: Vec::new(),
                 _net: net_port,
+                bundled_qemu: q.bundled,
                 stopping: false,
             });
             g.agent_connected = false;
@@ -736,8 +749,8 @@ impl Vm {
         Ok(())
     }
 
-    async fn create_disk(&self, img: &Image, disk: &Path, disk_gb: u32) -> Result<()> {
-        let qemu_img = self.env.qemu_img.clone().ok_or_else(|| anyhow!("qemu-img not found"))?;
+    async fn create_disk(&self, qemu_img: Option<&Path>, img: &Image, disk: &Path, disk_gb: u32) -> Result<()> {
+        let qemu_img = qemu_img.map(Path::to_path_buf).ok_or_else(|| anyhow!("qemu-img not found"))?;
         let base = abs_path(&img.rootfs());
         let mut cmd = tokio::process::Command::new(&qemu_img);
         cmd.arg("create").args(["-f", "qcow2", "-F", "qcow2", "-b"]).arg(&base).arg(disk);
@@ -760,7 +773,14 @@ impl Vm {
         Ok(())
     }
 
-    pub fn qemu_args(&self, cfg: &VmConfig, img: &Image, disk: &Path, net: Option<&NetAttach>) -> Vec<String> {
+    pub fn qemu_args(
+        &self,
+        cfg: &VmConfig,
+        img: &Image,
+        disk: &Path,
+        net: Option<&NetAttach>,
+        q: &QemuInfo,
+    ) -> Vec<String> {
         let host_cpus = std::thread::available_parallelism().map(|n| n.get() as u32).unwrap_or(1);
         let cpus = if cfg.cpus == 0 { 2.min(host_cpus) } else { cfg.cpus.min(host_cpus.max(1) * 2) };
         let mem = if cfg.memory_mb != 0 {
@@ -786,7 +806,12 @@ impl Vm {
         }
         cmdline.push_str(&format!(" systemd.hostname={}", cfg.hostname()));
         let mut a: Vec<String> = vec!["-name".into(), format!("fcw-{}", self.id), "-machine".into(), "q35".into()];
-        a.extend(self.env.accel.qemu_args());
+        a.extend(q.accel.qemu_args());
+        if let Some(d) = &q.data_dir {
+            // переносимый QEMU: BIOS и option ROM из его share/qemu
+            a.push("-L".into());
+            a.push(d.to_string_lossy().into());
+        }
         a.extend(
             [
                 "-smp",
@@ -843,7 +868,7 @@ impl Vm {
         }
         if let Some(attach) = net {
             a.push("-netdev".into());
-            a.push(net::netdev_arg(attach, self.env.qemu_version));
+            a.push(net::netdev_arg(attach, q.version));
             a.push("-device".into());
             a.push(format!("virtio-net-pci,netdev=net0,mac={},romfile=", net::mac_string(NetSwitchMac::of(&self.id))));
         }
@@ -1466,15 +1491,13 @@ async fn image_virtual_size(qemu_img: &Path, image: &Path) -> Result<u64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::accel::Accel;
 
     fn test_vm(gpu: bool, sound: bool) -> (Arc<Vm>, Image) {
         let env = Arc::new(Env {
             images_dir: PathBuf::from("/images"),
-            qemu: None,
-            qemu_img: None,
-            accel: Accel::Tcg,
+            qemu: QemuLocator::fixed(None),
             tz: Some("Europe/Moscow".into()),
-            qemu_version: Some((8, 2, 2)),
             net: None,
         });
         let (ev, _) = broadcast::channel(8);
@@ -1499,6 +1522,18 @@ mod tests {
         (vm, img)
     }
 
+    fn test_qemu(bundled: bool) -> QemuInfo {
+        QemuInfo {
+            qemu: PathBuf::from("/q/bin/qemu-system-x86_64"),
+            qemu_img: None,
+            bundled,
+            data_dir: bundled.then(|| PathBuf::from("/q/share/qemu")),
+            version: Some((8, 2, 2)),
+            version_str: "8.2.2".into(),
+            accel: Accel::Tcg,
+        }
+    }
+
     #[test]
     fn args_contract() {
         let (vm, img) = test_vm(true, true);
@@ -1508,9 +1543,11 @@ mod tests {
                 &img,
                 Path::new("/vms/vm1/disk.qcow2"),
                 Some(&NetAttach::Unix("/vms/vm1/net.sock".into())),
+                &test_qemu(false),
             )
             .join(" ");
         assert!(a.contains("-machine q35"));
+        assert!(!a.contains(" -L "), "system QEMU has no -L");
         assert!(a.contains("-accel tcg,thread=multi -cpu max"));
         assert!(a.contains("-m 512"));
         assert!(
@@ -1528,12 +1565,13 @@ mod tests {
         let mac = net::mac_string(fcw_net::NetSwitch::mac_for_vm("vm1"));
         assert!(a.contains(&format!("-device virtio-net-pci,netdev=net0,mac={mac},romfile=")));
         let (vm, img) = test_vm(false, false);
-        let a = vm.qemu_args(&vm.config(), &img, Path::new("/d.qcow2"), None).join(" ");
+        let a = vm.qemu_args(&vm.config(), &img, Path::new("/d.qcow2"), None, &test_qemu(true)).join(" ");
         assert!(!a.contains("-vnc"));
+        assert!(a.contains("-accel tcg,thread=multi -cpu max -L /q/share/qemu"), "portable QEMU gets -L");
         assert!(!a.contains("virtio-gpu"));
         // звук без видеокарты: VNC только ради звука
         let (vm, img) = test_vm(false, true);
-        let a = vm.qemu_args(&vm.config(), &img, Path::new("/d.qcow2"), None).join(" ");
+        let a = vm.qemu_args(&vm.config(), &img, Path::new("/d.qcow2"), None, &test_qemu(true)).join(" ");
         assert!(a.contains("-vnc unix:/vms/vm1/vnc.sock,audiodev=snd0"));
         assert!(!a.contains("virtio-gpu"));
     }

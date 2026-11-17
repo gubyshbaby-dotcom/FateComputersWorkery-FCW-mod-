@@ -25,6 +25,9 @@ public final class FcwConfig {
         public final ModConfigSpec.IntValue startupTimeoutSeconds;
         public final ModConfigSpec.IntValue shutdownTimeoutSeconds;
         public final ModConfigSpec.IntValue messagesPerTick;
+        public final ModConfigSpec.BooleanValue qemuAutoDownload;
+        public final ModConfigSpec.ConfigValue<String> qemuUrlTemplate;
+        public final ModConfigSpec.ConfigValue<List<? extends String>> qemuPlatforms;
 
         public final ModConfigSpec.ConfigValue<String> imageUrlTemplate;
 
@@ -51,7 +54,8 @@ public final class FcwConfig {
                     .define("enabled", true);
             daemonPath = b.comment("Path to an fcw-daemon executable. Empty = the one bundled in the mod jar for this platform.")
                     .define("path", "");
-            qemuPath = b.comment("Path to qemu-system-x86_64. Empty = $FCW_QEMU or qemu-system-x86_64 from PATH.")
+            qemuPath = b.comment("Path to qemu-system-x86_64. Empty = $FCW_QEMU, then the portable QEMU in <gameDir>/fcw/qemu,",
+                            "then qemu-system-x86_64 from PATH.")
                     .define("qemuPath", "");
             quicPort = b.comment("UDP port of the QUIC server that players' clients connect to for screens and input.")
                     .defineInRange("quicPort", 25600, 1, 65535);
@@ -68,6 +72,14 @@ public final class FcwConfig {
                     .defineInRange("shutdownTimeoutSeconds", 15, 1, 300);
             messagesPerTick = b.comment("Maximum number of daemon replies/events applied per server tick.")
                     .defineInRange("messagesPerTick", 64, 1, 10000);
+            qemuAutoDownload = b.comment("If the daemon finds no QEMU, download the portable one into <gameDir>/fcw/qemu",
+                            "(for hosts where packages cannot be installed, e.g. Pelican/Pterodactyl containers).")
+                    .define("qemuAutoDownload", true);
+            qemuUrlTemplate = b.comment("Download URL of the portable QEMU; <platform> is replaced by e.g. linux-x86_64.")
+                    .define("qemuUrlTemplate", "https://github.com/gubyshbaby-dotcom/FateComputersWorkery-FCW-mod-/releases/download/qemu/fcw-qemu-<platform>.tar.zst");
+            qemuPlatforms = b.comment("Platforms for which a portable QEMU archive is published.")
+                    .defineListAllowEmpty("qemuPlatforms", List.of("linux-x86_64", "linux-aarch64"), () -> "linux-x86_64",
+                            o -> o instanceof String str && !str.isBlank());
             b.pop();
 
             b.comment("Guest OS images").push("images");

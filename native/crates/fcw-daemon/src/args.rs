@@ -20,6 +20,9 @@ pub struct Args {
     /// Путь к qemu-system-x86_64 (иначе $FCW_QEMU, иначе PATH)
     #[arg(long)]
     pub qemu: Option<PathBuf>,
+    /// Каталог переносимого QEMU (bin/, share/qemu/); по умолчанию <images-dir>/../qemu
+    #[arg(long)]
+    pub qemu_dir: Option<PathBuf>,
     /// Предел одновременно работающих машин
     #[arg(long, default_value_t = 8)]
     pub max_vms: u32,

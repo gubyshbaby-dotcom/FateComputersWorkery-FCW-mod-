@@ -6,10 +6,12 @@ use crate::daemon::Daemon;
 use crate::images;
 use crate::localsock::{LocalListener, LocalStream};
 use crate::pb::{self, envelope, request, response};
+use crate::qemu;
 use crate::vm::Vm;
 use crate::AbortOnDrop;
 use anyhow::{anyhow, Result};
 use fcw_proto::frame;
+use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -92,24 +94,12 @@ fn dispatch(d: &Arc<Daemon>, tx: &Tx, id: u64, kind: request::Kind) {
     match kind {
         K::Hello(h) => {
             tracing::info!("control hello from {:?} (protocol {})", h.client_name, h.protocol_version);
-            respond(
-                tx,
-                id,
-                Ok(Some(response::Kind::Hello(pb::HelloResult {
-                    daemon_version: crate::VERSION.to_string(),
-                    protocol_version: fcw_proto::CONTROL_PROTOCOL_VERSION,
-                    quic_port: d.quic_port as u32,
-                    cert_sha256: d.cert_sha256.clone(),
-                    accelerator: d.env.accel.name().to_string(),
-                    max_vms: d.max_vms,
-                    host_cpus: std::thread::available_parallelism().map(|n| n.get() as u32).unwrap_or(1),
-                    host_memory_mb: Daemon::host_memory_mb(),
-                    network_enabled: d.env.net.is_some(),
-                    internet_allowed: d.env.net.as_ref().map(|n| n.internet).unwrap_or(false),
-                    network_subnet: d.env.net.as_ref().map(|n| n.subnet.clone()).unwrap_or_default(),
-                    dns_zone: d.env.net.as_ref().map(|n| n.zone.clone()).unwrap_or_default(),
-                }))),
-            );
+            // QEMU ищется заново: его могли скачать после запуска демона
+            let (d, tx) = (d.clone(), tx.clone());
+            tokio::spawn(async move {
+                let hello = hello_result(&d).await;
+                respond(&tx, id, Ok(Some(response::Kind::Hello(hello))));
+            });
         }
         K::ListImages(_) => {
             let images = images::list(&d.env.images_dir).iter().map(|i| i.info()).collect();
@@ -150,6 +140,7 @@ fn dispatch(d: &Arc<Daemon>, tx: &Tx, id: u64, kind: request::Kind) {
             respond(tx, id, res);
         }
         K::FetchImage(r) => fetch_image(d, tx, id, r),
+        K::FetchQemu(r) => fetch_qemu(d, tx, id, r),
         K::Shutdown(_) => {
             respond(tx, id, Ok(None));
             d.request_shutdown();
@@ -225,6 +216,33 @@ fn delete_vm(d: &Arc<Daemon>, tx: &Tx, id: u64, vm_id: &str) {
     })
 }
 
+pub async fn hello_result(d: &Daemon) -> pb::HelloResult {
+    let q = d.env.qemu.find().await;
+    let accel = match &q {
+        Some(q) => q.accel,
+        None => d.env.qemu.accel_for(None).await,
+    };
+    let net = d.env.net.as_ref();
+    pb::HelloResult {
+        daemon_version: crate::VERSION.to_string(),
+        protocol_version: fcw_proto::CONTROL_PROTOCOL_VERSION,
+        quic_port: d.quic_port as u32,
+        cert_sha256: d.cert_sha256.clone(),
+        accelerator: accel.name().to_string(),
+        max_vms: d.max_vms,
+        host_cpus: std::thread::available_parallelism().map(|n| n.get() as u32).unwrap_or(1),
+        host_memory_mb: Daemon::host_memory_mb(),
+        network_enabled: net.is_some(),
+        internet_allowed: net.map(|n| n.internet).unwrap_or(false),
+        network_subnet: net.map(|n| n.subnet.clone()).unwrap_or_default(),
+        dns_zone: net.map(|n| n.zone.clone()).unwrap_or_default(),
+        qemu_available: q.as_ref().map(|q| q.qemu_img.is_some()).unwrap_or(false),
+        qemu_path: q.as_ref().map(|q| q.qemu.to_string_lossy().to_string()).unwrap_or_default(),
+        qemu_version: q.as_ref().map(|q| q.version_str.clone()).unwrap_or_default(),
+        qemu_bundled: q.as_ref().map(|q| q.bundled).unwrap_or(false),
+    }
+}
+
 fn vm_op<F, Fut>(d: &Arc<Daemon>, tx: &Tx, id: u64, vm_id: &str, f: F)
 where
     F: FnOnce(Arc<Daemon>, Arc<Vm>, tokio::sync::OwnedMutexGuard<()>) -> Fut + Send + 'static,
@@ -265,18 +283,74 @@ fn fetch_image(d: &Arc<Daemon>, tx: &Tx, id: u64, r: pb::FetchImage) {
         return respond(tx, id, Err(anyhow!("image {} is already being downloaded", r.image_id)));
     }
     respond(tx, id, Ok(None));
-    let d = d.clone();
+    let images_dir = d.env.images_dir.clone();
+    let (image_id, url, sha256) = (r.image_id.clone(), r.url.clone(), r.sha256.clone());
+    spawn_fetch(d.clone(), r.image_id.clone(), r.image_id.clone(), format!("image {}", r.image_id), r.url, move |p| {
+        images::fetch(images_dir, image_id, url, sha256, p)
+    });
+}
+
+/// Ключ FetchQemu в `Daemon::fetching` (не пересекается с id образов).
+const QEMU_FETCH_KEY: &str = "\0qemu";
+
+/// FetchQemu: как FetchImage, события ImageProgress с image_id = "qemu".
+fn fetch_qemu(d: &Arc<Daemon>, tx: &Tx, id: u64, r: pb::FetchQemu) {
+    if r.url.is_empty() {
+        return respond(tx, id, Err(anyhow!("url is empty")));
+    }
+    if d.vms.lock().values().any(|v| v.uses_bundled_qemu()) {
+        return respond(tx, id, Err(anyhow!("the portable QEMU is used by a running machine; stop it first")));
+    }
+    if !d.fetching.lock().insert(QEMU_FETCH_KEY.to_string()) {
+        return respond(tx, id, Err(anyhow!("QEMU is already being downloaded")));
+    }
+    respond(tx, id, Ok(None));
+    let qemu_dir = d.env.qemu.dir.clone();
+    let (url, sha256) = (r.url.clone(), r.sha256.clone());
+    let d2 = d.clone();
+    spawn_fetch(
+        d.clone(),
+        QEMU_FETCH_KEY.into(),
+        qemu::FETCH_ID.into(),
+        "portable QEMU".into(),
+        r.url,
+        move |p| async move {
+            let parent =
+                qemu_dir.parent().filter(|p| !p.as_os_str().is_empty()).unwrap_or(Path::new(".")).to_path_buf();
+            tokio::fs::create_dir_all(&parent).await?;
+            let tmp = parent.join(".fetch-qemu.tar.zst.part");
+            images::download(&url, &sha256, &tmp, p).await?;
+            // за время скачивания могла запуститься машина на переносимом QEMU
+            if d2.vms.lock().values().any(|v| v.uses_bundled_qemu()) {
+                let _ = tokio::fs::remove_file(&tmp).await;
+                anyhow::bail!("the portable QEMU is used by a running machine; stop it first");
+            }
+            let tmp2 = tmp.clone();
+            let r =
+                tokio::task::spawn_blocking(move || qemu::install(&tmp2, &qemu_dir)).await.map_err(|e| anyhow!(e))?;
+            let _ = tokio::fs::remove_file(&tmp).await;
+            r
+        },
+    );
+}
+
+/// Общая часть скачиваний: прогресс и итог событиями ImageProgress.
+fn spawn_fetch<F, Fut>(d: Arc<Daemon>, key: String, event_id: String, what: String, url: String, job: F)
+where
+    F: FnOnce(Box<dyn Fn(u64, u64) + Send + Sync>) -> Fut + Send + 'static,
+    Fut: std::future::Future<Output = anyhow::Result<()>> + Send,
+{
     tokio::spawn(async move {
         let events = d.events.clone();
-        let image_id = r.image_id.clone();
         let last = Arc::new((AtomicU64::new(0), AtomicU64::new(0)));
         let last2 = last.clone();
+        let eid = event_id.clone();
         let progress = move |done: u64, total: u64| {
             last2.0.store(done, Ordering::Relaxed);
             last2.1.store(total, Ordering::Relaxed);
             let _ = events.send(pb::Event {
                 kind: Some(pb::event::Kind::ImageProgress(pb::ImageProgress {
-                    image_id: image_id.clone(),
+                    image_id: eid.clone(),
                     done_bytes: done,
                     total_bytes: total,
                     finished: false,
@@ -284,25 +358,23 @@ fn fetch_image(d: &Arc<Daemon>, tx: &Tx, id: u64, r: pb::FetchImage) {
                 })),
             });
         };
-        tracing::info!("fetching image {} from {}", r.image_id, r.url);
-        let res =
-            images::fetch(d.env.images_dir.clone(), r.image_id.clone(), r.url.clone(), r.sha256.clone(), progress)
-                .await;
-        d.fetching.lock().remove(&r.image_id);
+        tracing::info!("fetching {what} from {url}");
+        let res = job(Box::new(progress)).await;
+        d.fetching.lock().remove(&key);
         let error = match &res {
             Ok(()) => {
-                tracing::info!("image {} installed", r.image_id);
+                tracing::info!("{what} installed");
                 String::new()
             }
             Err(e) => {
-                tracing::error!("fetch image {}: {e:#}", r.image_id);
+                tracing::error!("fetch {what}: {e:#}");
                 format!("{e:#}")
             }
         };
         let (done, total) = (last.0.load(Ordering::Relaxed), last.1.load(Ordering::Relaxed));
         let _ = d.events.send(pb::Event {
             kind: Some(pb::event::Kind::ImageProgress(pb::ImageProgress {
-                image_id: r.image_id.clone(),
+                image_id: event_id,
                 done_bytes: done,
                 total_bytes: total,
                 finished: true,

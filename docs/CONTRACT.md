@@ -77,7 +77,17 @@ fcw-daemon --images-dir <gameDir>/fcw/images --vms-dir <world>/fcw/vms \
   При выходе гасит все ВМ (ACPI, потом kill).
 - Сертификат QUIC самоподписанный, хранится в `--vms-dir/../daemon-cert.der` +
   ключ, переживает перезапуск.
-- QEMU ищется: `--qemu`, `$FCW_QEMU`, `qemu-system-x86_64` в PATH.
+- QEMU ищется при каждом запуске машины (так скачанный QEMU подхватывается
+  без перезапуска демона): `--qemu`, `$FCW_QEMU`, переносимый QEMU в
+  `--qemu-dir` (по умолчанию `<images-dir>/../qemu`, то есть
+  `<gameDir>/fcw/qemu/bin/qemu-system-x86_64`), `qemu-system-x86_64` в PATH.
+  qemu-img берётся рядом с найденным QEMU, иначе из PATH. Для переносимого
+  QEMU демон передаёт `-L <qemu-dir>/share/qemu`.
+- Переносимый QEMU: архив `fcw-qemu-<os>-<arch>.tar.zst` из релиза `qemu`;
+  внутри каталог `qemu/` с `bin/qemu-system-x86_64`, `bin/qemu-img`,
+  `share/qemu/` (BIOS, option ROM, keymaps), `VERSION`, `LICENSE`, `SOURCE.txt`.
+  Скачивается запросом `FetchQemu` (распаковка во временный каталог рядом и
+  переименование в `--qemu-dir`). Нужен на хостингах без пакетов (Pelican).
   Ускоритель `auto`: kvm (если /dev/kvm доступен на запись), whpx (Windows),
   hvf (macOS на x86_64), иначе tcg (`-accel tcg,thread=multi`).
 

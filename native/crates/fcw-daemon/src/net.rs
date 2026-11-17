@@ -118,19 +118,6 @@ pub fn mac_string(m: [u8; 6]) -> String {
     m.iter().map(|b| format!("{b:02x}")).collect::<Vec<_>>().join(":")
 }
 
-/// Версия QEMU из `--version` ("QEMU emulator version 8.2.2 ...").
-pub fn qemu_version(qemu: &Path) -> Option<(u32, u32, u32)> {
-    let out = std::process::Command::new(qemu).arg("--version").output().ok()?;
-    parse_qemu_version(&String::from_utf8_lossy(&out.stdout))
-}
-
-pub fn parse_qemu_version(s: &str) -> Option<(u32, u32, u32)> {
-    let rest = s.split("version").nth(1)?.trim_start();
-    let ver: String = rest.chars().take_while(|c| c.is_ascii_digit() || *c == '.').collect();
-    let mut it = ver.split('.').map(|p| p.parse::<u32>().ok());
-    Some((it.next()??, it.next().flatten().unwrap_or(0), it.next().flatten().unwrap_or(0)))
-}
-
 /// Как QEMU подключается к порту машины.
 #[derive(Debug, Clone, PartialEq)]
 pub enum NetAttach {
@@ -209,10 +196,11 @@ mod tests {
 
     #[test]
     fn versions_and_netdev() {
-        assert_eq!(parse_qemu_version("QEMU emulator version 8.2.2 (Debian 1:8.2.2+ds-0ubuntu1.18)"), Some((8, 2, 2)));
-        assert_eq!(parse_qemu_version("QEMU emulator version 9.2.0\n"), Some((9, 2, 0)));
-        assert_eq!(parse_qemu_version("QEMU emulator version 10.1"), Some((10, 1, 0)));
-        assert_eq!(parse_qemu_version("garbage"), None);
+        use crate::qemu::parse_version;
+        assert_eq!(parse_version("QEMU emulator version 8.2.2 (Debian 1:8.2.2+ds-0ubuntu1.18)"), Some((8, 2, 2)));
+        assert_eq!(parse_version("QEMU emulator version 9.2.0\n"), Some((9, 2, 0)));
+        assert_eq!(parse_version("QEMU emulator version 10.1"), Some((10, 1, 0)));
+        assert_eq!(parse_version("garbage"), None);
         let u = NetAttach::Unix(PathBuf::from("/vms/a,b/net.sock"));
         assert_eq!(
             netdev_arg(&u, Some((8, 2, 2))),

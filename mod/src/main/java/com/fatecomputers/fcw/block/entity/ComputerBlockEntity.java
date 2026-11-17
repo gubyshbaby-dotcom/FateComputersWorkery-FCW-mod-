@@ -268,6 +268,11 @@ public class ComputerBlockEntity extends BlockEntity implements MenuProvider {
                 });
             } else if (!isOnState(state)) {
                 pausedByUnload = false;
+                if (d.qemuMissing()) {
+                    // keep wantRunning: started once the portable QEMU is downloaded (daemon resync)
+                    setError(d.qemuProblem());
+                    return;
+                }
                 if (FcwConfig.SERVER.restartRunningOnLoad.get() && validate(null) == null) {
                     createAndStart(false, null);
                 } else {
@@ -315,6 +320,10 @@ public class ComputerBlockEntity extends BlockEntity implements MenuProvider {
         DaemonManager d = DaemonManager.get();
         if (d == null || !DaemonManager.isReady()) {
             return d == null ? Component.translatable("daemon.fcw.stopped") : Component.translatable("gui.fcw.error.daemon", d.reason());
+        }
+        Component qemu = d.qemuProblem();
+        if (qemu != null) {
+            return qemu;
         }
         if (image.isEmpty()) {
             return Component.translatable("gui.fcw.error.no_image");

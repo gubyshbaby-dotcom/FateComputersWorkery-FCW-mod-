@@ -1,0 +1,43 @@
+name: Portable QEMU
+
+# Статический QEMU для хостингов, где его нельзя поставить пакетом
+# (Pelican, Pterodactyl и другие панели на Docker). Мод скачивает его сам.
+on:
+  workflow_dispatch:
+  push:
+    tags: ["qemu-*"]
+    # проверочная сборка при изменении сборщика (в релиз не выкладывается)
+    branches: ["**"]
+    paths: ["qemu/**", ".github/workflows/qemu.yml"]
+
+permissions:
+  contents: write
+
+jobs:
+  qemu:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { platform: linux-x86_64,  runner: ubuntu-latest }
+          - { platform: linux-aarch64, runner: ubuntu-24.04-arm }
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build in Alpine
+        run: |
+          mkdir -p out
+          docker run --rm -v "$PWD/qemu:/src:ro" -v "$PWD/out:/out" -e OUT=/out alpine:3.24 sh /src/build-static.sh
+          ls -la out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fcw-qemu-${{ matrix.platform }}
+          path: out/fcw-qemu-${{ matrix.platform }}.tar.zst
+          compression-level: 0
+      - name: Publish
+        if: startsWith(github.ref, 'refs/tags/qemu-')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: qemu
+          name: Portable QEMU
+          files: out/fcw-qemu-${{ matrix.platform }}.tar.zst

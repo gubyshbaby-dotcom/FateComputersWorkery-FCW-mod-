@@ -215,6 +215,13 @@ enum Cmd {
         #[arg(long, default_value = "")]
         sha256: String,
     },
+    /// Скачать переносимый QEMU (tar.zst с каталогом qemu/) в --qemu-dir демона
+    FetchQemu {
+        #[arg(long)]
+        url: String,
+        #[arg(long, default_value = "")]
+        sha256: String,
+    },
     /// Остановить демон
     Shutdown,
 }
@@ -513,6 +520,10 @@ async fn run(cli: Cli) -> Result<()> {
         Cmd::Hello => {
             let h = c.hello().await?;
             println!(
+                "qemu available {} bundled {} version {:?} path {:?}",
+                h.qemu_available, h.qemu_bundled, h.qemu_version, h.qemu_path
+            );
+            println!(
                 "network {} internet {} subnet {} zone .{}",
                 h.network_enabled, h.internet_allowed, h.network_subnet, h.dns_zone
             );
@@ -754,24 +765,16 @@ async fn run(cli: Cli) -> Result<()> {
         }
         Cmd::Fetch { image, url, sha256 } => {
             c.ok(K::FetchImage(pb::FetchImage { image_id: image.clone(), url, sha256 })).await?;
-            let deadline = Instant::now() + timeout;
-            loop {
-                if Instant::now() > deadline {
-                    bail!("fetch timeout");
-                }
-                let Some(ev) = c.next_event(Duration::from_secs(1)).await? else { continue };
-                if let Some(pb::event::Kind::ImageProgress(p)) = &ev.kind {
-                    if p.image_id == image {
-                        print_event(&ev);
-                        if p.finished {
-                            if !p.error.is_empty() {
-                                bail!("{}", p.error);
-                            }
-                            break;
-                        }
-                    }
-                }
-            }
+            wait_fetch(&mut c, &image, timeout).await?;
+        }
+        Cmd::FetchQemu { url, sha256 } => {
+            c.ok(K::FetchQemu(pb::FetchQemu { url, sha256 })).await?;
+            wait_fetch(&mut c, "qemu", timeout).await?;
+            let h = c.hello().await?;
+            println!(
+                "qemu available {} bundled {} version {:?} path {:?}",
+                h.qemu_available, h.qemu_bundled, h.qemu_version, h.qemu_path
+            );
         }
         Cmd::Shutdown => {
             c.ok(K::Shutdown(pb::Shutdown {})).await?;
@@ -779,4 +782,26 @@ async fn run(cli: Cli) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// Ждёт итог скачивания (ImageProgress с finished) для `image`.
+async fn wait_fetch(c: &mut Control, image: &str, timeout: Duration) -> Result<()> {
+    let deadline = Instant::now() + timeout;
+    loop {
+        if Instant::now() > deadline {
+            bail!("fetch timeout");
+        }
+        let Some(ev) = c.next_event(Duration::from_secs(1)).await? else { continue };
+        if let Some(pb::event::Kind::ImageProgress(p)) = &ev.kind {
+            if p.image_id == image {
+                print_event(&ev);
+                if p.finished {
+                    if !p.error.is_empty() {
+                        bail!("{}", p.error);
+                    }
+                    return Ok(());
+                }
+            }
+        }
+    }
 }

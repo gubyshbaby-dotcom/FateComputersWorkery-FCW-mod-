@@ -63,6 +63,7 @@ def main():
     ap.add_argument("--mem", type=int, default=2048)
     ap.add_argument("--smp", type=int, default=2)
     ap.add_argument("--append", default="")
+    ap.add_argument("--qemu", default="qemu-system-x86_64", help="путь к qemu-system-x86_64")
     ap.add_argument("--console-cmd", nargs="*", default=[],
                     help="команды для текстовой консоли hvc0 после входа")
     a = ap.parse_args()
@@ -72,7 +73,8 @@ def main():
     disk = os.path.join(a.work, "disk.qcow2")
     if os.path.exists(disk):
         os.remove(disk)
-    subprocess.run(["qemu-img", "create", "-q", "-f", "qcow2", "-F", "qcow2", "-b",
+    qemu_img = os.path.join(os.path.dirname(a.qemu), "qemu-img") if os.sep in a.qemu else "qemu-img"
+    subprocess.run([qemu_img, "create", "-q", "-f", "qcow2", "-F", "qcow2", "-b",
                     os.path.abspath(os.path.join(a.image, man["rootfs"])), disk], check=True)
     qmp_path = os.path.join(a.work, "qmp.sock")
     con_sock = os.path.join(a.work, "con.sock")
@@ -83,7 +85,7 @@ def main():
 
     accel = ["-accel", "kvm", "-cpu", "host"] if a.accel == "kvm" else \
             ["-accel", "tcg,thread=multi", "-cpu", "max"]
-    cmd = ["qemu-system-x86_64", "-name", "fcw-test", "-machine", "q35", *accel,
+    cmd = [a.qemu, "-name", "fcw-test", "-machine", "q35", *accel,
            "-smp", str(a.smp), "-m", str(a.mem), "-nodefaults", "-no-user-config",
            "-display", "none",
            "-kernel", os.path.join(a.image, man["kernel"]),

@@ -4,9 +4,9 @@
 #![cfg(unix)]
 
 use fcw_client::Session;
-use fcw_daemon::accel::Accel;
 use fcw_daemon::daemon::Daemon;
 use fcw_daemon::localsock::LocalListener;
+use fcw_daemon::qemu::QemuLocator;
 use fcw_daemon::vm::Env;
 use fcw_daemon::{cert, control, pb, quic};
 use fcw_proto::control::{envelope, request, response};
@@ -25,15 +25,7 @@ fn tmpdir(name: &str) -> PathBuf {
 
 fn daemon(dir: &Path, port: u16, sha: &str) -> Arc<Daemon> {
     let (events, _) = broadcast::channel(256);
-    let env = Arc::new(Env {
-        images_dir: dir.join("images"),
-        qemu: None,
-        qemu_img: None,
-        accel: Accel::Tcg,
-        tz: None,
-        qemu_version: None,
-        net: None,
-    });
+    let env = Arc::new(Env { images_dir: dir.join("images"), qemu: QemuLocator::fixed(None), tz: None, net: None });
     Daemon::new(env, dir.join("vms"), 4, port, sha.to_string(), events)
 }
 

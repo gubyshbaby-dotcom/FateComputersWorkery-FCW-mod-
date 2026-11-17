@@ -38,6 +38,7 @@ message Request {
     SetRedstoneInputs set_redstone_inputs = 14;
     FetchImage fetch_image = 15;
     Shutdown shutdown = 16;
+    FetchQemu fetch_qemu = 17;
   }
 }
 
@@ -117,6 +118,15 @@ message FetchImage {
 
 message Shutdown {}
 
+// Скачать переносимый QEMU (tar.zst со статическими qemu-system-x86_64 и
+// qemu-img, см. qemu/README.md) в --qemu-dir. Нужен там, где QEMU нельзя
+// поставить пакетом (хостинги в контейнерах: Pelican, Pterodactyl). Ответ ok
+// приходит сразу, ход и итог — событиями ImageProgress с image_id = "qemu".
+message FetchQemu {
+  string url = 1;
+  string sha256 = 2;
+}
+
 // ---------------------------------------------------------------- ответы
 
 message Response {
@@ -144,6 +154,10 @@ message HelloResult {
   bool internet_allowed = 10;  // NAT наружу разрешён
   string network_subnet = 11;  // "10.42.0.0/16"
   string dns_zone = 12;        // "mc"
+  bool qemu_available = 13;    // найден qemu-system-x86_64 (и qemu-img)
+  string qemu_path = 14;
+  string qemu_version = 15;    // "11.1.3"
+  bool qemu_bundled = 16;      // это переносимый QEMU из --qemu-dir
 }
 
 message ImageInfo {

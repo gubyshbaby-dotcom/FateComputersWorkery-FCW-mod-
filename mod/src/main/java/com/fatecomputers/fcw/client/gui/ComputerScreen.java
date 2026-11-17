@@ -207,6 +207,9 @@ public class ComputerScreen extends AbstractContainerScreen<ComputerMenu> {
         if (s.daemonStatus() != 2) {
             return Component.translatable("gui.fcw.error.daemon", s.daemonMessage());
         }
+        if (!s.qemuProblem().getString().isEmpty()) {
+            return s.qemuProblem();
+        }
         if (s.imageId().isEmpty()) {
             return Component.translatable("gui.fcw.error.no_image");
         }

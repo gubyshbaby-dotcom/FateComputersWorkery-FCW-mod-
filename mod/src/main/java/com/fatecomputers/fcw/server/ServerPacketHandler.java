@@ -95,7 +95,12 @@ public final class ServerPacketHandler {
                 c.hasPeripheral(PeripheralKind.SPEAKER), images, imagesError, c.vmIdString(),
                 c.effectiveHostname(), c.ipAddress(), d == null ? "" : d.dnsZone(),
                 FcwConfig.SERVER.guestNetwork.get() && (d == null || !DaemonManager.isReady() || d.networkEnabled()),
-                c.imageVersion(), c.imageUpdateAvailable());
+                c.imageVersion(), c.imageUpdateAvailable(), qemuProblem(d));
+    }
+
+    private static Component qemuProblem(@javax.annotation.Nullable DaemonManager d) {
+        Component c = d == null ? null : d.qemuProblem();
+        return c == null ? Component.empty() : c;
     }
 
     // ------------------------------------------------------------------ screen access tokens

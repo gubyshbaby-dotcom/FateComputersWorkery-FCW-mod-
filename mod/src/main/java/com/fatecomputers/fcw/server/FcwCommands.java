@@ -49,7 +49,10 @@ public final class FcwCommands {
                         .then(Commands.literal("fetch")
                                 .requires(s -> s.hasPermission(2))
                                 .then(Commands.argument("id", StringArgumentType.word()).executes(FcwCommands::fetch))))
-                .then(Commands.literal("vms").requires(s -> s.hasPermission(2)).executes(FcwCommands::vms)));
+                .then(Commands.literal("vms").requires(s -> s.hasPermission(2)).executes(FcwCommands::vms))
+                .then(Commands.literal("qemu")
+                        .executes(FcwCommands::qemu)
+                        .then(Commands.literal("fetch").requires(s -> s.hasPermission(2)).executes(FcwCommands::qemuFetch))));
     }
 
     private static String human(long mb) {
@@ -82,6 +85,15 @@ public final class FcwCommands {
                     ? Component.translatable("command.fcw.status.network", h.getNetworkSubnet(), h.getDnsZone(),
                     Component.translatable(h.getInternetAllowed() ? "command.fcw.status.internet_on" : "command.fcw.status.internet_off"))
                     : Component.translatable("command.fcw.status.network_off"), false);
+        }
+        if (h != null) {
+            qemuLines(src, d);
+            String accel = d.accelerator();
+            if ("tcg".equals(accel)) {
+                src.sendSuccess(() -> Component.translatable("command.fcw.status.accel_tcg").withStyle(ChatFormatting.YELLOW), false);
+            } else if (!accel.isEmpty()) {
+                src.sendSuccess(() -> Component.translatable("command.fcw.status.accel", accel).withStyle(ChatFormatting.GREEN), false);
+            }
         }
         String publicHost = FcwConfig.SERVER.publicHost.get();
         src.sendSuccess(() -> Component.translatable("command.fcw.status.public_host",
@@ -240,6 +252,58 @@ public final class FcwCommands {
                 src.sendSuccess(() -> line, false);
             }
         });
+        return 1;
+    }
+
+    /** QEMU line(s) for /fcw status and /fcw qemu. */
+    private static void qemuLines(CommandSourceStack src, DaemonManager d) {
+        HelloResult h = d.hello();
+        if (h == null) {
+            return;
+        }
+        if (!d.qemuSupported()) {
+            src.sendSuccess(() -> Component.translatable("command.fcw.qemu.unknown").withStyle(ChatFormatting.GRAY), false);
+        } else if (h.getQemuAvailable()) {
+            src.sendSuccess(() -> Component.translatable("command.fcw.qemu.found", h.getQemuVersion(), h.getQemuPath(),
+                    Component.translatable(h.getQemuBundled() ? "command.fcw.qemu.bundled" : "command.fcw.qemu.system")), false);
+        } else {
+            Component why = switch (d.qemuFetchState()) {
+                case RUNNING -> d.qemuProgressText();
+                case FAILED -> Component.translatable("command.fcw.qemu.failed", d.qemuFetchError());
+                default -> Component.translatable(d.qemuPlatformPublished() ? "command.fcw.qemu.hint_fetch" : "command.fcw.qemu.hint_install");
+            };
+            src.sendSuccess(() -> Component.translatable("command.fcw.qemu.missing", why).withStyle(ChatFormatting.RED), false);
+        }
+    }
+
+    private static int qemu(CommandContext<CommandSourceStack> ctx) {
+        CommandSourceStack src = ctx.getSource();
+        DaemonManager d = DaemonManager.get();
+        if (!requireReady(src, d)) {
+            return 0;
+        }
+        qemuLines(src, d);
+        src.sendSuccess(() -> Component.translatable("command.fcw.qemu.dir", d.qemuDir().toString(),
+                Component.translatable(FcwConfig.SERVER.qemuAutoDownload.get() ? "options.on" : "options.off")).withStyle(ChatFormatting.GRAY), false);
+        return 1;
+    }
+
+    private static int qemuFetch(CommandContext<CommandSourceStack> ctx) {
+        CommandSourceStack src = ctx.getSource();
+        DaemonManager d = DaemonManager.get();
+        if (!requireReady(src, d)) {
+            return 0;
+        }
+        if (d.qemuFetchState() == DaemonManager.QemuFetch.RUNNING) {
+            src.sendSuccess(d::qemuProgressText, false);
+            return 1;
+        }
+        d.addQemuListener(msg -> src.sendSuccess(() -> msg, true));
+        Component problem = d.fetchQemu();
+        if (problem != null) {
+            src.sendFailure(problem);
+            return 0;
+        }
         return 1;
     }
 

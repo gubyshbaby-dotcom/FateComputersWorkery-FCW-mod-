@@ -4,9 +4,11 @@ import com.fatecomputers.fcw.FcwConfig;
 import com.fatecomputers.fcw.FcwMod;
 import com.fatecomputers.fcw.proto.ControlProto.Envelope;
 import com.fatecomputers.fcw.proto.ControlProto.Event;
+import com.fatecomputers.fcw.proto.ControlProto.FetchQemu;
 import com.fatecomputers.fcw.proto.ControlProto.Hello;
 import com.fatecomputers.fcw.proto.ControlProto.HelloResult;
 import com.fatecomputers.fcw.proto.ControlProto.ImageInfo;
+import com.fatecomputers.fcw.proto.ControlProto.ImageProgress;
 import com.fatecomputers.fcw.proto.ControlProto.ListImages;
 import com.fatecomputers.fcw.proto.ControlProto.Request;
 import com.fatecomputers.fcw.proto.ControlProto.Response;
@@ -58,6 +60,11 @@ import java.util.stream.Stream;
 public final class DaemonManager {
     public enum Status { DISABLED, STARTING, READY, FAILED, STOPPED }
 
+    public enum QemuFetch { IDLE, RUNNING, FAILED, DONE }
+
+    /** image_id of ImageProgress events about the portable QEMU download. */
+    public static final String QEMU_ID = "qemu";
+
     public static final int PROTOCOL_VERSION = 1;
     public static final long DEFAULT_TIMEOUT_MS = 60_000;
 
@@ -66,6 +73,15 @@ public final class DaemonManager {
     private final MinecraftServer server;
     private final Path imagesDir;
     private final Path vmsDir;
+    private final Path qemuDir;
+    /** --help output of the daemon binary: tells which flags/requests this build knows. */
+    private volatile String daemonHelp = "";
+    private QemuFetch qemuFetch = QemuFetch.IDLE;
+    private Component qemuFetchError = Component.empty();
+    private long qemuDone;
+    private long qemuTotal;
+    private int qemuLoggedStep = -1;
+    private final List<Consumer<Component>> qemuListeners = new CopyOnWriteArrayList<>();
     private volatile Status status = Status.STARTING;
     private volatile Component reason = Component.translatable("daemon.fcw.starting");
     @Nullable
@@ -98,6 +114,7 @@ public final class DaemonManager {
     private DaemonManager(MinecraftServer server) {
         this.server = server;
         this.imagesDir = FMLPaths.GAMEDIR.get().resolve("fcw").resolve("images").toAbsolutePath().normalize();
+        this.qemuDir = FMLPaths.GAMEDIR.get().resolve("fcw").resolve("qemu").toAbsolutePath().normalize();
         this.vmsDir = server.getWorldPath(LevelResource.ROOT).resolve("fcw").resolve("vms").toAbsolutePath().normalize();
     }
 
@@ -213,8 +230,9 @@ public final class DaemonManager {
         status = Status.STARTING;
         reason = Component.translatable("daemon.fcw.starting");
         final Path bin = binary;
+        netArgs.add(new String[]{"--qemu-dir", qemuDir.toString()});
         Thread t = new Thread(() -> {
-            addSupportedFlags(bin, cmd, netArgs);
+            daemonHelp = addSupportedFlags(bin, cmd, netArgs);
             startupThread(cmd, socket, startupTimeout);
         }, "fcw-daemon-start");
         t.setDaemon(true);
@@ -225,7 +243,7 @@ public final class DaemonManager {
      * Appends optional flags that this daemon build understands (it rejects unknown flags), judged
      * by its --help output. Lets the mod run with an older daemon.
      */
-    private static void addSupportedFlags(Path binary, List<String> cmd, List<String[]> optional) {
+    private static String addSupportedFlags(Path binary, List<String> cmd, List<String[]> optional) {
         String help = "";
         try {
             Process p = new ProcessBuilder(binary.toString(), "--help").redirectErrorStream(true).start();
@@ -247,8 +265,9 @@ public final class DaemonManager {
             }
         }
         if (!skipped.isEmpty()) {
-            FcwMod.LOGGER.warn("This VM daemon does not support {}; the guest network settings are not applied", String.join(", ", skipped));
+            FcwMod.LOGGER.warn("This VM daemon does not support {}; these settings are not applied", String.join(", ", skipped));
         }
+        return help;
     }
 
     private void startupThread(List<String> cmd, Path socket, int timeoutSeconds) {
@@ -370,7 +389,17 @@ public final class DaemonManager {
             status = Status.READY;
             reason = Component.translatable("daemon.fcw.ready");
             // Computers validate their image against the list, so load it before resyncing them.
-            refreshImages(ComputerTracker::onDaemonReady);
+            refreshImages(() -> {
+                ComputerTracker.onDaemonReady();
+                logQemu();
+                // An explicit daemon.qemuPath wins over the portable QEMU, so downloading would not help then.
+                if (qemuMissing() && FcwConfig.SERVER.qemuAutoDownload.get() && FcwConfig.SERVER.qemuPath.get().isBlank()) {
+                    Component why = fetchQemu();
+                    if (why != null) {
+                        FcwMod.LOGGER.warn("QEMU not found and cannot be downloaded: {}", why.getString());
+                    }
+                }
+            });
         });
     }
 
@@ -594,7 +623,9 @@ public final class DaemonManager {
                 }
             }
             case IMAGE_PROGRESS -> {
-                if (e.getImageProgress().getFinished()) {
+                if (QEMU_ID.equals(e.getImageProgress().getImageId())) {
+                    onQemuProgress(e.getImageProgress());
+                } else if (e.getImageProgress().getFinished()) {
                     refreshImages();
                 }
             }
@@ -684,6 +715,180 @@ public final class DaemonManager {
     public void refreshImagesIfOlder(long maxAgeMs) {
         if (System.currentTimeMillis() - imagesUpdatedAt > maxAgeMs) {
             refreshImages();
+        }
+    }
+
+
+    // ------------------------------------------------------------------ portable QEMU
+
+    /** This daemon build knows --qemu-dir / FetchQemu / HelloResult.qemu_* (judged by its --help). */
+    public boolean qemuSupported() {
+        return daemonHelp.contains("--qemu-dir");
+    }
+
+    /** The daemon reported that it has no QEMU (only meaningful for daemons that report it). */
+    public boolean qemuMissing() {
+        HelloResult h = hello;
+        return status == Status.READY && h != null && qemuSupported() && !h.getQemuAvailable();
+    }
+
+    public boolean qemuPlatformPublished() {
+        return FcwConfig.SERVER.qemuPlatforms.get().stream().anyMatch(p -> p.trim().equals(Platform.id()));
+    }
+
+    public String qemuUrl() {
+        return FcwConfig.SERVER.qemuUrlTemplate.get().replace("<platform>", Platform.id()).replace("{platform}", Platform.id());
+    }
+
+    public Path qemuDir() {
+        return qemuDir;
+    }
+
+    public QemuFetch qemuFetchState() {
+        return qemuFetch;
+    }
+
+    public Component qemuFetchError() {
+        return qemuFetchError;
+    }
+
+    /** Download progress 0..100, or -1 if the size is unknown. */
+    public int qemuPercent() {
+        return qemuTotal > 0 ? (int) Math.min(100, qemuDone * 100 / qemuTotal) : -1;
+    }
+
+    public long qemuDoneMb() {
+        return qemuDone >> 20;
+    }
+
+    public void addQemuListener(Consumer<Component> l) {
+        qemuListeners.add(l);
+    }
+
+    /** Short state of the QEMU download for the GUI and /fcw status, e.g. "downloading QEMU: 34%". */
+    public Component qemuProgressText() {
+        int p = qemuPercent();
+        return p >= 0 ? Component.translatable("daemon.fcw.qemu.downloading", p)
+                : Component.translatable("daemon.fcw.qemu.downloading_mb", qemuDoneMb());
+    }
+
+    /** Why machines cannot start for lack of QEMU, or null if QEMU is there (or the daemon cannot tell). */
+    @Nullable
+    public Component qemuProblem() {
+        if (!qemuMissing()) {
+            return null;
+        }
+        return switch (qemuFetch) {
+            case RUNNING -> Component.translatable("gui.fcw.error.qemu_downloading", qemuProgressText());
+            case FAILED -> Component.translatable("gui.fcw.error.qemu_failed", qemuFetchError);
+            default -> qemuPlatformPublished()
+                    ? Component.translatable("gui.fcw.error.qemu_missing")
+                    : Component.translatable("gui.fcw.error.qemu_missing_platform", Platform.id());
+        };
+    }
+
+    private void logQemu() {
+        HelloResult h = hello;
+        if (h == null) {
+            return;
+        }
+        if (!qemuSupported()) {
+            FcwMod.LOGGER.info("This VM daemon does not report QEMU (older build): portable QEMU download is unavailable");
+        } else if (h.getQemuAvailable()) {
+            FcwMod.LOGGER.info("QEMU {} at {} ({})", h.getQemuVersion(), h.getQemuPath(), h.getQemuBundled() ? "portable" : "system");
+        } else {
+            FcwMod.LOGGER.warn("The VM daemon found no QEMU (qemu-system-x86_64)");
+        }
+    }
+
+    /**
+     * Asks the daemon to download the portable QEMU into --qemu-dir.
+     * @return null if the download started (or is running), otherwise why it cannot
+     */
+    @Nullable
+    public Component fetchQemu() {
+        if (status != Status.READY) {
+            return Component.translatable("gui.fcw.error.daemon", reason);
+        }
+        if (!qemuSupported()) {
+            return Component.translatable("daemon.fcw.qemu.unsupported");
+        }
+        if (!qemuPlatformPublished()) {
+            return Component.translatable("gui.fcw.error.qemu_missing_platform", Platform.id());
+        }
+        if (qemuFetch == QemuFetch.RUNNING) {
+            return null;
+        }
+        String url = qemuUrl();
+        FcwMod.LOGGER.info("Downloading portable QEMU from {}", url);
+        qemuFetch = QemuFetch.RUNNING;
+        qemuFetchError = Component.empty();
+        qemuDone = 0;
+        qemuTotal = 0;
+        qemuLoggedStep = -1;
+        notifyQemu(Component.translatable("daemon.fcw.qemu.fetch_start", url));
+        request(Request.newBuilder().setFetchQemu(FetchQemu.newBuilder().setUrl(url)).build(), 60 * 60_000L, r -> {
+            if (!r.getOk() && qemuFetch == QemuFetch.RUNNING) {
+                qemuFailed(r.getError().isEmpty() ? "unknown error" : r.getError());
+            }
+        });
+        return null;
+    }
+
+    private void onQemuProgress(ImageProgress p) {
+        if (!p.getError().isEmpty()) {
+            qemuFailed(p.getError());
+            return;
+        }
+        qemuDone = p.getDoneBytes();
+        qemuTotal = p.getTotalBytes();
+        if (p.getFinished()) {
+            qemuFetch = QemuFetch.DONE;
+            FcwMod.LOGGER.info("Portable QEMU downloaded");
+            rehello();
+            return;
+        }
+        qemuFetch = QemuFetch.RUNNING;
+        int percent = qemuPercent();
+        int step = percent >= 0 ? percent / 10 : (int) (qemuDone >> 26); // every 10% or 64 MB
+        if (step > qemuLoggedStep) {
+            qemuLoggedStep = step;
+            Component msg = qemuProgressText();
+            FcwMod.LOGGER.info("QEMU: {}", msg.getString());
+            notifyQemu(msg);
+        }
+    }
+
+    private void qemuFailed(String error) {
+        qemuFetch = QemuFetch.FAILED;
+        qemuFetchError = Component.literal(error);
+        FcwMod.LOGGER.error("Downloading portable QEMU failed: {}", error);
+        notifyQemu(Component.translatable("gui.fcw.error.qemu_failed", error));
+        qemuListeners.clear();
+    }
+
+    /** Asks Hello again so that qemu_* reflect the new QEMU, then resyncs computers waiting for it. */
+    private void rehello() {
+        request(Request.newBuilder().setHello(Hello.newBuilder().setClientName("fcw-mod " + FcwMod.version())
+                .setProtocolVersion(PROTOCOL_VERSION)).build(), r -> {
+            if (r.getOk() && r.hasHello()) {
+                hello = r.getHello();
+            }
+            logQemu();
+            HelloResult h = hello;
+            if (h != null && h.getQemuAvailable()) {
+                notifyQemu(Component.translatable("daemon.fcw.qemu.ready", h.getQemuVersion(), h.getQemuPath()));
+                qemuListeners.clear();
+                ComputerTracker.onDaemonReady();
+            } else {
+                qemuFailed("QEMU is still not found after the download");
+            }
+        });
+    }
+
+    private void notifyQemu(Component msg) {
+        for (Consumer<Component> l : qemuListeners) {
+            l.accept(msg);
         }
     }
 
