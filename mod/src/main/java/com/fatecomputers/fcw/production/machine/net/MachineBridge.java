@@ -176,7 +176,8 @@ public final class MachineBridge {
             return new State("off", null);
         }
         boolean working = false;
-        for (MachineControllerBlockEntity.Status s : m.status()) {
+        for (int i = 0; i < m.sectionCount(); i++) {
+            MachineControllerBlockEntity.Status s = m.section(i).status();
             switch (s) {
                 case OFF, IDLE -> {
                 }
