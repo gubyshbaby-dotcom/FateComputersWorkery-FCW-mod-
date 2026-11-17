@@ -1,0 +1,70 @@
+{
+	"parent": "minecraft:block/block",
+	"textures": {
+		"0": "fcw:block/projection_screen",
+		"1": "fcw:block/projection_screen_frame",
+		"particle": "fcw:block/projection_screen"
+	},
+	"elements": [
+		{
+			"name": "frame_right",
+			"from": [
+				0,
+				0,
+				14.75
+			],
+			"to": [
+				1,
+				16,
+				15
+			],
+			"faces": {
+				"north": {
+					"uv": [
+						0,
+						0,
+						1,
+						16
+					],
+					"texture": "#1"
+				},
+				"east": {
+					"uv": [
+						0,
+						0,
+						0.5,
+						16
+					],
+					"texture": "#1"
+				},
+				"west": {
+					"uv": [
+						0,
+						0,
+						0.5,
+						16
+					],
+					"texture": "#1"
+				},
+				"up": {
+					"uv": [
+						0,
+						0,
+						1,
+						0.5
+					],
+					"texture": "#1"
+				},
+				"down": {
+					"uv": [
+						0,
+						0,
+						1,
+						0.5
+					],
+					"texture": "#1"
+				}
+			}
+		}
+	]
+}

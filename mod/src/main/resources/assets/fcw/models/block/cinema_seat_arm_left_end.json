@@ -1,0 +1,148 @@
+{
+	"parent": "minecraft:block/block",
+	"textures": {
+		"0": "fcw:block/cinema_seat_fabric",
+		"1": "fcw:block/cinema_seat_frame",
+		"particle": "fcw:block/cinema_seat_fabric"
+	},
+	"elements": [
+		{
+			"name": "arm",
+			"from": [
+				0,
+				2,
+				3
+			],
+			"to": [
+				2,
+				10,
+				13
+			],
+			"faces": {
+				"north": {
+					"uv": [
+						0,
+						0,
+						2,
+						8
+					],
+					"texture": "#1"
+				},
+				"east": {
+					"uv": [
+						0,
+						0,
+						10,
+						8
+					],
+					"texture": "#1"
+				},
+				"south": {
+					"uv": [
+						0,
+						0,
+						2,
+						8
+					],
+					"texture": "#1"
+				},
+				"west": {
+					"uv": [
+						0,
+						0,
+						10,
+						8
+					],
+					"texture": "#1"
+				},
+				"up": {
+					"uv": [
+						0,
+						0,
+						2,
+						10
+					],
+					"texture": "#1"
+				},
+				"down": {
+					"uv": [
+						0,
+						0,
+						2,
+						10
+					],
+					"texture": "#1"
+				}
+			}
+		},
+		{
+			"name": "arm_pad",
+			"from": [
+				0,
+				10,
+				3
+			],
+			"to": [
+				2,
+				10.75,
+				12
+			],
+			"faces": {
+				"north": {
+					"uv": [
+						0,
+						0,
+						2,
+						0.75
+					],
+					"texture": "#0"
+				},
+				"east": {
+					"uv": [
+						0,
+						0,
+						9,
+						0.75
+					],
+					"texture": "#0"
+				},
+				"south": {
+					"uv": [
+						0,
+						0,
+						2,
+						0.75
+					],
+					"texture": "#0"
+				},
+				"west": {
+					"uv": [
+						0,
+						0,
+						9,
+						0.75
+					],
+					"texture": "#0"
+				},
+				"up": {
+					"uv": [
+						0,
+						0,
+						2,
+						9
+					],
+					"texture": "#0"
+				},
+				"down": {
+					"uv": [
+						0,
+						0,
+						2,
+						9
+					],
+					"texture": "#0"
+				}
+			}
+		}
+	]
+}

@@ -61,6 +61,10 @@ public final class FcwConfig {
         public final ModConfigSpec.ConfigValue<String> onPowerLoss;
         public final ModConfigSpec.EnumValue<com.fatecomputers.fcw.production.ProductionDifficulty> productionDifficulty;
 
+        public final ModConfigSpec.IntValue projectorRange;
+        public final ModConfigSpec.IntValue lampLifeHours;
+        public final ModConfigSpec.IntValue projectorPower;
+
         Server(ModConfigSpec.Builder b) {
             b.comment("VM daemon (native fcw-daemon process started by the server)").push("daemon");
             daemonEnabled = b.comment("Use the VM daemon (start it, or connect to it in remote mode).")
@@ -183,6 +187,17 @@ public final class FcwConfig {
                             "pause = the virtual machine is frozen and continues when the power is back.")
                     .defineInList("onPowerLoss", "off", Arrays.asList("off", "pause"));
             b.pop();
+
+            b.comment("Cinema: projector, projection screen, seats").push("cinema");
+            projectorRange = b.comment("How far a projector throws its picture, blocks. The picture is distance / 1.5 wide.")
+                    .defineInRange("projectorRange", 24, 4, 64);
+            lampLifeHours = b.comment("Life of a projector lamp in hours of projection (real time). The picture loses up to half",
+                            "of its brightness as the lamp wears, then the lamp burns out and has to be replaced.",
+                            "0 = lamps never wear.")
+                    .defineInRange("lampLifeHours", 40, 0, 100_000);
+            projectorPower = b.comment("FE per tick a projector draws while its lamp is lit (only with production.requirePower = true).")
+                    .defineInRange("projectorPower", 30, 0, 10_000);
+            b.pop();
         }
     }
 
@@ -196,6 +211,7 @@ public final class FcwConfig {
         public final ModConfigSpec.BooleanValue audioEnabled;
         public final ModConfigSpec.DoubleValue audioVolume;
         public final ModConfigSpec.BooleanValue machineHints;
+        public final ModConfigSpec.BooleanValue projectorBeam;
 
         Client(ModConfigSpec.Builder b) {
             b.comment("Live monitor screens").push("screens");
@@ -222,6 +238,11 @@ public final class FcwConfig {
             machineHints = b.comment("Show a line above the hotbar when aiming at a loading point of a machine:",
                             "what it is, what lies there and what a right click does.")
                     .define("hints", true);
+            b.pop();
+
+            b.comment("Cinema").push("cinema");
+            projectorBeam = b.comment("Draw the beam of light of a projector and the dust in it (seen only in the dark).")
+                    .define("projectorBeam", true);
             b.pop();
         }
     }

@@ -4,7 +4,9 @@ public enum PeripheralKind {
     MONITOR("monitor"),
     KEYBOARD("keyboard"),
     MOUSE("mouse"),
-    SPEAKER("speaker");
+    SPEAKER("speaker"),
+    /** Проектор: показывает экран, как монитор, но за компьютер с него не садятся. */
+    PROJECTOR("projector");
 
     private final String id;
 

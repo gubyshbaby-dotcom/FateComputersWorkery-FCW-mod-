@@ -38,6 +38,7 @@ If energy runs out in the middle of a recipe, the machine stops in the "No power
 | Wafering cell | 256 |
 | EUV scanner | 1024 to 2048 |
 | Electronics line | 256 to 768 per section |
+| [Projector](../computers/cinema.md) | 30 while the lamp is lit |
 
 The most expensive run: a wafer with processors, 2 457 600 FE in 60 seconds.
 

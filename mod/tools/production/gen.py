@@ -139,6 +139,7 @@ VANILLA = {
     "tinted_glass": "тонированное стекло", "slime_ball": "слизь", "lever": "рычаг", "blue_dye": "синий краситель",
     "#minecraft:coals": "уголь", "#minecraft:planks": "доски", "#minecraft:wool": "шерсть",
     "#c:ingots/steel": "сталь", "#c:silicon": "технический кремний",
+    "white_wool": "белая шерсть", "red_wool": "красная шерсть", "black_dye": "чёрный краситель",
 }
 
 
@@ -280,10 +281,20 @@ C = [
     ("build", "wrench_iron", 1, ["P P", " I "], {"P": "fcw:iron_plate", "I": I}),
 ] + [("components", res, count, pattern, key) for (res, count, pattern, key) in BD.CRAFT] + [
     ("euv", res, count, None, key) for (res, count, key) in BD.EUV
+] + [
+    # --- cinema (docs/CINEMA.md; models, lang and loot tables: mod/tools/cinema/gen.py)
+    ("cinema", "projector_lamp", 1, [" G ", "GLG", "CQC"],
+     {"G": "minecraft:glass_pane", "L": "minecraft:glowstone_dust", "C": "minecraft:copper_ingot", "Q": "minecraft:quartz"}),
+    ("cinema", "projector", 1, ["SVS", "ALD", "SRS"],
+     {"S": STEEL, "V": "minecraft:iron_bars", "A": "minecraft:amethyst_shard", "L": "fcw:projector_lamp",
+      "D": "fcw:cpu_dip", "R": R}),
+    ("cinema", "projection_screen", 8, ["WWW", "WDW", "WWW"], {"W": "minecraft:white_wool", "D": "minecraft:black_dye"}),
+    ("cinema", "cinema_seat", 2, ["W  ", "WWW", "P P"], {"W": "minecraft:red_wool", "P": "#minecraft:planks"}),
 ]
 # items registered by the machines agent: recipes are skipped until those items exist
 DEFERRED = ("euv_", "_blueprint")
-CATEGORY = {"parts": "misc", "computers": "misc", "peripherals": "misc", "network": "misc", "reticles": "misc", "build": "misc", "components": "misc", "euv": "building"}
+CATEGORY = {"parts": "misc", "computers": "misc", "peripherals": "misc", "network": "misc", "reticles": "misc", "build": "misc", "components": "misc", "euv": "building",
+            "cinema": "misc"}
 for (sec, res, count, pattern, key) in C:
     r = {}
     if res.startswith(DEFERRED[0]) or res.endswith(DEFERRED[1]):
@@ -464,7 +475,7 @@ A("")
 SEC_RU = {"parts": "Детали без машин", "computers": "Компьютеры", "peripherals": "Мониторы, ввод и звук",
           "network": "Сеть данных",
           "reticles": "Фотошаблоны", "build": "Проекты машин и ключ", "components": "Компоненты машин (верстак)",
-          "euv": "Блоки литографа EUV"}
+          "euv": "Блоки литографа EUV", "cinema": "Кино"}
 SEC_NOTE = {
     "parts": "Материнская плата на верстаке обходится дороже, чем на линии электроники, зато доступна сразу.",
     "computers": "Все корпуса работают одинаково, отличается только вид. Простые из железа, современные из стали.",
@@ -475,6 +486,8 @@ SEC_NOTE = {
              "Ключ разбирает машину: Shift + ПКМ по пульту выключенной машины, второй раз для подтверждения.",
     "components": "Из компонентов собирают машины на стройплощадке. Часть рецептов не на верстаке: см. таблицу ниже.",
     "euv": "В скобках после названия: сколько таких блоков идёт на один литограф (всего 301).",
+    "cinema": "Проектор крафтится уже с лампой. Лампа изнашивается и меняется (ПКМ лампой по выключенному "
+              "проектору). Как устроен кинозал: [CINEMA.md](CINEMA.md).",
 }
 EUV_COUNT = BD.EUV_COUNT
 cur = None

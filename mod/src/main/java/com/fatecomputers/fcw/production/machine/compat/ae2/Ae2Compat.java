@@ -40,6 +40,7 @@ public final class Ae2Compat {
     public static void init(IEventBus modBus) {
         MachineControllerBlockEntity.setNetworkPowerFactory(Link::new);
         Ae2ComputerPower.init(modBus);
+        Ae2ProjectorPower.init(modBus);
         modBus.addListener((RegisterCapabilitiesEvent event) -> event.registerBlock(AECapabilities.IN_WORLD_GRID_NODE_HOST,
                 (level, pos, state, be, context) -> {
                     MachineCellBlock block = (MachineCellBlock) state.getBlock();

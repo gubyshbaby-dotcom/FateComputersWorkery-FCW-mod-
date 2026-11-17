@@ -37,12 +37,13 @@ While a player sits at the computer, the screen fills the game window and keyboa
 | Mouse | no mouse input |
 | Speakers | the machine has no sound card |
 
-LCD and CRT monitors show the same picture; only the model differs. The five kinds of speakers are equal too.
+LCD and CRT monitors show the same picture; only the model differs. Speakers are equal too, except the subwoofer: next to other speakers it plays the low frequencies only. Stereo sound and the projector: [Cinema](cinema.md).
 
 ## Limits
 
 - One player controls a computer. Others see the screen on the monitor.
 - The live screen is visible on a monitor from 32 blocks; farther away the monitor shows a still picture.
+- A monitor is seen by those next to it. For a hall there is the projector: [Cinema](cinema.md).
 - The resolution of the graphical screen is set by the server: 1024 x 768 by default.
 - With the `access.ownerOnlyControl` setting only the player who placed the computer can control it.
 

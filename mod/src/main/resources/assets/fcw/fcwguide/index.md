@@ -9,7 +9,7 @@ navigation:
 
 The mod adds computers, each running a Linux virtual machine, and a production chain that makes the parts for them.
 
-- [Computers](computers/index.md): assembly, parts, OS, screen and input, network, redstone.
+- [Computers](computers/index.md): assembly, parts, OS, screen and input, network, redstone, [cinema](computers/cinema.md).
 - [Production](production/index.md): five machines from quartz to processors, recipes, reticles, chip tags.
 - [Energy](energy/index.md): FE and the `requirePower` setting.
 - [Commands and settings](reference/index.md): `/fcw` and the config files.

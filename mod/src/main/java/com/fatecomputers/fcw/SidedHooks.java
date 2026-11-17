@@ -18,6 +18,12 @@ public final class SidedHooks {
         default void monitorUnloaded(MonitorBlockEntity be) {
         }
 
+        default void projectorLoaded(com.fatecomputers.fcw.cinema.ProjectorBlockEntity be) {
+        }
+
+        default void projectorUnloaded(com.fatecomputers.fcw.cinema.ProjectorBlockEntity be) {
+        }
+
         default void speakerLoaded(PeripheralBlockEntity be) {
         }
 

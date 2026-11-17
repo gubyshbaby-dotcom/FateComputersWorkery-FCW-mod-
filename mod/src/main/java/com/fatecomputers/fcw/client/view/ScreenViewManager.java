@@ -3,6 +3,8 @@ package com.fatecomputers.fcw.client.view;
 import com.fatecomputers.fcw.FcwConfig;
 import com.fatecomputers.fcw.FcwMod;
 import com.fatecomputers.fcw.block.entity.MonitorBlockEntity;
+import com.fatecomputers.fcw.cinema.Projection;
+import com.fatecomputers.fcw.cinema.ProjectorBlockEntity;
 import com.fatecomputers.fcw.client.gui.DisplayScreen;
 import com.fatecomputers.fcw.client.nativelib.FcwNative;
 import com.fatecomputers.fcw.client.nativelib.NativeLoader;
@@ -33,6 +35,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 
 /**
  * Client side live screens. For every powered monitor in range it asks the server for a view
@@ -155,6 +158,7 @@ public final class ScreenViewManager {
     private final Map<String, Session> sessions = new HashMap<>();
     private final Map<String, Link> links = new HashMap<>();
     private final Set<MonitorBlockEntity> monitors = Collections.newSetFromMap(new IdentityHashMap<>());
+    private final Set<ProjectorBlockEntity> projectors = Collections.newSetFromMap(new IdentityHashMap<>());
     private final int[] rects = new int[MAX_RECTS * 4];
     @Nullable
     private String pendingDisplayVm;
@@ -176,6 +180,23 @@ public final class ScreenViewManager {
         monitors.remove(be);
     }
 
+    public void projectorLoaded(ProjectorBlockEntity be) {
+        projectors.add(be);
+    }
+
+    public void projectorUnloaded(ProjectorBlockEntity be) {
+        projectors.remove(be);
+    }
+
+    /** Загруженные мониторы и проекторы: по ним звук решает, где у машины лево и право. */
+    public Set<MonitorBlockEntity> monitors() {
+        return Collections.unmodifiableSet(monitors);
+    }
+
+    public Set<ProjectorBlockEntity> projectors() {
+        return Collections.unmodifiableSet(projectors);
+    }
+
     @Nullable
     public Link link(String vmId) {
         return links.get(vmId);
@@ -184,10 +205,16 @@ public final class ScreenViewManager {
     /** Texture for a monitor if a live frame is available, otherwise null (the model picture stays). */
     @Nullable
     public ViewTexture textureFor(MonitorBlockEntity be) {
-        if (be.vmId() == null) {
+        return textureFor(be.vmId());
+    }
+
+    /** The same for anything else that shows the machine's screen (a projector). */
+    @Nullable
+    public ViewTexture textureFor(@Nullable UUID vmId) {
+        if (vmId == null) {
             return null;
         }
-        Link l = links.get(be.vmId().toString());
+        Link l = links.get(vmId.toString());
         if (l == null || l.view == 0 || !l.texture.hasFrame()) {
             return null;
         }
@@ -230,6 +257,27 @@ public final class ScreenViewManager {
             }
             int fps = dist > farDistance ? FcwConfig.CLIENT.farFps.get() : FcwConfig.CLIENT.nearFps.get();
             want(m.vmId().toString(), m.getBlockPos(), fps, now);
+        }
+        // Проекторы: то же самое, только расстояние меряется до картинки, а не до самого проектора.
+        for (Iterator<ProjectorBlockEntity> it = projectors.iterator(); it.hasNext(); ) {
+            ProjectorBlockEntity p = it.next();
+            if (p.isRemoved() || p.getLevel() != mc.level) {
+                it.remove();
+                continue;
+            }
+            if (!p.isLit() || !p.hasSignal() || p.vmId() == null) {
+                continue;
+            }
+            double dist = Math.sqrt(p.getBlockPos().getCenter().distanceToSqr(eye));
+            Projection picture = p.lastProjection();
+            if (picture != null) {
+                dist = Math.min(dist, picture.center().distanceTo(eye));
+            }
+            if (dist > range) {
+                continue;
+            }
+            int fps = dist > farDistance ? FcwConfig.CLIENT.farFps.get() : FcwConfig.CLIENT.nearFps.get();
+            want(p.vmId().toString(), p.getBlockPos(), fps, now);
         }
 
         for (Iterator<Link> it = links.values().iterator(); it.hasNext(); ) {
@@ -747,6 +795,7 @@ public final class ScreenViewManager {
         }
         sessions.clear();
         monitors.clear();
+        projectors.clear();
     }
 
     public int openViews() {

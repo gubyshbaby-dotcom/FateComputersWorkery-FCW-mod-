@@ -1,0 +1,20 @@
+{
+	"variants": {
+		"mount=floor,facing=north,powered=false": {"model": "fcw:block/projector"},
+		"mount=floor,facing=north,powered=true": {"model": "fcw:block/projector_on"},
+		"mount=floor,facing=east,powered=false": {"model": "fcw:block/projector", "y": 90},
+		"mount=floor,facing=east,powered=true": {"model": "fcw:block/projector_on", "y": 90},
+		"mount=floor,facing=south,powered=false": {"model": "fcw:block/projector", "y": 180},
+		"mount=floor,facing=south,powered=true": {"model": "fcw:block/projector_on", "y": 180},
+		"mount=floor,facing=west,powered=false": {"model": "fcw:block/projector", "y": 270},
+		"mount=floor,facing=west,powered=true": {"model": "fcw:block/projector_on", "y": 270},
+		"mount=ceiling,facing=north,powered=false": {"model": "fcw:block/projector_ceiling"},
+		"mount=ceiling,facing=north,powered=true": {"model": "fcw:block/projector_ceiling_on"},
+		"mount=ceiling,facing=east,powered=false": {"model": "fcw:block/projector_ceiling", "y": 90},
+		"mount=ceiling,facing=east,powered=true": {"model": "fcw:block/projector_ceiling_on", "y": 90},
+		"mount=ceiling,facing=south,powered=false": {"model": "fcw:block/projector_ceiling", "y": 180},
+		"mount=ceiling,facing=south,powered=true": {"model": "fcw:block/projector_ceiling_on", "y": 180},
+		"mount=ceiling,facing=west,powered=false": {"model": "fcw:block/projector_ceiling", "y": 270},
+		"mount=ceiling,facing=west,powered=true": {"model": "fcw:block/projector_ceiling_on", "y": 270}
+	}
+}

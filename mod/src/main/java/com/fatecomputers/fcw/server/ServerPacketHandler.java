@@ -87,7 +87,7 @@ public final class ServerPacketHandler {
             }
             imagesError = d.imagesError();
         }
-        int monitors = (int) c.peripherals().values().stream().filter(k -> k == PeripheralKind.MONITOR).count();
+        int monitors = (int) c.peripherals().values().stream().filter(k -> k == PeripheralKind.MONITOR || k == PeripheralKind.PROJECTOR).count();
         return new ComputerStatusPayload(c.getBlockPos(), daemonStatus, daemonMessage, d == null ? "" : d.accelerator(),
                 c.vmState(), c.isBusy(), c.wantRunning(), c.lastError(), c.controller(), c.agentInfo(), c.uptimeMs(),
                 c.imageId(), c.installedImage(), c.effectiveCpus(), c.effectiveMemoryMb(), c.inventory().hasGpu(),
@@ -117,9 +117,10 @@ public final class ServerPacketHandler {
             return;
         }
         PeripheralKind dk = device.kind();
-        // Monitors: view and control; keyboards: control; speakers: view (a view token also grants sound).
+        // Monitors: view and control; keyboards: control; speakers: view (a view token also grants sound);
+        // projectors: view only.
         boolean allowed = dk == PeripheralKind.MONITOR
-                || (p.control() ? dk == PeripheralKind.KEYBOARD : dk == PeripheralKind.SPEAKER);
+                || (p.control() ? dk == PeripheralKind.KEYBOARD : dk == PeripheralKind.SPEAKER || dk == PeripheralKind.PROJECTOR);
         if (!allowed) {
             fail(player, pos, kind, Component.translatable("message.fcw.access.no_device"));
             return;
