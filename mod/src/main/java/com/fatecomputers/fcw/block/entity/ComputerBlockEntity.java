@@ -1160,8 +1160,10 @@ public class ComputerBlockEntity extends BlockEntity implements MenuProvider {
             return;
         }
         if (powerLossTicks++ == 0) {
-            setPowerError(Component.translatable("gui.fcw.error.power_low", POWER_GRACE_TICKS / 20));
-            tellNearby(Component.translatable("message.fcw.power_low", getDisplayName(), POWER_GRACE_TICKS / 20));
+            // что будет через пять секунд, зависит от computers.onPowerLoss
+            String what = "pause".equals(FcwConfig.SERVER.onPowerLoss.get()) ? "power_low_pause" : "power_low";
+            setPowerError(Component.translatable("gui.fcw.error." + what, POWER_GRACE_TICKS / 20));
+            tellNearby(Component.translatable("message.fcw." + what, getDisplayName(), POWER_GRACE_TICKS / 20));
         }
         if (powerLossTicks >= POWER_GRACE_TICKS) {
             powerLossTicks = 0;
