@@ -1,0 +1,23 @@
+{
+  "guideme.guidebook.Blasting": "Плавка в доменной печи",
+  "guideme.guidebook.Close": "Закрыть",
+  "guideme.guidebook.CloseFullWidthView": "Обычная ширина",
+  "guideme.guidebook.ContentFrom": "Материалы из",
+  "guideme.guidebook.Crafting": "Верстак",
+  "guideme.guidebook.FullWidthView": "На всю ширину",
+  "guideme.guidebook.HideAnnotations": "Скрыть пометки",
+  "guideme.guidebook.HistoryGoBack": "Назад",
+  "guideme.guidebook.HistoryGoForward": "Вперёд",
+  "guideme.guidebook.HoldToShow": "Удерживайте [%s], чтобы открыть справочник",
+  "guideme.guidebook.ResetView": "Сбросить вид",
+  "guideme.guidebook.RunsCommand": "Выполняет команду:",
+  "guideme.guidebook.Search": "Поиск",
+  "guideme.guidebook.SearchNoQuery": "Введите запрос",
+  "guideme.guidebook.SearchNoResults": "Ничего не найдено",
+  "guideme.guidebook.ShapelessCrafting": "Верстак (без формы)",
+  "guideme.guidebook.ShowAnnotations": "Показать пометки",
+  "guideme.guidebook.Smelting": "Плавка в печи",
+  "guideme.guidebook.ZoomIn": "Ближе",
+  "guideme.guidebook.ZoomOut": "Дальше",
+  "key.guideme.guide": "Открыть справочник по предмету"
+}

@@ -120,6 +120,60 @@ test {
     useJUnitPlatform()
 }
 
+// ---------------------------------------------------------------- guide and Ponder
+// In-game documentation (docs/GUIDE.md). Kept in one block, apart from the other dependencies.
+//  - GuideME renders the guidebook (assets/fcw/fcwguide). It is shipped inside the mod jar
+//    (Jar-in-Jar), so the guide item works in every installation; the mod itself only declares it
+//    as optional and starts without it.
+//  - Ponder shows the multiblock scenes (compat/ponder). Never shipped: the scenes register only
+//    when the player has Ponder (it comes with Create 6). Ponder needs Flywheel on the client.
+// -Pfcw.noDocLibs runs the dev client/server without both, the way a player without them would.
+// -Pfcw.docsExport makes runServer write the scene structures and runClient the Ponder texts
+// (docs/GUIDE.md, "Обновление").
+def fcwDocLibs = !project.hasProperty('fcw.noDocLibs')
+
+configurations {
+    localRuntime
+    runtimeClasspath.extendsFrom localRuntime
+}
+
+// The dev client reads the guide pages straight from the sources and reloads them when they change.
+neoForge.runs.client.systemProperty 'guideme.fcw.guide.sources', project.file('src/main/resources/assets/fcw/fcwguide').absolutePath
+
+if (project.hasProperty('fcw.docsExport')) {
+    neoForge.runs.configureEach {
+        systemProperty 'fcw.docsExport', project.file('src/main/resources/assets').absolutePath
+    }
+}
+
+repositories {
+    exclusiveContent {
+        forRepository { maven { name = 'Create'; url = 'https://maven.createmod.net' } }
+        filter {
+            includeGroup 'net.createmod.ponder'
+            includeGroup 'dev.engine-room.flywheel'
+            includeGroup 'dev.engine-room.vanillin'
+        }
+    }
+}
+
+dependencies {
+    compileOnly "org.appliedenergistics:guideme:${guideme_version}"
+    // the NeoForge jar holds the whole of Ponder; its POM also lists the common jar and an old Flywheel
+    compileOnly("net.createmod.ponder:Ponder-NeoForge-${minecraft_version}:${ponder_version}") { transitive = false }
+    if (fcwDocLibs) {
+        jarJar("org.appliedenergistics:guideme:${guideme_version}") {
+            version {
+                strictly "[${guideme_version},21.2)"
+                prefer guideme_version
+            }
+        }
+        runtimeOnly "org.appliedenergistics:guideme:${guideme_version}"
+        localRuntime("net.createmod.ponder:Ponder-NeoForge-${minecraft_version}:${ponder_version}") { transitive = false }
+        localRuntime("dev.engine-room.flywheel:flywheel-neoforge-${minecraft_version}:${flywheel_version}") { transitive = false }
+    }
+}
+
 // ---------------------------------------------------------------- natives
 // Native files are packed as /natives/<os>-<arch>/... (docs/CONTRACT.md §6).
 //  1. ../native/target/release/{fcw-daemon,libfcw_client.so,...}: the host build

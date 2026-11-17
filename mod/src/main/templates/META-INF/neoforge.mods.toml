@@ -24,6 +24,22 @@ versionRange = "${minecraft_version_range}"
 ordering = "NONE"
 side = "BOTH"
 
+# In-game documentation (docs/GUIDE.md). Both are optional: GuideME (the guidebook) is shipped inside
+# the mod jar, Ponder (multiblock scenes) is used when the player has it.
+[[dependencies.${mod_id}]]
+modId = "guideme"
+type = "optional"
+versionRange = "[21.1.22,)"
+ordering = "AFTER"
+side = "BOTH"
+
+[[dependencies.${mod_id}]]
+modId = "ponder"
+type = "optional"
+versionRange = "[1.0.0,)"
+ordering = "AFTER"
+side = "CLIENT"
+
 [[accessTransformers]]
 file = "META-INF/accesstransformer.cfg"
 
