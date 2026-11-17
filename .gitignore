@@ -17,3 +17,6 @@ images/work/
 .idea/
 *.iml
 .vscode/
+
+# рабочие копии агентов Claude Code
+.claude/
