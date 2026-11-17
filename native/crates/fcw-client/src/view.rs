@@ -554,16 +554,7 @@ mod tests {
     use super::*;
 
     fn solid(x: u32, y: u32, w: u32, h: u32, c: [u8; 4]) -> spb::Rect {
-        spb::Rect {
-            x,
-            y,
-            w,
-            h,
-            encoding: spb::RectEncoding::RectSolid as i32,
-            data: c.to_vec(),
-            src_x: 0,
-            src_y: 0,
-        }
+        spb::Rect { x, y, w, h, encoding: spb::RectEncoding::RectSolid as i32, data: c.to_vec(), src_x: 0, src_y: 0 }
     }
 
     #[test]

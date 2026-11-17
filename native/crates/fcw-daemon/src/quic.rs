@@ -265,8 +265,9 @@ impl Conn {
             vm.id.clone(),
             Attachment { vm: vm.clone(), perms: t.permissions, player_uuid: t.player_uuid.clone() },
         );
-        // уведомления машины -> клиенту
+        // уведомления машины -> клиенту (подписка до set_controller, чтобы не потерять)
         let task = notice_task(
+            vm.notices.subscribe(),
             vm.clone(),
             self.id,
             self.conn.clone(),
@@ -286,19 +287,26 @@ impl Conn {
         let cursor = vm.gfx.cursor();
         if cursor.width > 0 {
             self.send(server_msg::Kind::CursorShape(cursor_msg(&vm.id, &cursor)));
+            let (x, y) = vm.cursor_pos();
+            send_datagram(
+                &self.conn,
+                spb::datagram::Kind::CursorPos(spb::CursorPos {
+                    vm_id: vm.id.clone(),
+                    screen_id: SCREEN_GFX.into(),
+                    x,
+                    y,
+                    visible: cursor.visible(),
+                }),
+            );
         }
         let input = pb::Permission::PermKeyboard as u32 | pb::Permission::PermMouse as u32;
         if t.permissions & input != 0 {
+            // InputControl придёт этому и прежнему клиенту через уведомления
             vm.set_controller(Controller {
                 conn_id: self.id,
                 player_uuid: t.player_uuid.clone(),
                 player_name: t.player_name.clone(),
             });
-            self.send(server_msg::Kind::InputControl(spb::InputControl {
-                vm_id: vm.id.clone(),
-                active: true,
-                controller_player: t.player_name,
-            }));
         }
     }
 
@@ -377,6 +385,7 @@ fn send_datagram(conn: &quinn::Connection, kind: spb::datagram::Kind) {
 }
 
 async fn notice_task(
+    mut rx: broadcast::Receiver<VmNotice>,
     vm: Arc<Vm>,
     conn_id: u64,
     conn: quinn::Connection,
@@ -384,8 +393,7 @@ async fn notice_task(
     internal: mpsc::UnboundedSender<Internal>,
     audio_vms: Arc<Mutex<HashMap<String, usize>>>,
 ) {
-    let mut rx = vm.notices.subscribe();
-    let mut was_controller = vm.controller().map(|c| c.conn_id == conn_id).unwrap_or(false);
+    let mut was_controller = false;
     loop {
         let n = match rx.recv().await {
             Ok(n) => n,
@@ -422,7 +430,7 @@ async fn notice_task(
             }
             VmNotice::Controller { conn_id: c, player_name } => {
                 let active = c == conn_id;
-                if active != was_controller || active {
+                if active != was_controller {
                     send(server_msg::Kind::InputControl(spb::InputControl {
                         vm_id: vm.id.clone(),
                         active,

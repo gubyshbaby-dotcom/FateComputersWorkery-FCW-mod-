@@ -22,10 +22,12 @@ import org.slf4j.Logger;
 @Mod(FcwMod.MODID)
 public final class FcwMod {
     public static final String MODID = "fcw";
-    public static final String VERSION = "0.1.0";
+    /** Mod version from neoforge.mods.toml (set when the mod is constructed). */
+    private static String version = "0.0.0";
     public static final Logger LOGGER = LogUtils.getLogger();
 
     public FcwMod(IEventBus modBus, ModContainer container) {
+        version = container.getModInfo().getVersion().toString();
         ModBlocks.BLOCKS.register(modBus);
         ModItems.ITEMS.register(modBus);
         ModBlockEntities.BLOCK_ENTITIES.register(modBus);
@@ -37,5 +39,9 @@ public final class FcwMod {
         container.registerConfig(ModConfig.Type.CLIENT, FcwConfig.CLIENT_SPEC);
 
         NeoForge.EVENT_BUS.register(FcwServerEvents.class);
+    }
+
+    public static String version() {
+        return version;
     }
 }

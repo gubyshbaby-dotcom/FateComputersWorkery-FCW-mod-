@@ -70,7 +70,7 @@ impl Decoder {
         self.buf.extend_from_slice(data);
     }
     /// Следующее целое сообщение, если оно уже накоплено.
-    pub fn next<M: Message + Default>(&mut self) -> io::Result<Option<M>> {
+    pub fn next_msg<M: Message + Default>(&mut self) -> io::Result<Option<M>> {
         if self.buf.len() < 4 {
             return Ok(None);
         }
@@ -177,10 +177,10 @@ mod tests {
         let mut d = Decoder::new();
         for b in &data[..data.len() - 1] {
             d.push(&[*b]);
-            assert!(d.next::<TextRow>().unwrap().is_none());
+            assert!(d.next_msg::<TextRow>().unwrap().is_none());
         }
         d.push(&data[data.len() - 1..]);
-        assert_eq!(d.next::<TextRow>().unwrap().unwrap(), row);
+        assert_eq!(d.next_msg::<TextRow>().unwrap().unwrap(), row);
     }
 
     #[tokio::test]

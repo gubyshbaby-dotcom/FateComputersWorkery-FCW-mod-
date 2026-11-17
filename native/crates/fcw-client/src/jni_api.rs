@@ -20,7 +20,9 @@ type AnyResult<T> = Result<T, Box<dyn std::error::Error>>;
 
 static NEXT_ID: AtomicI64 = AtomicI64::new(1);
 static SESSIONS: LazyLock<Mutex<HashMap<i64, Arc<Session>>>> = LazyLock::new(|| Mutex::new(HashMap::new()));
-static VIEWS: LazyLock<Mutex<HashMap<i64, (i64, Arc<View>)>>> = LazyLock::new(|| Mutex::new(HashMap::new()));
+/// Вид -> (сессия, вид).
+type ViewMap = HashMap<i64, (i64, Arc<View>)>;
+static VIEWS: LazyLock<Mutex<ViewMap>> = LazyLock::new(|| Mutex::new(HashMap::new()));
 
 fn guard<T>(default: T, f: impl FnOnce() -> AnyResult<T>) -> T {
     match catch_unwind(AssertUnwindSafe(f)) {

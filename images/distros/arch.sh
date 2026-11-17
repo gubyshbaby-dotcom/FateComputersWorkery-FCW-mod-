@@ -68,10 +68,12 @@ distro_make_initramfs() {
 MODULES=(virtio_pci virtio_blk virtio_console virtio_gpu ext4)
 BINARIES=()
 FILES=()
-HOOKS=(base udev modconf block filesystems)
+HOOKS=(base udev modconf filesystems)
 COMPRESSION="zstd"
 EOF
-  in_root mkinitcpio -c /etc/fcw-mkinitcpio.conf -k "$1" -g "$2"
+  # после чистки модулей mkinitcpio ругается на отсутствующие мягкие
+  # зависимости; образ при этом собирается, virtio-модули в нём есть
+  in_root mkinitcpio -c /etc/fcw-mkinitcpio.conf -k "$1" -g "$2" || [[ -s "$ROOT$2" ]]
 }
 
 distro_cleanup() {

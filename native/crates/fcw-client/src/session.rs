@@ -170,11 +170,8 @@ impl Session {
     }
 
     fn screen_kind(&self, vm_id: &str, screen_id: &str) -> i32 {
-        let known = self
-            .screens
-            .lock()
-            .get(vm_id)
-            .and_then(|v| v.iter().find(|s| s.screen_id == screen_id).map(|s| s.kind));
+        let known =
+            self.screens.lock().get(vm_id).and_then(|v| v.iter().find(|s| s.screen_id == screen_id).map(|s| s.kind));
         match known {
             Some(k) if k == KIND_GRAPHICAL || k == KIND_TEXT => k,
             _ if screen_id.starts_with("tty") => KIND_TEXT,
@@ -450,7 +447,7 @@ impl Session {
                 }));
             }
             server_msg::Kind::CursorShape(c) => {
-                let img = (!c.rgba.is_empty()).then(|| CursorImage {
+                let img = (!c.rgba.is_empty()).then_some(CursorImage {
                     w: c.width,
                     h: c.height,
                     hot_x: c.hotspot_x,

@@ -33,6 +33,7 @@ repo/
 ```json
 {
   "format": 1, "id": "fedora", "name": "Fedora Linux 45", "version": "2026.11.17",
+  "build_id": "20261117093000-1a2b3c4d",
   "kernel_version": "...", "kernel": "vmlinuz", "initrd": "initrd.img", "rootfs": "rootfs.qcow2",
   "cmdline": "root=/dev/vda rw ... console=tty1 console=hvc0 ...",
   "min_memory_mb": 1024, "recommended_memory_mb": 2048,
@@ -40,6 +41,10 @@ repo/
   "user": "user", "password": "fcw", "rootfs_used_bytes": 123, "accent": "#51a2da"
 }
 ```
+
+Каждая машина закреплена за конкретной сборкой образа (`build_id`, иначе
+`version`): демон держит копию в `<images_dir>/.store/<id>/<build>/`, слой
+диска и ядро берутся оттуда, поэтому обновление образа не ломает старые машины.
 
 Раздаётся архивом `fcw-image-<id>.tar.zst` (внутри каталог `<id>/`, версия в manifest.json),
 в релизе GitHub с тегом `images`.
@@ -115,6 +120,30 @@ qemu-system-x86_64 -name fcw-<vm> -machine q35 -accel <..> -cpu <host|max> -smp 
 - Остановка: QMP `system_powerdown`, по таймауту `quit`/kill.
 - Ввод: один управляющий игрок на машину (последний предъявивший токен с
   KEYBOARD|MOUSE; предыдущему приходит ReleaseAll).
+
+### Сеть гостей (крейт fcw-net)
+
+Если у машины `network=true`, демон подключает к ней virtio-net через свой
+userspace-свитч:
+
+```
+-netdev stream,id=net0,server=off,addr.type=unix,addr.path=<vm>/net.sock,reconnect=1
+-device virtio-net-pci,netdev=net0,mac=<NetSwitch::mac_for_vm(vm_id)>,romfile=
+```
+
+- L2-свитч между всеми машинами демона; шлюз 10.42.0.1 (DHCP, DNS, NAT).
+- DNS: `<hostname>.mc` для машин, остальное через резолвер хоста.
+- NAT наружу (если разрешён): TCP через userspace-стек, UDP-потоки; для 443
+  при наличии HTTPS_PROXY соединения идут через CONNECT.
+- Файрвол: запрещены loopback, RFC1918, link-local, CGNAT, мультикаст, адреса
+  самого хоста и шлюз (кроме DHCP/DNS/ICMP), порт 25; списки allow/deny.
+- Лимиты: скорость (по умолчанию 8 МиБ/с на машину), число соединений.
+- Имя машины передаётся в гостя параметром ядра `systemd.hostname=`.
+
+Флаги демона: `--network on|off` (по умолчанию on), `--internet on|off`
+(по умолчанию on), `--net-subnet`, `--net-rate-limit <байт/с>`,
+`--net-allow <CIDR>`, `--net-deny <CIDR>` (повторяемые), `--upstream-proxy <url>`
+(по умолчанию из HTTPS_PROXY).
 
 ## 4. Клиент <-> демон (QUIC)
 

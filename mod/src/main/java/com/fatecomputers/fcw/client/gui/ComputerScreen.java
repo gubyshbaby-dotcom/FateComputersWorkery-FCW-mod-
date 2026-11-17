@@ -38,11 +38,12 @@ public class ComputerScreen extends AbstractContainerScreen<ComputerMenu> {
     private static final int ACCENT = 0xFF51A2DA;
 
     private static final int LIST_X = 92;
-    private static final int LIST_Y = 16;
+    private static final int LIST_Y = 28;
     private static final int LIST_W = 180;
     private static final int ROW_H = 11;
     private static final int ROWS = 5;
-    private static final int STATUS_Y = 96;
+    private static final int STATUS_Y = 108;
+    private static final int BUTTONS_Y = 88;
 
     private Button powerButton;
     private Button reinstallButton;
@@ -77,18 +78,18 @@ public class ComputerScreen extends AbstractContainerScreen<ComputerMenu> {
         powerButton = addRenderableWidget(Button.builder(Component.translatable("gui.fcw.power_on"), b -> onPower())
                 .bounds(leftPos + 8, topPos + 96, 78, 20).build());
         reinstallButton = addRenderableWidget(Button.builder(Component.translatable("gui.fcw.reinstall"), b -> onReinstall())
-                .bounds(leftPos + LIST_X, topPos + 76, 88, 16).build());
+                .bounds(leftPos + LIST_X, topPos + BUTTONS_Y, 88, 16).build());
         refreshButton = addRenderableWidget(Button.builder(Component.translatable("gui.fcw.refresh"), b -> send(ComputerActionPayload.REFRESH_IMAGES, ""))
-                .bounds(leftPos + LIST_X + 92, topPos + 76, 88, 16).build());
+                .bounds(leftPos + LIST_X + 92, topPos + BUTTONS_Y, 88, 16).build());
         confirmButton = addRenderableWidget(Button.builder(Component.translatable("gui.fcw.reinstall.confirm"), b -> {
                     if (confirmImage != null) {
                         send(ComputerActionPayload.REINSTALL, confirmImage);
                     }
                     confirmImage = null;
                 })
-                .bounds(leftPos + LIST_X + 4, topPos + 120, 84, 18).build());
+                .bounds(leftPos + LIST_X, topPos + BUTTONS_Y, 88, 16).build());
         cancelButton = addRenderableWidget(Button.builder(Component.translatable("gui.cancel"), b -> confirmImage = null)
-                .bounds(leftPos + LIST_X + 92, topPos + 120, 84, 18).build());
+                .bounds(leftPos + LIST_X + 92, topPos + BUTTONS_Y, 88, 16).build());
         updateWidgets();
     }
 
@@ -226,7 +227,7 @@ public class ComputerScreen extends AbstractContainerScreen<ComputerMenu> {
         // OS list panel
         bevel(g, x + LIST_X - 1, y + LIST_Y - 1, LIST_W + 2, ROWS * ROW_H + 3, PANEL, BORDER_DARK, BORDER_LIGHT);
         // status panel
-        g.fill(x + LIST_X - 1, y + STATUS_Y - 3, x + LIST_X + LIST_W + 1, y + STATUS_Y + 47, 0xFF25272B);
+        g.fill(x + LIST_X - 1, y + STATUS_Y - 3, x + LIST_X + LIST_W + 1, y + STATUS_Y + 37, 0xFF25272B);
         // slots
         for (Slot slot : menu.slots) {
             bevel(g, x + slot.x - 1, y + slot.y - 1, 18, 18, 0xFF3A3C42, BORDER_DARK, BORDER_LIGHT);
@@ -235,18 +236,27 @@ public class ComputerScreen extends AbstractContainerScreen<ComputerMenu> {
         for (int i = 0; i < ComputerInventory.SIZE; i++) {
             Slot slot = menu.getSlot(i);
             if (!slot.hasItem()) {
-                ItemStack ghost = ghost(i);
-                g.renderFakeItem(ghost, x + slot.x, y + slot.y);
-                g.fill(x + slot.x, y + slot.y, x + slot.x + 16, y + slot.y + 16, 0xB03A3C42);
+                g.renderFakeItem(ghost(i), x + slot.x, y + slot.y);
+                overlay(g, x + slot.x, y + slot.y, 0xC83A3C42);
             }
         }
         if (menu.isLocked()) {
             for (int i = 0; i < ComputerInventory.SIZE; i++) {
                 Slot slot = menu.getSlot(i);
-                g.fill(x + slot.x, y + slot.y, x + slot.x + 16, y + slot.y + 16, 0x40FF4040);
+                if (slot.hasItem()) {
+                    overlay(g, x + slot.x, y + slot.y, 0x40FF4040);
+                }
             }
         }
         renderDevices(g, x + 8, y + 122);
+    }
+
+    /** A translucent box above an item icon (items are drawn at z ~150). */
+    private static void overlay(GuiGraphics g, int x, int y, int color) {
+        g.pose().pushPose();
+        g.pose().translate(0, 0, 200);
+        g.fill(x, y, x + 16, y + 16, color);
+        g.pose().popPose();
     }
 
     private static ItemStack ghost(int slot) {
@@ -271,19 +281,22 @@ public class ComputerScreen extends AbstractContainerScreen<ComputerMenu> {
         for (int i = 0; i < 4; i++) {
             int ix = x + i * 19;
             g.renderFakeItem(icons[i], ix, y);
+            g.pose().pushPose();
+            g.pose().translate(0, 0, 200);
             if (!present[i]) {
                 g.fill(ix, y, ix + 16, y + 16, 0xA02B2D31);
                 g.drawString(font, "✘", ix + 10, y + 9, 0xFFE05050, false);
             } else {
                 g.drawString(font, "✔", ix + 10, y + 9, 0xFF60D060, false);
             }
+            g.pose().popPose();
         }
     }
 
     @Override
     protected void renderLabels(GuiGraphics g, int mouseX, int mouseY) {
         g.drawString(font, title, titleLabelX, titleLabelY, TEXT, false);
-        g.drawString(font, Component.translatable("gui.fcw.os"), LIST_X, 6, TEXT, false);
+        g.drawString(font, Component.translatable("gui.fcw.os"), LIST_X, LIST_Y - 10, TEXT_DIM, false);
         ComputerStatusPayload s = status();
         if (s == null) {
             g.drawString(font, Component.translatable("gui.fcw.loading"), LIST_X + 4, LIST_Y + 3, TEXT_DIM, false);
@@ -294,12 +307,12 @@ public class ComputerScreen extends AbstractContainerScreen<ComputerMenu> {
         g.drawString(font, Component.translatable("gui.fcw.hw.memory", s.memoryMb()), 8, 74, TEXT_DIM, false);
         g.drawString(font, Component.translatable(s.gpu() ? "gui.fcw.hw.gpu" : "gui.fcw.hw.no_gpu"), 8, 84, TEXT_DIM, false);
 
-        renderImageList(g, s, mouseX - leftPos, mouseY - topPos);
         if (confirmImage != null) {
             renderConfirm(g, s);
         } else {
-            renderStatus(g, s);
+            renderImageList(g, s, mouseX - leftPos, mouseY - topPos);
         }
+        renderStatus(g, s);
     }
 
     private void renderImageList(GuiGraphics g, ComputerStatusPayload s, int mx, int my) {
@@ -398,7 +411,7 @@ public class ComputerScreen extends AbstractContainerScreen<ComputerMenu> {
         }
         int y = STATUS_Y;
         for (FormattedCharSequence line : lines) {
-            if (y > STATUS_Y + 38) {
+            if (y > STATUS_Y + 28) {
                 break;
             }
             g.drawString(font, line, LIST_X + 1, y, TEXT, false);
@@ -409,13 +422,13 @@ public class ComputerScreen extends AbstractContainerScreen<ComputerMenu> {
     private void renderConfirm(GuiGraphics g, ComputerStatusPayload s) {
         ComputerStatusPayload.ImageEntry img = image(s, confirmImage);
         String name = img == null ? confirmImage : imageName(img);
-        int y = STATUS_Y - 2;
+        int y = LIST_Y + 3;
         for (FormattedCharSequence line : font.split(Component.translatable("gui.fcw.reinstall.warning", name)
-                .withStyle(ChatFormatting.GOLD), LIST_W - 4)) {
-            if (y > 112) {
+                .withStyle(ChatFormatting.GOLD), LIST_W - 8)) {
+            if (y > LIST_Y + ROWS * ROW_H - 8) {
                 break;
             }
-            g.drawString(font, line, LIST_X + 1, y, TEXT, false);
+            g.drawString(font, line, LIST_X + 4, y, TEXT, false);
             y += 10;
         }
     }

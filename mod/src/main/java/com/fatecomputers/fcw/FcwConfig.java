@@ -2,7 +2,9 @@ package com.fatecomputers.fcw;
 
 import net.neoforged.neoforge.common.ModConfigSpec;
 
+import java.util.Arrays;
 import java.util.List;
+import java.util.regex.Pattern;
 
 /**
  * Server config (per world, {@code serverconfig/fcw-server.toml}) and client config
@@ -29,6 +31,10 @@ public final class FcwConfig {
         public final ModConfigSpec.ConfigValue<String> guestLang;
         public final ModConfigSpec.ConfigValue<String> guestKeyboardLayouts;
         public final ModConfigSpec.BooleanValue guestNetwork;
+        public final ModConfigSpec.BooleanValue internet;
+        public final ModConfigSpec.IntValue rateLimitKiBps;
+        public final ModConfigSpec.ConfigValue<List<? extends String>> netAllow;
+        public final ModConfigSpec.ConfigValue<List<? extends String>> netDeny;
         public final ModConfigSpec.IntValue maxMemoryMb;
         public final ModConfigSpec.IntValue displayWidth;
         public final ModConfigSpec.IntValue displayHeight;
@@ -55,7 +61,7 @@ public final class FcwConfig {
             maxVms = b.comment("Maximum number of virtual machines running at the same time.")
                     .defineInRange("maxVms", 4, 1, 256);
             accelerator = b.comment("Virtualization accelerator: auto, kvm, whpx, hvf or tcg (software).")
-                    .defineInList("accelerator", "auto", List.of("auto", "kvm", "whpx", "hvf", "tcg"));
+                    .defineInList("accelerator", "auto", Arrays.asList("auto", "kvm", "whpx", "hvf", "tcg")); // List.of rejects contains(null)
             startupTimeoutSeconds = b.comment("How long to wait for the daemon to report FCW-READY.")
                     .defineInRange("startupTimeoutSeconds", 30, 5, 600);
             shutdownTimeoutSeconds = b.comment("How long to wait for the daemon to stop its VMs when the server stops.")
@@ -74,8 +80,9 @@ public final class FcwConfig {
                     .define("lang", "ru_RU.UTF-8");
             guestKeyboardLayouts = b.comment("Guest keyboard layouts (fcw.kbd= kernel parameter).")
                     .define("keyboardLayouts", "us,ru");
-            guestNetwork = b.comment("Give guests a network card even without a router block (not in the mod yet).")
-                    .define("network", false);
+            guestNetwork = b.comment("Give guests a network card on the daemon's virtual switch (DHCP, DNS <name>.mc, NAT).",
+                            "Also passed to the daemon as --network on|off.")
+                    .define("network", true);
             maxMemoryMb = b.comment("Upper limit for the memory of one VM, MB (installed modules above it are ignored).")
                     .defineInRange("maxMemoryMb", 8192, 128, 1048576);
             displayWidth = b.comment("Guest display width for machines with a graphics card.")
@@ -84,6 +91,17 @@ public final class FcwConfig {
                     .defineInRange("displayHeight", 768, 200, 4320);
             restartRunningOnLoad = b.comment("Start machines that were running when the world was saved (after a server restart).")
                     .define("restartRunningOnLoad", true);
+            b.pop();
+
+            b.comment("Guest network (daemon flags --internet, --net-rate-limit, --net-allow, --net-deny)").push("network");
+            internet = b.comment("Let guests reach the Internet through the daemon's NAT. Local networks and the host stay blocked.")
+                    .define("internet", true);
+            rateLimitKiBps = b.comment("Bandwidth limit per machine, KiB/s. 0 = the daemon's default (8 MiB/s).")
+                    .defineInRange("rateLimitKiBps", 8192, 0, 10_000_000);
+            netAllow = b.comment("CIDR ranges guests may reach although the firewall would block them, e.g. \"192.168.1.10/32\".")
+                    .defineListAllowEmpty("allow", List.of(), () -> "0.0.0.0/32", FcwConfig::isCidr);
+            netDeny = b.comment("Additional CIDR ranges guests may not reach.")
+                    .defineListAllowEmpty("deny", List.of(), () -> "0.0.0.0/32", FcwConfig::isCidr);
             b.pop();
 
             b.comment("Peripherals and access").push("access");
@@ -130,6 +148,13 @@ public final class FcwConfig {
             audioVolume = b.defineInRange("volume", 1.0, 0.0, 2.0);
             b.pop();
         }
+    }
+
+    private static final Pattern CIDR = Pattern.compile(
+            "^(\\d{1,3}(\\.\\d{1,3}){3}/\\d{1,2}|[0-9a-fA-F:]+/\\d{1,3})$");
+
+    static boolean isCidr(Object o) {
+        return o instanceof String s && CIDR.matcher(s.trim()).matches();
     }
 
     public static final Server SERVER;

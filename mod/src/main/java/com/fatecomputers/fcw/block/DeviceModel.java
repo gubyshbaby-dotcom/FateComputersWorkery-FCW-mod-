@@ -29,11 +29,9 @@ public enum DeviceModel {
     SUBWOOFER(box(2.5, 0, 2.5, 13.5, 12, 13.5)),
     SOUNDBAR(box(0.5, 0, 6, 15.5, 3, 9.5));
 
-    private final double[][] boxes;
     private final Map<Direction, VoxelShape> shapes = new EnumMap<>(Direction.class);
 
     DeviceModel(double[]... boxes) {
-        this.boxes = boxes;
         for (Direction d : Direction.Plane.HORIZONTAL) {
             VoxelShape s = Shapes.empty();
             for (double[] b : boxes) {

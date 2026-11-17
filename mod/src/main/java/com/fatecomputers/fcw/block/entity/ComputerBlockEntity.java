@@ -415,8 +415,10 @@ public class ComputerBlockEntity extends BlockEntity implements MenuProvider {
             bump();
             return;
         }
+        int graceMs = force ? 0 : 60_000;
+        // The daemon may answer only once the machine is down: wait longer than the ACPI grace period.
         d.request(Request.newBuilder().setStopVm(StopVm.newBuilder().setVmId(vmIdString()).setForce(force)
-                .setTimeoutMs(force ? 0 : 60_000)).build(), r -> {
+                .setTimeoutMs(graceMs)).build(), graceMs + 30_000L, r -> {
             if (isRemoved()) {
                 return;
             }

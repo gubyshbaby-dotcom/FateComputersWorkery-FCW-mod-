@@ -6,6 +6,7 @@ members = [
     "crates/fcw-client",
     "crates/fcw-probe",
     "crates/fcw-agent",
+    "crates/fcw-net",
 ]
 
 [workspace.package]
@@ -17,6 +18,7 @@ rust-version = "1.80"
 [workspace.dependencies]
 fcw-proto = { path = "crates/fcw-proto" }
 fcw-client = { path = "crates/fcw-client" }
+fcw-net = { path = "crates/fcw-net" }
 prost = "0.13"
 prost-build = "0.13"
 protoc-bin-vendored = "3"
@@ -43,7 +45,8 @@ opus = "0.3"
 [profile.release]
 opt-level = 3
 debug = false
-strip = "debuginfo"
+# бинарники едут в jar мода: без символов они в 2-3 раза меньше
+strip = true
 
 [profile.release.package.fcw-agent]
 opt-level = "z"

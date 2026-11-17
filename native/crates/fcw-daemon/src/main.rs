@@ -53,7 +53,8 @@ fn exe(name: &str) -> String {
 
 fn search_path(name: &str) -> Option<PathBuf> {
     let file = exe(name);
-    let mut dirs: Vec<PathBuf> = std::env::var_os("PATH").map(|p| std::env::split_paths(&p).collect()).unwrap_or_default();
+    let mut dirs: Vec<PathBuf> =
+        std::env::var_os("PATH").map(|p| std::env::split_paths(&p).collect()).unwrap_or_default();
     if cfg!(windows) {
         dirs.push(PathBuf::from(r"C:\Program Files\qemu"));
     }
@@ -89,6 +90,22 @@ fn find_qemu_img(qemu: Option<&Path>) -> Option<PathBuf> {
     search_path("qemu-img")
 }
 
+/// Идентичность файла (устройство + inode на Unix).
+fn file_id(p: &Path) -> Option<(u64, u64)> {
+    let m = std::fs::symlink_metadata(p).ok()?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        Some((m.dev(), m.ino()))
+    }
+    #[cfg(not(unix))]
+    {
+        m.modified()
+            .ok()
+            .map(|t| (t.duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos() as u64).unwrap_or(0), m.len()))
+    }
+}
+
 async fn run(args: Args, events: broadcast::Sender<pb::Event>) -> Result<()> {
     let accel_req = Accel::parse(&args.accel).ok_or_else(|| anyhow!("unknown --accel {:?}", args.accel))?;
     let qemu = find_qemu(args.qemu.clone());
@@ -118,13 +135,16 @@ async fn run(args: Args, events: broadcast::Sender<pb::Event>) -> Result<()> {
     let ep = quic::make_endpoint(bind, &cert).with_context(|| format!("QUIC bind {bind}"))?;
     let quic_port = ep.local_addr()?.port();
 
-    let env = Arc::new(Env { images_dir: args.images_dir.clone(), qemu, qemu_img, accel });
+    let tz = fcw_daemon::vm::host_timezone();
+    tracing::info!("host time zone: {}", tz.as_deref().unwrap_or("unknown"));
+    let env = Arc::new(Env { images_dir: args.images_dir.clone(), qemu, qemu_img, accel, tz });
     let d = Daemon::new(env, args.vms_dir.clone(), args.max_vms, quic_port, cert.sha256_hex.clone(), events);
 
     if let Some(dir) = args.control.parent().filter(|p| !p.as_os_str().is_empty()) {
         std::fs::create_dir_all(dir).ok();
     }
     let listener = LocalListener::bind(&args.control).with_context(|| format!("bind {}", args.control.display()))?;
+    let control_id = file_id(&args.control);
 
     let ready = serde_json::json!({
         "control": args.control.to_string_lossy(),
@@ -184,7 +204,10 @@ async fn run(args: Args, events: broadcast::Sender<pb::Event>) -> Result<()> {
     tracing::info!("stopping machines");
     d.stop_all(Duration::from_secs(10)).await;
     ep.close(0u32.into(), b"daemon shutdown");
-    let _ = std::fs::remove_file(&args.control);
+    // удаляем сокет, только если на его месте не появился чужой (новый демон)
+    if file_id(&args.control) == control_id {
+        let _ = std::fs::remove_file(&args.control);
+    }
     tracing::info!("bye");
     Ok(())
 }

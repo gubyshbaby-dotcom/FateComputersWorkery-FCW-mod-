@@ -223,7 +223,12 @@ fn fetch_image(d: &Arc<Daemon>, tx: &Tx, id: u64, r: pb::FetchImage) {
     if r.url.is_empty() {
         return respond(tx, id, Err(anyhow!("url is empty")));
     }
-    let in_use = d.vms.lock().values().any(|v| v.is_active() && v.config().image_id == r.image_id);
+    // закреплённые машины работают из хранилища версий; images/<id> напрямую
+    // используют только машины, созданные до закрепления версий
+    let in_use = d.vms.lock().values().any(|v| {
+        let c = v.config();
+        v.is_active() && c.image_id == r.image_id && c.image_version.is_empty()
+    });
     if in_use {
         return respond(tx, id, Err(anyhow!("image {} is used by a running machine", r.image_id)));
     }
@@ -251,8 +256,9 @@ fn fetch_image(d: &Arc<Daemon>, tx: &Tx, id: u64, r: pb::FetchImage) {
             });
         };
         tracing::info!("fetching image {} from {}", r.image_id, r.url);
-        let res = images::fetch(d.env.images_dir.clone(), r.image_id.clone(), r.url.clone(), r.sha256.clone(), progress)
-            .await;
+        let res =
+            images::fetch(d.env.images_dir.clone(), r.image_id.clone(), r.url.clone(), r.sha256.clone(), progress)
+                .await;
         d.fetching.lock().remove(&r.image_id);
         let error = match &res {
             Ok(()) => {

@@ -1,5 +1,6 @@
 # сборка
 native/target/
+native/crates/*/target/
 mod/build/
 mod/.gradle/
 mod/run/

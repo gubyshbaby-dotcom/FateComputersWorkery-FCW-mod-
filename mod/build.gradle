@@ -36,6 +36,10 @@ neoForge {
         client {
             client()
             gameDirectory = project.file('run/client')
+            // ./gradlew runClient -Pfcw.quickPlay=<world> joins that single player world directly.
+            if (project.hasProperty('fcw.quickPlay')) {
+                programArguments.addAll('--quickPlaySingleplayer', project.property('fcw.quickPlay').toString())
+            }
         }
         server {
             server()
@@ -53,6 +57,11 @@ neoForge {
             sourceSet(sourceSets.main)
         }
     }
+}
+
+// Let the dev server console read commands (./gradlew runServer).
+tasks.matching { it.name == 'runServer' }.configureEach {
+    standardInput = System.in
 }
 
 // ---------------------------------------------------------------- protobuf
@@ -116,11 +125,15 @@ processResources {
         into "natives/${fcwHostPlatform()}"
     }
     if (extraNativesDir != null) {
-        from(file(extraNativesDir)) {
+        def dir = file(extraNativesDir)
+        if (!dir.isDirectory()) {
+            logger.warn("fcw.nativesDir={} does not exist, no extra natives are packed", dir)
+        }
+        // A missing source directory is simply skipped by the copy.
+        from(dir) {
             include '*/fcw-daemon', '*/fcw-daemon.exe', '*/libfcw_client.so', '*/fcw_client.dll', '*/libfcw_client.dylib'
             into 'natives'
         }
-        inputs.dir(file(extraNativesDir)).optional().withPropertyName('fcwExtraNatives')
     }
     // The .proto files are not needed at runtime.
     exclude '**/*.proto'

@@ -1,7 +1,8 @@
 //! Минимальный клиент RFB 3.8 к VNC-серверу QEMU (Unix-сокет).
 //!
 //! Кодировки: Raw, DesktopSize (-223), Cursor (-239), QEMU Extended Key
-//! Event (-258), QEMU Audio (-259), QEMU Pointer Motion Change (-257).
+//! Event (-258), QEMU Audio (-259), QEMU LED State (-261),
+//! QEMU Pointer Motion Change (-257).
 //! Формат пикселей: 32 бит, little-endian, R<<0 | G<<8 | B<<16, то есть в
 //! памяти R,G,B,X — почти готовый RGBA.
 
@@ -21,6 +22,9 @@ const ENC_CURSOR: i32 = -239;
 const ENC_POINTER_TYPE_CHANGE: i32 = -257;
 const ENC_QEMU_EXT_KEY: i32 = -258;
 const ENC_QEMU_AUDIO: i32 = -259;
+/// QEMU LED state: заодно выключает в QEMU «синхронизацию» Caps/Num Lock по
+/// keysym, которая иначе ломает Shift+буква в расширенных событиях клавиш.
+const ENC_LED_STATE: i32 = -261;
 const ENC_EXT_DESKTOP_SIZE: i32 = -308;
 
 /// Минимальный интервал между запросами обновлений экрана.
@@ -109,7 +113,7 @@ pub async fn run(
     msg.extend_from_slice(&[0, 8, 16, 0, 0, 0]);
     wr.write_all(&msg).await?;
     // SetEncodings
-    let encs = [ENC_RAW, ENC_DESKTOP_SIZE, ENC_CURSOR, ENC_QEMU_EXT_KEY, ENC_QEMU_AUDIO];
+    let encs = [ENC_RAW, ENC_DESKTOP_SIZE, ENC_CURSOR, ENC_QEMU_EXT_KEY, ENC_QEMU_AUDIO, ENC_LED_STATE];
     let mut msg = vec![2u8, 0];
     msg.extend_from_slice(&(encs.len() as u16).to_be_bytes());
     for e in encs {
@@ -148,20 +152,18 @@ pub async fn run(
                     next_request = Some(at.max(Instant::now()));
                 }
                 Some(ReaderMsg::ExtKey) => ext_key = true,
-                Some(ReaderMsg::AudioSupported) => {
-                    if want_audio && !audio_on {
-                        audio_on = true;
-                        // формат S16, 2 канала, 48000 Гц, затем включить
-                        let mut m = vec![255u8, 1];
-                        m.extend_from_slice(&2u16.to_be_bytes());
-                        m.extend_from_slice(&[3, 2]);
-                        m.extend_from_slice(&48000u32.to_be_bytes());
-                        m.extend_from_slice(&[255u8, 1]);
-                        m.extend_from_slice(&0u16.to_be_bytes());
-                        wr.write_all(&m).await?;
-                    }
+                Some(ReaderMsg::AudioSupported) if want_audio && !audio_on => {
+                    audio_on = true;
+                    // формат S16, 2 канала, 48000 Гц, затем включить
+                    let mut m = vec![255u8, 1];
+                    m.extend_from_slice(&2u16.to_be_bytes());
+                    m.extend_from_slice(&[3, 2]);
+                    m.extend_from_slice(&48000u32.to_be_bytes());
+                    m.extend_from_slice(&[255u8, 1]);
+                    m.extend_from_slice(&0u16.to_be_bytes());
+                    wr.write_all(&m).await?;
                 }
-                None => {}
+                Some(ReaderMsg::AudioSupported) | None => {}
             },
             _ = tokio::time::sleep_until(sleep_until), if next_request.is_some() => {
                 next_request = None;
@@ -286,6 +288,9 @@ async fn read_loop<R: AsyncRead + Unpin>(
                             let _ = tx.send(ReaderMsg::AudioSupported);
                         }
                         ENC_POINTER_TYPE_CHANGE => {}
+                        ENC_LED_STATE => {
+                            let _leds = rd.read_u8().await?;
+                        }
                         other => bail!("unsupported VNC encoding {other}"),
                     }
                 }

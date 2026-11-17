@@ -80,11 +80,8 @@ impl Font {
     }
 
     pub fn glyph(&self, cp: u32) -> &[u8; CELL_H] {
-        let idx = if cp == 0 || cp == ' ' as u32 {
-            self.space
-        } else {
-            self.map.get(&cp).copied().unwrap_or(self.fallback)
-        };
+        let idx =
+            if cp == 0 || cp == ' ' as u32 { self.space } else { self.map.get(&cp).copied().unwrap_or(self.fallback) };
         &self.glyphs[idx]
     }
 }
@@ -122,6 +119,7 @@ pub const FLAG_UNDERLINE: u32 = 4;
 pub const FLAG_INVERSE: u32 = 8;
 
 /// Рисует ячейку в буфер RGBA с шагом строки `stride` байт.
+#[allow(clippy::too_many_arguments)]
 pub fn draw_cell(buf: &mut [u8], stride: usize, x: usize, y: usize, cp: u32, fg: u32, bg: u32, flags: u32) {
     let (mut fg, mut bg) = (fg, bg);
     if flags & FLAG_INVERSE != 0 {
@@ -153,7 +151,8 @@ mod tests {
     #[test]
     fn coverage() {
         let f = font();
-        for c in ['A', 'z', '0', 'Ж', 'я', 'Ё', '─', '│', '┌', '╬', '█', '░', '▒', '▓', '▀', '▄', 'é', 'ß'] {
+        for c in ['A', 'z', '0', 'Ж', 'я', 'Ё', '─', '│', '┌', '╬', '█', '░', '▒', '▓', '▀', '▄', 'é', 'ß']
+        {
             assert!(f.has(c as u32), "missing {c}");
         }
         // разные глифы для разных букв

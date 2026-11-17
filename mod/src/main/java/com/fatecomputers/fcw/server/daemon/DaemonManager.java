@@ -59,7 +59,6 @@ public final class DaemonManager {
     public enum Status { DISABLED, STARTING, READY, FAILED, STOPPED }
 
     public static final int PROTOCOL_VERSION = 1;
-    public static final String CLIENT_NAME = "fcw-mod " + FcwMod.VERSION;
     public static final long DEFAULT_TIMEOUT_MS = 60_000;
 
     private static volatile DaemonManager current;
@@ -287,7 +286,7 @@ public final class DaemonManager {
         long id = ids.incrementAndGet();
         pending.put(id, new Pending(System.currentTimeMillis() + 15_000, helloReply::complete, true));
         conn.send(Envelope.newBuilder().setId(id).setRequest(Request.newBuilder()
-                .setHello(Hello.newBuilder().setClientName(CLIENT_NAME).setProtocolVersion(PROTOCOL_VERSION))).build());
+                .setHello(Hello.newBuilder().setClientName("fcw-mod " + FcwMod.version()).setProtocolVersion(PROTOCOL_VERSION))).build());
         Response r;
         try {
             r = helloReply.get(15, TimeUnit.SECONDS);
@@ -320,8 +319,8 @@ public final class DaemonManager {
             }
             status = Status.READY;
             reason = Component.translatable("daemon.fcw.ready");
-            refreshImages();
-            ComputerTracker.onDaemonReady();
+            // Computers validate their image against the list, so load it before resyncing them.
+            refreshImages(ComputerTracker::onDaemonReady);
         });
     }
 
@@ -604,7 +603,15 @@ public final class DaemonManager {
     }
 
     public void refreshImages() {
-        if (imagesLoading || status != Status.READY) {
+        refreshImages(null);
+    }
+
+    /** Reloads the image list; {@code then} runs afterwards on the server thread (also on failure). */
+    public void refreshImages(@Nullable Runnable then) {
+        if (status != Status.READY || (imagesLoading && then == null)) {
+            if (then != null) {
+                mainThreadQueue.add(then);
+            }
             return;
         }
         imagesLoading = true;
@@ -616,6 +623,9 @@ public final class DaemonManager {
                 imagesError = Component.empty();
             } else {
                 imagesError = Component.literal(r.getError());
+            }
+            if (then != null) {
+                then.run();
             }
         });
     }

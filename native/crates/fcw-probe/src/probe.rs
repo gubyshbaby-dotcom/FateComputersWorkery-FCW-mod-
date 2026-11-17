@@ -2,9 +2,9 @@ use anyhow::{anyhow, bail, Context, Result};
 use clap::{Parser, Subcommand};
 use fcw_client::Session;
 use fcw_proto::control::{self as pb, envelope, request, response};
+use fcw_proto::frame;
 use fcw_proto::keys;
 use fcw_proto::stream as spb;
-use fcw_proto::frame;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -175,6 +175,15 @@ enum Cmd {
         #[arg(long, default_value_t = 0)]
         wheel: i32,
     },
+    /// Записать звук машины (Opus по QUIC -> PCM) в WAV
+    Audio {
+        #[arg(long)]
+        vm: String,
+        #[arg(long, default_value_t = 5)]
+        seconds: u64,
+        #[arg(long)]
+        out: PathBuf,
+    },
     /// Строка JSON агенту гостя
     AgentSend {
         #[arg(long)]
@@ -272,7 +281,8 @@ impl Control {
     }
 
     async fn hello(&mut self) -> Result<pb::HelloResult> {
-        let r = self.ok(request::Kind::Hello(pb::Hello { client_name: "fcw-probe".into(), protocol_version: 1 })).await?;
+        let r =
+            self.ok(request::Kind::Hello(pb::Hello { client_name: "fcw-probe".into(), protocol_version: 1 })).await?;
         match r.kind {
             Some(response::Kind::Hello(h)) => Ok(h),
             _ => bail!("bad hello response"),
@@ -318,10 +328,12 @@ fn state_name(s: i32) -> &'static str {
 
 fn print_vm(v: &pb::VmInfo) {
     println!(
-        "{} state={} image={} cpus={} mem={} gpu={} uptime={}s agent={} controller={:?} screens=[{}]{}",
+        "{} state={} image={}@{}{} cpus={} mem={} gpu={} uptime={}s agent={} controller={:?} screens=[{}]{}",
         v.vm_id,
         state_name(v.state),
         v.image_id,
+        if v.image_version.is_empty() { "-" } else { &v.image_version },
+        if v.image_update_available { " (update available)" } else { "" },
         v.cpus,
         v.memory_mb,
         v.gpu,
@@ -411,6 +423,7 @@ impl Quic {
         let deadline = Instant::now() + timeout;
         let mut last_updates = 0;
         let mut last_change = Instant::now();
+        let mut first_frame: Option<Instant> = None;
         loop {
             if self.s.state() != fcw_client::session::STATE_READY {
                 bail!("session: {}", self.s.error());
@@ -424,7 +437,13 @@ impl Quic {
                 Some(t) => v.text_contents().contains(t),
                 None => true,
             };
-            if i.updates > 0 && i.width > 0 && text_ok && last_change.elapsed() >= settle {
+            if i.updates > 0 && i.width > 0 && first_frame.is_none() {
+                first_frame = Some(Instant::now());
+            }
+            // экран может не успокаиваться (мигающий курсор): ждём не дольше 5×settle
+            let settled =
+                last_change.elapsed() >= settle || first_frame.map(|t| t.elapsed() >= settle * 5).unwrap_or(false);
+            if i.updates > 0 && i.width > 0 && text_ok && settled {
                 return Ok(v);
             }
             if Instant::now() > deadline {
@@ -456,6 +475,27 @@ fn write_png(path: &PathBuf, w: u32, h: u32, rgba: &[u8]) -> Result<()> {
     Ok(())
 }
 
+fn write_wav(path: &PathBuf, pcm: &[i16]) -> Result<()> {
+    let mut d = Vec::with_capacity(44 + pcm.len() * 2);
+    let data_len = (pcm.len() * 2) as u32;
+    d.extend_from_slice(b"RIFF");
+    d.extend_from_slice(&(36 + data_len).to_le_bytes());
+    d.extend_from_slice(b"WAVEfmt ");
+    d.extend_from_slice(&16u32.to_le_bytes());
+    d.extend_from_slice(&1u16.to_le_bytes()); // PCM
+    d.extend_from_slice(&2u16.to_le_bytes()); // стерео
+    d.extend_from_slice(&48000u32.to_le_bytes());
+    d.extend_from_slice(&(48000u32 * 4).to_le_bytes());
+    d.extend_from_slice(&4u16.to_le_bytes());
+    d.extend_from_slice(&16u16.to_le_bytes());
+    d.extend_from_slice(b"data");
+    d.extend_from_slice(&data_len.to_le_bytes());
+    for v in pcm {
+        d.extend_from_slice(&v.to_le_bytes());
+    }
+    std::fs::write(path, d).with_context(|| format!("write {}", path.display()))
+}
+
 fn parse_combo(s: &str) -> Result<Vec<u32>> {
     s.split('+').map(|p| keys::evdev_from_name(p).ok_or_else(|| anyhow!("unknown key {p:?}"))).collect()
 }
@@ -484,8 +524,15 @@ async fn run(cli: Cli) -> Result<()> {
             if let Some(response::Kind::Images(l)) = r.kind {
                 for i in l.images {
                     println!(
-                        "{} {:?} {} installed={} desktop={:?} mem={}/{}",
-                        i.id, i.name, i.version, i.installed, i.desktop, i.min_memory_mb, i.recommended_memory_mb
+                        "{} {:?} {} key={} installed={} desktop={:?} mem={}/{}",
+                        i.id,
+                        i.name,
+                        i.version,
+                        i.image_version,
+                        i.installed,
+                        i.desktop,
+                        i.min_memory_mb,
+                        i.recommended_memory_mb
                     );
                 }
             }
@@ -645,6 +692,24 @@ async fn run(cli: Cli) -> Result<()> {
                 q.s.send_wheel(&vm, 0, wheel, x, y);
             }
             tokio::time::sleep(Duration::from_millis(200)).await;
+            q.close().await;
+        }
+        Cmd::Audio { vm, seconds, out } => {
+            let info = c.vm(&vm).await?;
+            let screen = if info.gpu { "gfx0" } else { "tty0" };
+            let q = Quic::open(&mut c, &cli.host, &vm, pb::Permission::PermView as u32, timeout).await?;
+            let _v = q.s.open_view(&vm, screen, 5);
+            let mut pcm: Vec<i16> = Vec::new();
+            let mut buf = vec![0i16; 4800];
+            let end = Instant::now() + Duration::from_secs(seconds);
+            while Instant::now() < end {
+                let n = q.s.read_audio(&vm, &mut buf);
+                pcm.extend_from_slice(&buf[..n]);
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+            write_wav(&out, &pcm)?;
+            let peak = pcm.iter().map(|v| v.unsigned_abs()).max().unwrap_or(0);
+            println!("{} {:.2}s of audio, peak {}", out.display(), pcm.len() as f64 / 96000.0, peak);
             q.close().await;
         }
         Cmd::AgentSend { vm, json } => {

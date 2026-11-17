@@ -243,6 +243,8 @@ stage_pack() {
   local id="$DISTRO" dst="$OUT_DIR/$DISTRO" ver
   KVER="$(distro_kernel_version)"
   ver="$(date +%Y.%m.%d)"
+  local build_id
+  build_id="$(date -u +%Y%m%d%H%M%S)-$(head -c 8 /dev/urandom | od -An -tx1 | tr -d ' \n' | head -c 8)"
   log "упаковка (ядро $KVER)"
   rm -rf "$dst"; mkdir -p "$dst"
   cp "$(distro_kernel_path "$KVER")" "$dst/vmlinuz"
@@ -270,6 +272,7 @@ stage_pack() {
   "id": "$id",
   "name": "$PRETTY",
   "version": "$ver",
+  "build_id": "$build_id",
   "kernel_version": "$KVER",
   "kernel": "vmlinuz",
   "initrd": "initrd.img",

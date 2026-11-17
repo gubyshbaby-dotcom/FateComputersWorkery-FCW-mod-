@@ -35,6 +35,17 @@ pub struct Env {
     pub qemu: Option<PathBuf>,
     pub qemu_img: Option<PathBuf>,
     pub accel: Accel,
+    /// Часовой пояс хоста (IANA), уходит гостю как `fcw.tz=`.
+    pub tz: Option<String>,
+}
+
+/// Часовой пояс хоста в формате IANA ("Europe/Moscow") или `None`.
+pub fn host_timezone() -> Option<String> {
+    let tz = iana_time_zone::get_timezone().ok()?;
+    let ok = !tz.is_empty()
+        && tz.len() <= 64
+        && tz.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '/' | '_' | '-' | '+'));
+    ok.then_some(tz)
 }
 
 /// config.json машины — последний CreateVm.
@@ -53,6 +64,9 @@ pub struct VmConfig {
     pub network: bool,
     pub display_width: u32,
     pub display_height: u32,
+    /// Версия образа, за которой закреплён диск (ключ из images::version_key).
+    /// Пусто — диск ещё не создан или машина создана до закрепления версий.
+    pub image_version: String,
 }
 
 impl VmConfig {
@@ -70,6 +84,7 @@ impl VmConfig {
             network: r.network,
             display_width: r.display_width,
             display_height: r.display_height,
+            image_version: String::new(),
         }
     }
     pub fn width(&self) -> u32 {
@@ -115,6 +130,9 @@ struct InputState {
     x: u16,
     y: u16,
 }
+
+/// QMP, канал kill, ожидание выхода, канал агента.
+type RunHandles = (Option<Qmp>, mpsc::UnboundedSender<()>, watch::Receiver<bool>, mpsc::Sender<String>);
 
 struct Run {
     gen: u64,
@@ -275,16 +293,32 @@ impl Vm {
 
     /// CreateVm для существующей машины: новые параметры железа (вступят в
     /// силу при следующем запуске), `reinstall` удаляет диск.
-    pub fn update_config(&self, _op: &OwnedMutexGuard<()>, cfg: VmConfig, reinstall: bool) -> Result<()> {
+    pub fn update_config(&self, _op: &OwnedMutexGuard<()>, mut cfg: VmConfig, reinstall: bool) -> Result<()> {
+        let disk = self.dir.join("disk.qcow2");
         if reinstall {
             if self.is_active() {
                 bail!("machine is running; stop it before reinstall");
             }
-            let disk = self.dir.join("disk.qcow2");
             if disk.exists() {
                 std::fs::remove_file(&disk).with_context(|| format!("remove {}", disk.display()))?;
             }
             self.tty.reset();
+            // новый диск закрепится за текущей версией образа при запуске
+            cfg.image_version.clear();
+        } else if disk.exists() {
+            // диск уже создан поверх определённого образа и версии: сменить их
+            // можно только переустановкой
+            let old = self.config();
+            if old.image_id != cfg.image_id {
+                tracing::warn!(
+                    vm = %self.id,
+                    "image change {} -> {} ignored without reinstall", old.image_id, cfg.image_id
+                );
+                cfg.image_id = old.image_id.clone();
+            }
+            cfg.image_version = old.image_version;
+        } else {
+            cfg.image_version.clear();
         }
         self.save_config(&cfg)?;
         self.inner.lock().config = cfg;
@@ -330,6 +364,12 @@ impl Vm {
                 rows: s.rows,
             })
             .collect();
+        let cfg = self.config();
+        // в images/<id> установлена другая версия, чем закреплённая за машиной
+        let update_available = !cfg.image_version.is_empty()
+            && images::load(&self.env.images_dir, &cfg.image_id)
+                .map(|i| i.version != cfg.image_version)
+                .unwrap_or(false);
         let g = self.inner.lock();
         pb::VmInfo {
             vm_id: self.id.clone(),
@@ -343,6 +383,8 @@ impl Vm {
             last_error: g.last_error.clone(),
             agent_connected: g.agent_connected,
             controller_player: g.controller.as_ref().map(|c| c.player_name.clone()).unwrap_or_default(),
+            image_version: g.config.image_version.clone(),
+            image_update_available: update_available,
         }
     }
 
@@ -406,18 +448,54 @@ impl Vm {
         }
     }
 
-    async fn start_inner(self: &Arc<Self>, _op: &OwnedMutexGuard<()>) -> Result<()> {
+    /// Образ, с которого грузится машина, и её диск. Если диска нет, текущая
+    /// версия образа копируется в хранилище, диск создаётся поверх копии и
+    /// машина закрепляется за этой версией. Иначе берётся закреплённая версия
+    /// (или, для машин без закрепления, текущий `images/<id>` — как раньше).
+    pub async fn prepare_image(&self, _op: &OwnedMutexGuard<()>) -> Result<(Image, PathBuf)> {
         let cfg = self.config();
-        let qemu = self.env.qemu.clone().ok_or_else(|| anyhow!("QEMU not found (use --qemu or FCW_QEMU)"))?;
+        std::fs::create_dir_all(&self.dir)?;
+        let disk = self.dir.join("disk.qcow2");
+        if !disk.exists() {
+            let images_dir = self.env.images_dir.clone();
+            let id = cfg.image_id.clone();
+            let img = tokio::task::spawn_blocking(move || images::ensure_stored(&images_dir, &id))
+                .await
+                .map_err(|e| anyhow!("store task: {e}"))??;
+            self.create_disk(&img, &disk, cfg.disk_gb).await?;
+            let mut pinned = cfg.clone();
+            pinned.image_version = img.version.clone();
+            if let Err(e) = self.save_config(&pinned) {
+                let _ = std::fs::remove_file(&disk);
+                return Err(e);
+            }
+            self.inner.lock().config.image_version = img.version.clone();
+            tracing::info!(vm = %self.id, "pinned to image {} version {}", cfg.image_id, img.version);
+            return Ok((img, disk));
+        }
+        if !cfg.image_version.is_empty() {
+            let img = images::load_stored(&self.env.images_dir, &cfg.image_id, &cfg.image_version).map_err(|e| {
+                tracing::warn!(vm = %self.id, "{e:#}");
+                anyhow!(
+                    "base image {} version {} is missing from the image store; the machine needs a reinstall",
+                    cfg.image_id,
+                    cfg.image_version
+                )
+            })?;
+            return Ok((img, disk));
+        }
+        // машина создана до закрепления версий
         let img = images::load(&self.env.images_dir, &cfg.image_id)?;
         if !img.installed() {
             bail!("image {} is not installed (kernel/initrd/rootfs missing)", cfg.image_id);
         }
-        std::fs::create_dir_all(&self.dir)?;
-        let disk = self.dir.join("disk.qcow2");
-        if !disk.exists() {
-            self.create_disk(&img, &disk, cfg.disk_gb).await?;
-        }
+        Ok((img, disk))
+    }
+
+    async fn start_inner(self: &Arc<Self>, op: &OwnedMutexGuard<()>) -> Result<()> {
+        let qemu = self.env.qemu.clone().ok_or_else(|| anyhow!("QEMU not found (use --qemu or FCW_QEMU)"))?;
+        let (img, disk) = self.prepare_image(op).await?;
+        let cfg = self.config();
         std::fs::create_dir_all(&self.sock_dir)?;
         for s in ["qmp.sock", "vnc.sock", "tty.sock", "agent.sock"] {
             let _ = std::fs::remove_file(self.sock(s));
@@ -492,6 +570,11 @@ impl Vm {
             tokio::spawn(async move {
                 let mut lines = BufReader::new(stderr).lines();
                 while let Ok(Some(l)) = lines.next_line().await {
+                    // безобидный шум QEMU не отправляем моду как предупреждения
+                    if l.contains("virtio_input_hid_handle_status") {
+                        tracing::debug!(vm = %id, "qemu: {l}");
+                        continue;
+                    }
                     tracing::warn!(vm = %id, "qemu: {l}");
                     let mut t = tail.lock();
                     if t.len() >= 20 {
@@ -549,7 +632,7 @@ impl Vm {
         let me = self.clone();
         tasks.push(AbortOnDrop(tokio::spawn(async move { me.agent_task(gen, agent_rx).await })));
         let mut rfb_tx = None;
-        if cfg.gpu {
+        if cfg.gpu || cfg.sound {
             let (tx, rx) = mpsc::unbounded_channel();
             rfb_tx = Some(tx);
             let me = self.clone();
@@ -627,6 +710,9 @@ impl Vm {
         if !cfg.kbd_layout.is_empty() {
             cmdline.push_str(&format!(" fcw.kbd={}", cfg.kbd_layout));
         }
+        if let Some(tz) = &self.env.tz {
+            cmdline.push_str(&format!(" fcw.tz={tz}"));
+        }
         let mut a: Vec<String> = vec!["-name".into(), format!("fcw-{}", self.id), "-machine".into(), "q35".into()];
         a.extend(self.env.accel.qemu_args());
         a.extend(
@@ -670,6 +756,9 @@ impl Vm {
             a.extend(["-vga", "none", "-device"].map(String::from));
             a.push(format!("virtio-gpu-pci,xres={},yres={},edid=on", cfg.width(), cfg.height()));
             a.extend(["-device", "virtio-keyboard-pci", "-device", "virtio-tablet-pci"].map(String::from));
+        }
+        // VNC — экран и звук. Без видеокарты VNC нужен только ради звука.
+        if cfg.gpu || cfg.sound {
             a.push("-vnc".into());
             let mut vnc = format!("unix:{}", qemu_escape(&self.sock("vnc.sock")));
             if cfg.sound {
@@ -701,12 +790,17 @@ impl Vm {
             // run (и его задачи) удаляется здесь
         };
         self.input.lock().pressed.clear();
+        for s in ["qmp.sock", "vnc.sock", "tty.sock", "agent.sock"] {
+            let _ = std::fs::remove_file(self.sock(s));
+        }
         let ok = matches!(&status, Ok(s) if s.success());
         if stopping || ok {
             self.set_state(pb::VmState::Stopped, if stopping { "stopped" } else { "guest powered off" });
         } else {
             let msg = match &status {
-                Ok(s) => format!("QEMU exited ({s}){}", if tail.is_empty() { String::new() } else { format!(": {tail}") }),
+                Ok(s) => {
+                    format!("QEMU exited ({s}){}", if tail.is_empty() { String::new() } else { format!(": {tail}") })
+                }
                 Err(e) => format!("QEMU wait failed: {e}"),
             };
             {
@@ -748,7 +842,7 @@ impl Vm {
 
     // ------------------------------------------------------------ остановка
 
-    fn run_handles(&self) -> Option<(Option<Qmp>, mpsc::UnboundedSender<()>, watch::Receiver<bool>, mpsc::Sender<String>)> {
+    fn run_handles(&self) -> Option<RunHandles> {
         let mut g = self.inner.lock();
         let r = g.run.as_mut()?;
         r.stopping = true;
@@ -887,7 +981,10 @@ impl Vm {
     }
 
     fn on_rfb_event(&self, ev: RfbEvent, enc: &mut Option<AudioEncoder>) {
+        let gpu = self.config().gpu;
         match ev {
+            // без видеокарты VNC работает только ради звука: экрана gfx0 нет
+            RfbEvent::Resized(..) | RfbEvent::Cursor(_) if !gpu => {}
             RfbEvent::Resized(w, h) => {
                 let _ = self.notices.send(VmNotice::ScreenChanged {
                     screen: spb::Screen {
@@ -1001,7 +1098,10 @@ impl Vm {
                 let levels = self.inner.lock().redstone_in;
                 self.agent_send(agent::time_msg());
                 self.agent_send(agent::redstone_inputs_msg(&levels));
-                self.emit(pb::event::Kind::AgentMessage(pb::AgentMessage { vm_id: self.id.clone(), json: v.to_string() }));
+                self.emit(pb::event::Kind::AgentMessage(pb::AgentMessage {
+                    vm_id: self.id.clone(),
+                    json: v.to_string(),
+                }));
             }
             GuestMsg::Heartbeat => {}
             GuestMsg::RedstoneSet { side, level } => {
@@ -1012,7 +1112,10 @@ impl Vm {
                 }));
             }
             GuestMsg::Other(v) => {
-                self.emit(pb::event::Kind::AgentMessage(pb::AgentMessage { vm_id: self.id.clone(), json: v.to_string() }));
+                self.emit(pb::event::Kind::AgentMessage(pb::AgentMessage {
+                    vm_id: self.id.clone(),
+                    json: v.to_string(),
+                }));
             }
         }
     }
@@ -1061,8 +1164,9 @@ impl Vm {
         };
         if changed {
             self.release_all();
-            let _ = self.notices.send(VmNotice::Controller { conn_id: c.conn_id, player_name: c.player_name });
         }
+        // уведомление всегда: задачи соединений сами отсеивают повторы
+        let _ = self.notices.send(VmNotice::Controller { conn_id: c.conn_id, player_name: c.player_name });
     }
 
     pub fn drop_controller(&self, conn_id: u64) {
@@ -1256,11 +1360,7 @@ impl Vm {
 }
 
 async fn image_virtual_size(qemu_img: &Path, image: &Path) -> Result<u64> {
-    let out = tokio::process::Command::new(qemu_img)
-        .args(["info", "--output=json", "-U"])
-        .arg(image)
-        .output()
-        .await?;
+    let out = tokio::process::Command::new(qemu_img).args(["info", "--output=json", "-U"]).arg(image).output().await?;
     if !out.status.success() {
         bail!("{}", String::from_utf8_lossy(&out.stderr).trim());
     }
@@ -1278,6 +1378,7 @@ mod tests {
             qemu: None,
             qemu_img: None,
             accel: Accel::Tcg,
+            tz: Some("Europe/Moscow".into()),
         });
         let (ev, _) = broadcast::channel(8);
         let cfg = VmConfig {
@@ -1296,6 +1397,7 @@ mod tests {
         let img = Image {
             dir: PathBuf::from("/images/img"),
             manifest: images::Manifest { cmdline: "root=/dev/vda console=hvc0".into(), ..Default::default() },
+            version: "test".into(),
         };
         (vm, img)
     }
@@ -1307,7 +1409,9 @@ mod tests {
         assert!(a.contains("-machine q35"));
         assert!(a.contains("-accel tcg,thread=multi -cpu max"));
         assert!(a.contains("-m 512"));
-        assert!(a.contains("-append root=/dev/vda console=hvc0 fcw.lang=ru_RU.UTF-8 fcw.kbd=us,ru"));
+        assert!(
+            a.contains("-append root=/dev/vda console=hvc0 fcw.lang=ru_RU.UTF-8 fcw.kbd=us,ru fcw.tz=Europe/Moscow")
+        );
         assert!(a.contains("file=/vms/vm1/disk.qcow2,format=qcow2,discard=unmap"));
         assert!(a.contains("socket,id=con0,path=/vms/vm1/tty.sock,server=on,wait=off"));
         assert!(a.contains("virtserialport,chardev=ag0,name=fcw.agent"));
@@ -1319,6 +1423,11 @@ mod tests {
         let (vm, img) = test_vm(false, false);
         let a = vm.qemu_args(&vm.config(), &img, Path::new("/d.qcow2")).join(" ");
         assert!(!a.contains("-vnc"));
+        assert!(!a.contains("virtio-gpu"));
+        // звук без видеокарты: VNC только ради звука
+        let (vm, img) = test_vm(false, true);
+        let a = vm.qemu_args(&vm.config(), &img, Path::new("/d.qcow2")).join(" ");
+        assert!(a.contains("-vnc unix:/vms/vm1/vnc.sock,audiodev=snd0"));
         assert!(!a.contains("virtio-gpu"));
     }
 

@@ -276,10 +276,7 @@ fn write_redstone_files(levels: &[u32; 6]) -> std::io::Result<()> {
 fn os_name() -> String {
     std::fs::read_to_string("/etc/os-release")
         .ok()
-        .and_then(|s| {
-            s.lines()
-                .find_map(|l| l.strip_prefix("PRETTY_NAME=").map(|v| v.trim_matches('"').to_string()))
-        })
+        .and_then(|s| s.lines().find_map(|l| l.strip_prefix("PRETTY_NAME=").map(|v| v.trim_matches('"').to_string())))
         .unwrap_or_else(|| "Linux".into())
 }
 

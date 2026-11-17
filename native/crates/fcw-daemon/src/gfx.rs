@@ -85,6 +85,9 @@ impl Inner {
     }
 }
 
+/// Тайл к сжатию: индекс, версия, x, y, w, h, пиксели.
+type TileJob = (usize, u64, u32, u32, u32, u32, Vec<u8>);
+
 /// Состояние подписчика: что он уже получил.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct SubCursor {
@@ -226,7 +229,7 @@ impl GfxScreen {
     /// или весь кадр, если `keyframe` или сменился размер. `None` — нечего слать.
     pub fn collect(&self, cur: &mut SubCursor, keyframe: bool) -> Option<spb::FrameUpdate> {
         let mut rects: Vec<Option<Arc<spb::Rect>>> = Vec::new();
-        let mut to_encode: Vec<(usize, u64, u32, u32, u32, u32, Vec<u8>)> = Vec::new();
+        let mut to_encode: Vec<TileJob> = Vec::new();
         let (seq, epoch, width, height, key);
         {
             let g = self.inner.lock();

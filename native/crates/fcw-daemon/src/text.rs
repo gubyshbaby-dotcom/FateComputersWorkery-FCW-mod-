@@ -22,8 +22,8 @@ pub const ATTR_INVERSE: u32 = 8;
 /// Палитра в духе консоли Linux (VGA) для первых 16 цветов, дальше xterm-256.
 pub fn palette(idx: u8) -> u32 {
     const BASE: [u32; 16] = [
-        0x000000, 0xAA0000, 0x00AA00, 0xAA5500, 0x0000AA, 0xAA00AA, 0x00AAAA, 0xAAAAAA, 0x555555, 0xFF5555,
-        0x55FF55, 0xFFFF55, 0x5555FF, 0xFF55FF, 0x55FFFF, 0xFFFFFF,
+        0x000000, 0xAA0000, 0x00AA00, 0xAA5500, 0x0000AA, 0xAA00AA, 0x00AAAA, 0xAAAAAA, 0x555555, 0xFF5555, 0x55FF55,
+        0xFFFF55, 0x5555FF, 0xFF55FF, 0x55FFFF, 0xFFFFFF,
     ];
     match idx {
         0..=15 => BASE[idx as usize],
@@ -234,13 +234,8 @@ impl TextScreen {
         if !full && cur.seq >= g.seq {
             return None;
         }
-        let rows_changed: Vec<spb::TextRow> = g
-            .rows
-            .iter()
-            .zip(&g.row_ver)
-            .filter(|(_, v)| full || **v > cur.seq)
-            .map(|(r, _)| r.clone())
-            .collect();
+        let rows_changed: Vec<spb::TextRow> =
+            g.rows.iter().zip(&g.row_ver).filter(|(_, v)| full || **v > cur.seq).map(|(r, _)| r.clone()).collect();
         cur.seq = g.seq;
         cur.epoch = g.epoch;
         cur.started = true;

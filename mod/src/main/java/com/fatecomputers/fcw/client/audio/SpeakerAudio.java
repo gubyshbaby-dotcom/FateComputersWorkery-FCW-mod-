@@ -12,6 +12,7 @@ import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.phys.Vec3;
 import org.lwjgl.BufferUtils;
 import org.lwjgl.openal.AL10;
+import org.lwjgl.openal.ALC10;
 
 import javax.annotation.Nullable;
 import java.nio.ShortBuffer;
@@ -37,6 +38,7 @@ public final class SpeakerAudio {
     private final Map<String, Stream> streams = new HashMap<>();
     private final short[] pcm = new short[RATE / 5 * 2]; // up to 200 ms of stereo
     private boolean broken;
+    private boolean noDeviceLogged;
 
     private static final class Stream {
         final int source;
@@ -66,6 +68,14 @@ public final class SpeakerAudio {
         Minecraft mc = Minecraft.getInstance();
         if (broken || mc.player == null || mc.level == null || !FcwConfig.CLIENT.audioEnabled.get() || !NativeLoader.isLoaded()) {
             stopAll();
+            return;
+        }
+        if (ALC10.alcGetCurrentContext() == 0L) {
+            // Minecraft's sound system is off (no audio device): nothing to play into.
+            if (!noDeviceLogged) {
+                noDeviceLogged = true;
+                FcwMod.LOGGER.info("No OpenAL context, computer sound is disabled");
+            }
             return;
         }
         long now = System.currentTimeMillis();
@@ -113,7 +123,7 @@ public final class SpeakerAudio {
                 pump(st, link.sessionHandle(), vm);
             }
         } catch (Throwable t) {
-            FcwMod.LOGGER.error("Computer audio failed, disabling it for this session", t);
+            FcwMod.LOGGER.warn("Computer audio failed, disabling it for this session: {}", t.toString());
             broken = true;
             stopAll();
             return;

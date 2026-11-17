@@ -123,8 +123,22 @@ public class PeripheralBlockEntity extends BlockEntity {
     @Override
     public void onLoad() {
         super.onLoad();
-        if (level != null && level.isClientSide && kind() == PeripheralKind.SPEAKER) {
-            SidedHooks.client().speakerLoaded(this);
+        if (level == null) {
+            return;
+        }
+        if (level.isClientSide) {
+            if (kind() == PeripheralKind.SPEAKER) {
+                SidedHooks.client().speakerLoaded(this);
+            }
+        } else if (isLinked()) {
+            // Keep both ends of the link consistent (the computer may have dropped us while we were unloaded).
+            ComputerBlockEntity c = computer();
+            if (c != null) {
+                if (c.peripherals().get(worldPosition) != kind()) {
+                    c.addPeripheral(worldPosition, kind());
+                }
+                setPoweredState(c.isMachineOn());
+            }
         }
     }
 

@@ -188,7 +188,8 @@ impl Parser<'_> {
             b'n' => self.lit("null", Json::Null),
             _ => {
                 let start = self.i;
-                while self.i < self.b.len() && matches!(self.b[self.i], b'-' | b'+' | b'.' | b'e' | b'E' | b'0'..=b'9') {
+                while self.i < self.b.len() && matches!(self.b[self.i], b'-' | b'+' | b'.' | b'e' | b'E' | b'0'..=b'9')
+                {
                     self.i += 1;
                 }
                 std::str::from_utf8(&self.b[start..self.i]).ok()?.parse().ok().map(Json::Num)

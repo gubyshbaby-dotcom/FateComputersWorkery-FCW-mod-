@@ -309,10 +309,14 @@ public final class ScreenViewManager {
     private void request(Link l, BlockPos pos, boolean control) {
         l.requestPos = pos.immutable();
         l.setState(LinkState.REQUESTING);
+        FcwMod.LOGGER.debug("Requesting a view of {} through {}", l.vmId, pos);
         PacketDistributor.sendToServer(new ScreenAccessRequestPayload(pos, control));
     }
 
     private void fail(Link l, Component why) {
+        if (l.state != LinkState.FAILED || !why.getString().equals(l.error.getString())) {
+            FcwMod.LOGGER.info("Live screen of {} unavailable: {}", l.vmId, why.getString());
+        }
         l.error = why;
         l.setState(LinkState.FAILED);
         l.retryAt = System.currentTimeMillis() + RETRY_MS;
@@ -403,7 +407,7 @@ public final class ScreenViewManager {
             }
         }
         if (s == null) {
-            FcwMod.LOGGER.info("Connecting to VM daemon at {}:{}", host, port);
+            FcwMod.LOGGER.info("Connecting to the VM daemon at {}:{} (QUIC)", host, port);
             s = new Session(key, FcwNative.connect(host, port, cert));
             sessions.put(key, s);
         }
@@ -601,6 +605,7 @@ public final class ScreenViewManager {
             }
             return;
         }
+        FcwMod.LOGGER.debug("Opened view {} of {} ({} fps)", screen, l.vmId, fps);
         l.view = v;
         l.viewFps = fps;
         l.viewOpenedAt = System.currentTimeMillis();

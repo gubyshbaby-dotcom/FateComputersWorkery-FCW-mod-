@@ -124,13 +124,8 @@ impl Daemon {
     /// Отзыв токенов и активных привязок игроков.
     pub fn revoke(&self, vm_id: &str, player_uuid: &str) -> usize {
         let n = self.tokens.lock().revoke(vm_id, player_uuid);
-        let vms: Vec<Arc<Vm>> = self
-            .vms
-            .lock()
-            .values()
-            .filter(|v| vm_id.is_empty() || v.id == vm_id)
-            .cloned()
-            .collect();
+        let vms: Vec<Arc<Vm>> =
+            self.vms.lock().values().filter(|v| vm_id.is_empty() || v.id == vm_id).cloned().collect();
         for vm in vms {
             let _ = vm.notices.send(VmNotice::Revoked { player_uuid: player_uuid.to_string() });
         }
@@ -159,10 +154,7 @@ impl Daemon {
             let ticket = vm.op_ticket();
             tasks.push(tokio::spawn(async move {
                 // не ждём бесконечно, если идёт долгая операция
-                let guard = match tokio::time::timeout(timeout, ticket.acquire()).await {
-                    Ok(g) => Some(g),
-                    Err(_) => None,
-                };
+                let guard = tokio::time::timeout(timeout, ticket.acquire()).await.ok();
                 match guard {
                     Some(g) => {
                         if let Err(e) = vm.stop(&g, false, timeout).await {
