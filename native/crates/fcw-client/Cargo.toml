@@ -1,0 +1,28 @@
+[package]
+name = "fcw-client"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "FCW client native library (JNI) and shared QUIC session code"
+
+[lib]
+name = "fcw_client"
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = ["audio"]
+audio = ["dep:opus"]
+
+[dependencies]
+fcw-proto = { workspace = true }
+tokio = { workspace = true }
+quinn = { workspace = true }
+rustls = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
+zstd = { workspace = true }
+serde_json = { workspace = true }
+parking_lot = { workspace = true }
+anyhow = { workspace = true }
+jni = "0.21"
+opus = { workspace = true, optional = true }

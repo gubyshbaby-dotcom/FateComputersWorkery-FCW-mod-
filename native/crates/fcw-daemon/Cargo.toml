@@ -1,0 +1,52 @@
+[package]
+name = "fcw-daemon"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "FCW VM daemon: QEMU, VNC/console capture, QUIC streaming"
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "fcw-daemon"
+path = "src/main.rs"
+
+[features]
+default = ["audio"]
+# Звук: PCM из QEMU Audio (VNC) -> Opus. Требует сборки libopus (cmake).
+audio = ["dep:opus"]
+
+[dependencies]
+fcw-proto = { workspace = true }
+tokio = { workspace = true }
+quinn = { workspace = true }
+rustls = { workspace = true }
+rcgen = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
+base64 = { workspace = true }
+rand = { workspace = true }
+zstd = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+parking_lot = { workspace = true }
+bytes = { workspace = true }
+clap = { workspace = true }
+vt100 = "0.15"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-native-roots", "rustls-tls-webpki-roots", "stream", "http2"] }
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
+tar = "0.4"
+opus = { workspace = true, optional = true }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+uds_windows = "1"
+
+[dev-dependencies]
+fcw-client = { workspace = true }

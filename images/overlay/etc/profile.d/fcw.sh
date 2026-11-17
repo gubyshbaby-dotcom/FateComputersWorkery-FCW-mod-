@@ -3,6 +3,7 @@ for fcw_arg in $(cat /proc/cmdline 2>/dev/null); do
   case "$fcw_arg" in
     fcw.lang=*) export LANG="${fcw_arg#fcw.lang=}" ;;
     fcw.kbd=*)  export XKB_DEFAULT_LAYOUT="${fcw_arg#fcw.kbd=}" ;;
+    fcw.tz=*)   export TZ="${fcw_arg#fcw.tz=}" ;;
   esac
 done
 unset fcw_arg

@@ -10,7 +10,7 @@ UBUNTU_MIRROR="${UBUNTU_MIRROR:-https://archive.ubuntu.com/ubuntu}"
 BASE_URL="https://cdimage.ubuntu.com/ubuntu-base/releases/$UBUNTU_VERSION/release/ubuntu-base-$UBUNTU_VERSION-base-amd64.tar.gz"
 
 UBUNTU_PACKAGES=(
-  linux-image-virtual dracut zstd
+  linux-image-virtual dracut zstd tzdata
   systemd systemd-sysv systemd-resolved systemd-timesyncd udev dbus-user-session
   sudo login passwd locales kbd procps iproute2 iputils-ping less nano htop bash-completion
   ca-certificates

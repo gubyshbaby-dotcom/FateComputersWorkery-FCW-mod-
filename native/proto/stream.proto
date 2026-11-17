@@ -51,6 +51,7 @@ message ServerMsg {
     VmStateNotice vm_state = 4;
     Pong pong = 5;
     ErrorNotice error = 6;
+    InputControl input_control = 7;  // добавлено: смена управляющего игрока
   }
 }
 
@@ -102,6 +103,14 @@ message VmStateNotice {
 
 message Pong { uint64 nonce = 1; }
 message ErrorNotice { string message = 1; }
+
+// Этот клиент получил (active = true) или потерял (active = false) управление
+// вводом машины. При потере демон уже отпустил все клавиши и кнопки в госте.
+message InputControl {
+  string vm_id = 1;
+  bool active = 2;
+  string controller_player = 3;  // имя игрока, который сейчас управляет
+}
 
 // ------------------------------------------------------------ потоки
 

@@ -1,0 +1,13 @@
+{
+  "values": [
+    "fcw:system_unit",
+    "fcw:case_desktop",
+    "fcw:case_tower_retro",
+    "fcw:case_tower",
+    "fcw:case_gaming",
+    "fcw:case_cube",
+    "fcw:case_server",
+    "fcw:monitor",
+    "fcw:crt_monitor"
+  ]
+}

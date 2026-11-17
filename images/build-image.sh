@@ -158,6 +158,8 @@ stage_configure() {
   fi
 
   echo "fcw-$DISTRO" > "$ROOT/etc/hostname"
+  # часовой пояс по умолчанию UTC; настоящий передаёт демон (fcw.tz=)
+  ln -sf ../usr/share/zoneinfo/UTC "$ROOT/etc/localtime"
   printf '127.0.0.1 localhost\n::1 localhost\n127.0.1.1 fcw-%s\n' "$DISTRO" > "$ROOT/etc/hosts"
 
   # Пользователь user / пароль fcw, root заблокирован.
@@ -169,7 +171,8 @@ stage_configure() {
   done
   echo 'user:fcw' | in_root chpasswd
   in_root passwd -l root >/dev/null
-  # системные конфиги в /etc/xdg уже на месте, домашний каталог чистый
+  # домашний каталог всегда приводим к актуальному /etc/skel
+  cp -a "$ROOT/etc/skel/." "$ROOT/home/user/"
   in_root chown -R user:user /home/user
 
   distro_configure
@@ -205,6 +208,35 @@ stage_initramfs() {
   [[ -n "$KVER" ]] || { echo "ядро не найдено" >&2; exit 1; }
   distro_make_initramfs "$KVER" /boot/fcw-initrd.img
   umount_chroot
+  # initrd храним рядом с корнем, а не внутри: в образ он не идёт
+  mv "$ROOT/boot/fcw-initrd.img" "$WORK_DIR/$DISTRO/initrd.img"
+}
+
+# Убираем то, что в виртуальной машине не нужно: чужие языки, man-страницы,
+# модули ядра для настоящего железа (Wi-Fi, видеокарты, ТВ-тюнеры...).
+slim_rootfs() {
+  local kver="$1" mods d
+  if [[ -d "$ROOT/usr/share/locale" ]]; then
+    find "$ROOT/usr/share/locale" -mindepth 1 -maxdepth 1 -type d \
+      ! -name 'en' ! -name 'en_*' ! -name 'ru' ! -name 'ru_*' ! -name 'C*' -exec rm -rf {} +
+  fi
+  rm -rf "$ROOT/usr/share/man/"* "$ROOT/usr/share/info/"* "$ROOT/usr/share/gtk-doc/"* 2>/dev/null || true
+  mods="$(dirname "$(distro_kernel_path "$kver")")"
+  [[ -d "$mods/kernel" ]] || mods="$ROOT/lib/modules/$kver"
+  for d in drivers/media drivers/net/wireless drivers/net/ethernet drivers/net/wwan drivers/net/can \
+           drivers/net/usb drivers/bluetooth drivers/infiniband drivers/staging drivers/isdn drivers/iio \
+           drivers/gpu/drm/amd drivers/gpu/drm/radeon drivers/gpu/drm/nouveau drivers/gpu/drm/i915 \
+           drivers/gpu/drm/xe drivers/gpu/drm/nova drivers/scsi/qla2xxx drivers/scsi/lpfc drivers/scsi/mpt3sas \
+           drivers/scsi/bfa drivers/scsi/be2iscsi drivers/scsi/qedf drivers/scsi/qedi drivers/net/fddi \
+           sound/pci sound/usb sound/soc sound/firewire sound/isa sound/pcmcia net/bluetooth net/wireless net/mac80211; do
+    rm -rf "${mods:?}/kernel/$d"
+  done
+  in_root_nomount depmod -a "$kver"
+}
+
+# depmod не нужны /proc и /dev, chroot без монтирования
+in_root_nomount() {
+  chroot "$ROOT" /usr/bin/env -i PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin "$@"
 }
 
 stage_pack() {
@@ -214,12 +246,14 @@ stage_pack() {
   log "упаковка (ядро $KVER)"
   rm -rf "$dst"; mkdir -p "$dst"
   cp "$(distro_kernel_path "$KVER")" "$dst/vmlinuz"
-  cp "$ROOT/boot/fcw-initrd.img" "$dst/initrd.img"
+  cp "$WORK_DIR/$DISTRO/initrd.img" "$dst/initrd.img"
+
+  chmod 0644 "$dst/vmlinuz" "$dst/initrd.img"   # демон работает не от root
 
   distro_cleanup
+  slim_rootfs "$KVER"
   rm -rf "$ROOT/tmp/"* "$ROOT/var/tmp/"* "$ROOT/var/log/journal/"* "$ROOT/root/.cache" 2>/dev/null || true
   find "$ROOT/var/log" -type f -exec truncate -s0 {} + 2>/dev/null || true
-  rm -f "$ROOT/boot/fcw-initrd.img"
 
   local raw="$WORK_DIR/$DISTRO/rootfs.ext4"
   rm -f "$raw"

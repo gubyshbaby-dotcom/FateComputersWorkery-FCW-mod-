@@ -1,0 +1,148 @@
+package com.fatecomputers.fcw;
+
+import net.neoforged.neoforge.common.ModConfigSpec;
+
+import java.util.List;
+
+/**
+ * Server config (per world, {@code serverconfig/fcw-server.toml}) and client config
+ * ({@code config/fcw-client.toml}).
+ */
+public final class FcwConfig {
+    private FcwConfig() {
+    }
+
+    public static final class Server {
+        public final ModConfigSpec.BooleanValue daemonEnabled;
+        public final ModConfigSpec.ConfigValue<String> daemonPath;
+        public final ModConfigSpec.ConfigValue<String> qemuPath;
+        public final ModConfigSpec.IntValue quicPort;
+        public final ModConfigSpec.ConfigValue<String> publicHost;
+        public final ModConfigSpec.IntValue maxVms;
+        public final ModConfigSpec.ConfigValue<String> accelerator;
+        public final ModConfigSpec.IntValue startupTimeoutSeconds;
+        public final ModConfigSpec.IntValue shutdownTimeoutSeconds;
+        public final ModConfigSpec.IntValue messagesPerTick;
+
+        public final ModConfigSpec.ConfigValue<String> imageUrlTemplate;
+
+        public final ModConfigSpec.ConfigValue<String> guestLang;
+        public final ModConfigSpec.ConfigValue<String> guestKeyboardLayouts;
+        public final ModConfigSpec.BooleanValue guestNetwork;
+        public final ModConfigSpec.IntValue maxMemoryMb;
+        public final ModConfigSpec.IntValue displayWidth;
+        public final ModConfigSpec.IntValue displayHeight;
+        public final ModConfigSpec.BooleanValue restartRunningOnLoad;
+
+        public final ModConfigSpec.IntValue linkRadius;
+        public final ModConfigSpec.IntValue viewDistance;
+        public final ModConfigSpec.BooleanValue ownerOnlyControl;
+        public final ModConfigSpec.IntValue tokenTtlSeconds;
+
+        Server(ModConfigSpec.Builder b) {
+            b.comment("VM daemon (native fcw-daemon process started by the server)").push("daemon");
+            daemonEnabled = b.comment("Start the VM daemon together with the server.")
+                    .define("enabled", true);
+            daemonPath = b.comment("Path to an fcw-daemon executable. Empty = the one bundled in the mod jar for this platform.")
+                    .define("path", "");
+            qemuPath = b.comment("Path to qemu-system-x86_64. Empty = $FCW_QEMU or qemu-system-x86_64 from PATH.")
+                    .define("qemuPath", "");
+            quicPort = b.comment("UDP port of the QUIC server that players' clients connect to for screens and input.")
+                    .defineInRange("quicPort", 25600, 1, 65535);
+            publicHost = b.comment("Host name or IP that clients use to reach the QUIC port.",
+                            "Empty = the address the client used to join this Minecraft server (127.0.0.1 in single player).")
+                    .define("publicHost", "");
+            maxVms = b.comment("Maximum number of virtual machines running at the same time.")
+                    .defineInRange("maxVms", 4, 1, 256);
+            accelerator = b.comment("Virtualization accelerator: auto, kvm, whpx, hvf or tcg (software).")
+                    .defineInList("accelerator", "auto", List.of("auto", "kvm", "whpx", "hvf", "tcg"));
+            startupTimeoutSeconds = b.comment("How long to wait for the daemon to report FCW-READY.")
+                    .defineInRange("startupTimeoutSeconds", 30, 5, 600);
+            shutdownTimeoutSeconds = b.comment("How long to wait for the daemon to stop its VMs when the server stops.")
+                    .defineInRange("shutdownTimeoutSeconds", 15, 1, 300);
+            messagesPerTick = b.comment("Maximum number of daemon replies/events applied per server tick.")
+                    .defineInRange("messagesPerTick", 64, 1, 10000);
+            b.pop();
+
+            b.comment("Guest OS images").push("images");
+            imageUrlTemplate = b.comment("Download URL for /fcw images fetch <id>; <id> is replaced by the image id.")
+                    .define("urlTemplate", "https://github.com/gubyshbaby-dotcom/FateComputersWorkery-FCW-mod-/releases/download/images/fcw-image-<id>.tar.zst");
+            b.pop();
+
+            b.comment("Virtual machines").push("vm");
+            guestLang = b.comment("Guest locale (fcw.lang= kernel parameter).")
+                    .define("lang", "ru_RU.UTF-8");
+            guestKeyboardLayouts = b.comment("Guest keyboard layouts (fcw.kbd= kernel parameter).")
+                    .define("keyboardLayouts", "us,ru");
+            guestNetwork = b.comment("Give guests a network card even without a router block (not in the mod yet).")
+                    .define("network", false);
+            maxMemoryMb = b.comment("Upper limit for the memory of one VM, MB (installed modules above it are ignored).")
+                    .defineInRange("maxMemoryMb", 8192, 128, 1048576);
+            displayWidth = b.comment("Guest display width for machines with a graphics card.")
+                    .defineInRange("displayWidth", 1024, 320, 7680);
+            displayHeight = b.comment("Guest display height for machines with a graphics card.")
+                    .defineInRange("displayHeight", 768, 200, 4320);
+            restartRunningOnLoad = b.comment("Start machines that were running when the world was saved (after a server restart).")
+                    .define("restartRunningOnLoad", true);
+            b.pop();
+
+            b.comment("Peripherals and access").push("access");
+            linkRadius = b.comment("Radius in blocks in which monitors, keyboards, mice and speakers link to a computer.")
+                    .defineInRange("linkRadius", 8, 1, 64);
+            viewDistance = b.comment("Maximum distance in blocks at which a player may receive a screen view token.")
+                    .defineInRange("viewDistance", 128, 8, 1024);
+            ownerOnlyControl = b.comment("Only the player who placed a computer (and operators) may use its keyboard and mouse.")
+                    .define("ownerOnlyControl", false);
+            tokenTtlSeconds = b.comment("Lifetime of screen/input tokens handed to clients.")
+                    .defineInRange("tokenTtlSeconds", 120, 10, 3600);
+            b.pop();
+        }
+    }
+
+    public static final class Client {
+        public final ModConfigSpec.IntValue screenRenderDistance;
+        public final ModConfigSpec.IntValue nearFps;
+        public final ModConfigSpec.IntValue farFps;
+        public final ModConfigSpec.IntValue farDistance;
+        public final ModConfigSpec.IntValue controlFps;
+        public final ModConfigSpec.ConfigValue<String> nativeLibraryPath;
+        public final ModConfigSpec.BooleanValue audioEnabled;
+        public final ModConfigSpec.DoubleValue audioVolume;
+
+        Client(ModConfigSpec.Builder b) {
+            b.comment("Live monitor screens").push("screens");
+            screenRenderDistance = b.comment("Monitors farther than this (blocks) show the static model picture.")
+                    .defineInRange("renderDistance", 32, 4, 256);
+            nearFps = b.comment("Frame rate requested for nearby screens.")
+                    .defineInRange("nearFps", 30, 1, 60);
+            farFps = b.comment("Frame rate limit for distant screens.")
+                    .defineInRange("farFps", 5, 1, 60);
+            farDistance = b.comment("Distance in blocks from which a screen counts as distant.")
+                    .defineInRange("farDistance", 12, 1, 256);
+            controlFps = b.comment("Frame rate requested while you are using a computer.")
+                    .defineInRange("controlFps", 60, 1, 120);
+            nativeLibraryPath = b.comment("Path to the fcw_client native library. Empty = the one bundled in the mod jar.")
+                    .define("nativeLibraryPath", "");
+            b.pop();
+
+            b.comment("Sound from computers through linked speakers").push("audio");
+            audioEnabled = b.define("enabled", true);
+            audioVolume = b.defineInRange("volume", 1.0, 0.0, 2.0);
+            b.pop();
+        }
+    }
+
+    public static final Server SERVER;
+    public static final ModConfigSpec SERVER_SPEC;
+    public static final Client CLIENT;
+    public static final ModConfigSpec CLIENT_SPEC;
+
+    static {
+        ModConfigSpec.Builder sb = new ModConfigSpec.Builder();
+        SERVER = new Server(sb);
+        SERVER_SPEC = sb.build();
+        ModConfigSpec.Builder cb = new ModConfigSpec.Builder();
+        CLIENT = new Client(cb);
+        CLIENT_SPEC = cb.build();
+    }
+}

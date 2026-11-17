@@ -1,0 +1,13 @@
+[package]
+name = "fcw-agent"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "FCW guest agent (static musl binary `fcw`)"
+
+[[bin]]
+name = "fcw"
+path = "src/main.rs"
+
+[dependencies]
+libc = "0.2"

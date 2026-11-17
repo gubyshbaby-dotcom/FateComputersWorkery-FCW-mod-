@@ -1,0 +1,51 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/fcw-proto",
+    "crates/fcw-daemon",
+    "crates/fcw-client",
+    "crates/fcw-probe",
+    "crates/fcw-agent",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+rust-version = "1.80"
+
+[workspace.dependencies]
+fcw-proto = { path = "crates/fcw-proto" }
+fcw-client = { path = "crates/fcw-client" }
+prost = "0.13"
+prost-build = "0.13"
+protoc-bin-vendored = "3"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "io-util", "io-std", "time", "sync", "process", "signal", "fs"] }
+quinn = { version = "0.11", default-features = false, features = ["runtime-tokio", "rustls-ring", "log"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "logging", "tls12"] }
+rcgen = "0.13"
+sha2 = "0.10"
+hex = "0.4"
+base64 = "0.22"
+rand = "0.8"
+zstd = "0.13"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+parking_lot = "0.12"
+bytes = "1"
+clap = { version = "4", features = ["derive"] }
+png = "0.17"
+opus = "0.3"
+
+[profile.release]
+opt-level = 3
+debug = false
+strip = "debuginfo"
+
+[profile.release.package.fcw-agent]
+opt-level = "z"
+codegen-units = 1
+strip = true

@@ -52,7 +52,8 @@ repo/
 - virtio-serial порт с именем `fcw.agent` -> служба `fcw agent` (агент мира).
 - Сеть: systemd-networkd, DHCP на любом ethernet.
 - Звук: PipeWire, нужен virtio-sound.
-- Дополнительные параметры ядра от демона: `fcw.lang=ru_RU.UTF-8`, `fcw.kbd=us,ru`.
+- Дополнительные параметры ядра от демона: `fcw.lang=ru_RU.UTF-8`, `fcw.kbd=us,ru`,
+  `fcw.tz=Europe/Moscow` (часовой пояс хоста; по умолчанию в образе UTC).
 
 ## 2. Запуск демона
 

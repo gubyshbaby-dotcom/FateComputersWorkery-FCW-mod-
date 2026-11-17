@@ -15,6 +15,12 @@ base {
 java.toolchain.languageVersion = JavaLanguageVersion.of(21)
 
 repositories {
+    // maven.neoforged.net mirrors some POMs of Maven Central but not protoc's
+    // native executables, so protobuf artifacts always come from Central.
+    exclusiveContent {
+        forRepository { mavenCentral() }
+        filter { includeGroup 'com.google.protobuf' }
+    }
     mavenCentral()
 }
 
@@ -53,11 +59,18 @@ neoForge {
 // The control channel schema lives next to the daemon (native/proto) and is
 // shared with it; only control.proto is compiled here. The QUIC stream
 // protocol (stream.proto) is handled entirely inside the native client library.
+// The protobuf plugin ignores include filters on the proto source set, so the
+// one file we need is synced into its own directory first.
+def syncControlProto = tasks.register('syncControlProto', Sync) {
+    from('../native/proto') { include 'control.proto' }
+    into layout.buildDirectory.dir('fcw-proto')
+}
+
 sourceSets {
     main {
         proto {
-            srcDirs = ['../native/proto']
-            include 'control.proto'
+            srcDirs = []
+            srcDir syncControlProto
         }
     }
 }
