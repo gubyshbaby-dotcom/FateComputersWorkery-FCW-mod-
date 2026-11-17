@@ -45,6 +45,9 @@ message Request {
 message Hello {
   string client_name = 1;      // "fcw-mod 0.1.0"
   uint32 protocol_version = 2; // 1
+  // Общий секрет для подключения по TCP (--control-tcp, --token-file).
+  // По Unix-сокету не нужен: там доступ ограничивают права на файл.
+  string auth_token = 3;
 }
 
 message ListImages {}

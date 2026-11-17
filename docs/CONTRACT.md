@@ -91,6 +91,36 @@ fcw-daemon --images-dir <gameDir>/fcw/images --vms-dir <world>/fcw/vms \
   Ускоритель `auto`: kvm (если /dev/kvm доступен на запись), whpx (Windows),
   hvf (macOS на x86_64), иначе tcg (`-accel tcg,thread=multi`).
 
+### Демон на отдельном хосте (служба)
+
+Когда сервер Minecraft работает в контейнере без доступа к KVM (Pelican,
+Pterodactyl), демон запускают на самом узле как службу systemd, а мод
+подключается к нему по TCP:
+
+```
+fcw-daemon --service --images-dir /var/lib/fcw/images --vms-dir /var/lib/fcw/vms \
+           --control-tcp 172.18.0.1:25700 --token-file /etc/fcw/token \
+           --quic-bind 0.0.0.0:<UDP-порт для игроков>
+```
+
+- `--service`: не завершаться при закрытии stdin; выход по SIGTERM/SIGINT
+  (машины гасятся так же, как при обычном выходе). `--control` (Unix-сокет)
+  в этом режиме необязателен.
+- `--control-tcp <ip:port>`: слушать канал управления по TCP (тот же формат
+  кадров). Если адреса ещё нет (интерфейс Docker поднимется позже), демон
+  повторяет bind каждые 2 с.
+- `--token-file <путь>`: общий секрет для TCP. Если файла нет, демон создаёт
+  его (32 случайных байта, base64url, права 0600) и пишет путь в журнал.
+  Первое сообщение TCP-соединения — Hello с верным `auth_token` (сравнение за
+  постоянное время), иначе ответ с ошибкой «unauthorized» и разрыв.
+- Подключений может быть несколько (перезапуск сервера Minecraft): события
+  рассылаются всем авторизованным. `Shutdown` по TCP в режиме службы
+  отклоняется — службу останавливает systemd.
+- Мод в режиме `daemon.mode = "remote"` (`daemon.remoteAddress`,
+  `daemon.remoteToken`) не запускает свой демон, подключается к удалённому и
+  переподключается при обрыве; при остановке сервера гасит свои машины
+  (StopVm), а не демон.
+
 ## 3. Канал управления (мод <-> демон)
 
 `native/proto/control.proto`, пакет `fcw.control.v1`. Unix stream-сокет, кадр
