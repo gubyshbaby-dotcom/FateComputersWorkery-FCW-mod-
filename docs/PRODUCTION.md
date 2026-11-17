@@ -1,0 +1,142 @@
+# Производство комплектующих: контракт (v1)
+
+Первая версия производственной цепочки: от кварца до процессоров, памяти и
+плат, из которых собираются компьютеры. Только машины, для которых есть
+готовые модели автора: дуговая печь, ростовая печь, участок резки и
+полировки пластин, литограф EUV Mk2, линия электроники. Остальное из плана
+(мехобработка, химия и газы, алмазы, инфраструктура, литографы младших
+поколений, чистая комната, управление машинами с компьютера) — следующие
+версии.
+
+Исходники моделей (только читать, пространство имён `pcmod` → `fcw`):
+
+| машина | папка |
+|---|---|
+| литограф EUV Mk2 + блоки для его постройки | `scratchpad/all1/04_euv_scanner_mk2`, `scratchpad/all1/02_parts_kit` |
+| дуговая печь v4 | `scratchpad/all2/05_arc_furnace` |
+| ростовая печь (Чохральский) v2 | `scratchpad/all2/06_crystal_puller` |
+| резка и полировка пластин v2 | `scratchpad/all2/07_wafering_cell` |
+| линия электроники v3 | `scratchpad/all2/08_chip_line` |
+| превью всего | `scratchpad/all2/previews` |
+
+`scratchpad` = `/tmp/claude-0/-home-user-FateComputersWorkery-FCW-mod-/84d636c1-a537-544d-a380-b1dd4818bfa5/scratchpad`.
+У каждой машины свой README.txt (клетки, состояния, люки, порты, слоты,
+подвижные части, клипы, частицы), манифест, файл анимаций, справочный
+Java-проигрыватель клипов и alt_blockstates («голые» клетки для анимации).
+Формат манифестов и клипов у всех машин один (как у литографа).
+
+## Цепочка
+
+```
+кварц + уголь ──дуговая печь──► технический кремний ──дуговая печь (рафинирование)──► поликремний
+железо + уголь ──дуговая печь──► сталь
+поликремний ──ростовая печь──► монокристалл (слиток)
+слиток ──резка и полировка──► полированные пластины
+пластина + фотошаблон ──литограф EUV──► пластина с рисунком (тип по шаблону)
+пластина с рисунком ──линия: корпусировка──► микросхемы (процессоры, память, контроллеры)
+заготовка платы + микросхемы ──линия: сборка плат──► мат. плата, видеокарта, модули памяти
+```
+
+Младшие процессоры и память (DIP, QFP, SIMM, микросхема памяти DIP) крафтятся
+на верстаке без машин — чтобы первый компьютер можно было собрать сразу.
+
+## Предметы (id `fcw:`)
+
+Уже есть в моде: `motherboard`, `graphics_card`, `cpu_dip`, `cpu_qfp`, `cpu_pga`,
+`cpu_lga`, `cpu_multicore`, `cpu_server`, `ram_dip`, `ram_simm`, `ram_dimm`,
+`ram_ddr`, `ram_ddr_rgb`, `ram_server`, `ram_sodimm`, блоки компьютеров и
+периферии.
+
+Новые (делает агент материалов):
+
+| id | что |
+|---|---|
+| `metallurgical_silicon` | технический кремний |
+| `steel_ingot` | сталь |
+| `polysilicon` | поликремний |
+| `silicon_boule` | монокристалл кремния (слиток) |
+| `silicon_wafer` | полированная пластина |
+| `reticle_cpu`, `reticle_memory`, `reticle_gpu`, `reticle_controller` | фотошаблоны (в литографе не расходуются, у них прочность) |
+| `wafer_cpu`, `wafer_memory`, `wafer_gpu`, `wafer_controller` | пластины с рисунком |
+| `chip_controller`, `chip_gpu`, `chip_memory` | корпусированные микросхемы (процессоры сразу выходят как `cpu_*`) |
+| `pcb_blank` | заготовка платы |
+
+Модели предметов: где есть подходящие модели из подвижных частей и props
+машин (слиток, пластины, маска, плата, микросхема), можно использовать их;
+остальное — аккуратные пиксельные иконки 32x32 в стиле набора деталей.
+
+## Рецепты машин
+
+Тип рецепта `fcw:<машина>`: `fcw:arc_furnace`, `fcw:crystal_puller`,
+`fcw:wafering`, `fcw:lithography`, `fcw:chip_packaging`, `fcw:pcb_assembly`.
+Все одного класса (`com.fatecomputers.fcw.production.recipe.MachineRecipe`), JSON:
+
+```json
+{
+  "type": "fcw:arc_furnace",
+  "inputs": [ {"ingredient": {"item": "minecraft:quartz"}, "count": 4},
+              {"ingredient": {"tag": "minecraft:coals"}, "count": 2} ],
+  "catalyst": {"item": "fcw:reticle_cpu"},
+  "results": [ {"id": "fcw:metallurgical_silicon", "count": 2} ],
+  "ticks": 400,
+  "energy_per_tick": 256
+}
+```
+
+`catalyst` необязателен: не расходуется, но теряет 1 прочности, если у
+предмета есть прочность. `results` могут иметь `"chance"` (0..1).
+
+API для машин (делает агент материалов):
+
+```java
+// com.fatecomputers.fcw.production.recipe
+public final class FcwRecipes {           // регистрация RecipeType и RecipeSerializer
+    public static Supplier<RecipeType<MachineRecipe>> ARC_FURNACE, CRYSTAL_PULLER, WAFERING,
+        LITHOGRAPHY, CHIP_PACKAGING, PCB_ASSEMBLY;
+}
+public record MachineRecipe(List<SizedIngredient> inputs, Optional<Ingredient> catalyst,
+        List<ChanceResult> results, int ticks, int energyPerTick) implements Recipe<MachineRecipeInput> {}
+public final class MachineRecipes {
+    /** Первый рецепт этого типа, который можно выполнить из содержимого входных слотов. */
+    public static Optional<RecipeHolder<MachineRecipe>> find(Level level, RecipeType<MachineRecipe> type,
+            List<ItemStack> inputs, ItemStack catalyst);
+    /** Списать входы (и прочность катализатора) из слотов. */
+    public static void consume(MachineRecipe r, List<ItemStack> inputs, ItemStack catalyst);
+}
+```
+
+Линия электроники — одна машина с двумя участками: корпусировка
+(`fcw:chip_packaging`, порт `wafer` → порт `chips`) и сборка плат
+(`fcw:pcb_assembly`, порт `boards` + микросхемы → порт `out`).
+
+## Машины (делает агент машин)
+
+- Один движок на все машины, по данным из манифестов и файлов анимаций:
+  блоки клеток `<машина>_part` и `<машина>_hatch` (свойства из README), блок
+  управления в клетке пульта (`terminal`), порты по манифесту (предметы — Item
+  Handler, энергия — Energy Storage NeoForge, жидкости — Fluid Handler),
+  рубильник, люки, состояния off / idle / run, BlockEntityRenderer подвижных
+  частей и переносимых предметов по клипам, частицы по описаниям эмиттеров.
+- Постройка:
+  - литограф EUV — из блоков набора деталей по схеме
+    `euv_scanner_mk2_pattern.json`: игрок выкладывает заготовку, ПКМ по
+    `euv_controller` проверяет и превращает её в машину (`fcw:euv_*` блоки;
+    рецепты крафта блоков — у агента материалов);
+  - остальные (схем и блоков для постройки у них нет) — предмет-комплект
+    `fcw:arc_furnace_kit`, `fcw:crystal_puller_kit`, `fcw:wafering_cell_kit`,
+    `fcw:chip_line_kit`: ПКМ по земле ставит машину целиком, если место
+    свободно (показать, что мешает), с учётом взгляда игрока. Разбор любой
+    клетки (киркой, с подтверждением шифтом) возвращает комплект и содержимое
+    слотов. Рецепты комплектов — у агента материалов.
+- Энергия: FE через порт `power`. Настройка сервера `production.requirePower`
+  (по умолчанию false: без источника FE машины работают от «встроенного
+  трансформатора», чтобы цепочка была проходима без других модов); при true
+  — только от FE.
+- Жидкости в v1 не обязательны: порты принимают жидкости (вода, аргон,
+  охлаждение…), но рецепты их не требуют.
+- GUI пульта: слоты входа/выхода/катализатора, прогресс, энергия, состояние,
+  кнопка пуска/остановки (то же, что рубильник).
+- Работа: рецепт ищется по `MachineRecipes.find`, время = `ticks`, во время
+  работы state = run и проигрываются клипы машины (рост кристалла растянут на
+  время рецепта, такт линии — циклически и т.д.), без рецепта idle, рубильник
+  выключен — off.
