@@ -166,7 +166,7 @@ def litho(state, big=False):
     elif state == 'fault':
         row('поле', '33 / 61   остановлено', RED); row('причина', 'нет питания, приход 0 FE/t', RED); row('буфер', '1.2k / 400k FE'); row('потеряно', 'поля 30–32 (E)')
     else:
-        row('поле', '61 / 61   пластина готова'); row('годных', '%d / 61   %d %%   класс B' % (good, round(good * 100 / 61))); row('брак', 'W 3  P 2  E 3  M 1', RED); row('выгрузка', 'dock2: wafer_cpu x3')
+        row('поле', '61 / 61   пластина готова'); row('годных', '%d / 61   %d %%   класс A' % (good, round(good * 100 / 61))); row('брак', 'W 3  P 2  E 3  M 1', RED); row('выгрузка', 'dock2: wafer_cpu x3')
     if big: y += 1
     sec('Маска')
     row('шаблон', 'reticle_cpu'); g.put(px + 1, y, 'ресурс', DIM); g.bar(px + 13, y, 14 if not big else 30, 187 / 256, FG); g.put(px + (28 if not big else 44), y, '187/256'); y += 1
@@ -182,7 +182,7 @@ def litho(state, big=False):
     if big:
         y += 1; sec('Партия 0042')
         g.put(px + 1, y, ' №  годных  класс  брак              время', DIM); y += 1
-        for i, (gd, cl, br) in enumerate(((57, 'A', 'P 2  W 2'), (59, 'S', 'P 1  W 1'), ((52, 'B', 'W 3  P 2  E 3  M 1') if state == 'done' else (None, '', '')))):
+        for i, (gd, cl, br) in enumerate(((57, 'A', 'P 2  W 2'), (59, 'S', 'P 1  W 1'), ((52, 'A', 'W 3  P 2  E 3  M 1') if state == 'done' else (None, '', '')))):
             if gd: g.put(px + 1, y, ' %d   %d/61   %s      %-16s  1:00' % (i + 1, gd, cl, br))
             else: g.put(px + 1, y, ' 3   в работе', ACC)
             y += 1
@@ -201,7 +201,7 @@ def litho(state, big=False):
     else:
         g.put(1, 22, 'пластина', DIM); g.bar(10, 22, 22, done / 61, ACC if state != 'fault' else RED); g.put(33, 22, '%3d %%' % round(done * 100 / 61))
         g.put(41, 22, 'P частицы W полир. E питание M маска', DIM)
-        last = {'run': '14:20:07  поле 24', 'fault': '14:20:31  отказ: нет питания, поля 30–32 потеряны', 'done': '14:20:52  пластина 3 готова: 52/61, класс B'}[state]
+        last = {'run': '14:20:07  поле 24', 'fault': '14:20:31  отказ: нет питания, поля 30–32 потеряны', 'done': '14:20:52  пластина 3 готова: 52/61, класс A'}[state]
         g.put(1, 23, last, RED if state == 'fault' else FG)
     g.keys([('F1', 'Справка'), ('F2', 'Партия'), ('F3', 'Маска'), ('F4', 'Журнал'), ('F5', 'Пуск'), ('F6', 'Стоп'), ('F7', 'Рецепт'), ('F10', 'Выход')])
     g.save('tui_litho_%s_%dx%d.png' % (state, C, R))
