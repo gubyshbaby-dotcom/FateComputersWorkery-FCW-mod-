@@ -26,3 +26,11 @@ side = "BOTH"
 
 [[accessTransformers]]
 file = "META-INF/accesstransformer.cfg"
+
+# Optional: machines can take their power from an ME network.
+[[dependencies.${mod_id}]]
+modId = "ae2"
+type = "optional"
+versionRange = "[19,)"
+ordering = "AFTER"
+side = "BOTH"

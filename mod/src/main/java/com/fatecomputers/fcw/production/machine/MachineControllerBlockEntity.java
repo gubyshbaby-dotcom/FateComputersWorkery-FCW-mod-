@@ -136,6 +136,10 @@ public class MachineControllerBlockEntity extends BlockEntity implements MenuPro
     private int presence;
     private boolean inventoryChanged = true;
     private boolean validated;
+    @Nullable
+    private static java.util.function.Function<MachineControllerBlockEntity, MachinePowerSource> networkPowerFactory;
+    @Nullable
+    private MachinePowerSource networkPower;
 
     // client: when the synced progress values were taken
     private long syncTime;
@@ -244,6 +248,46 @@ public class MachineControllerBlockEntity extends BlockEntity implements MenuPro
         return outputStart[section];
     }
 
+    /** What a slot is for: 0 = input, 1 = catalyst, 2 = output; with the section it belongs to. */
+    public record SlotRole(int section, int kind) {
+    }
+
+    public static SlotRole slotRole(MachineDef def, int slot) {
+        int n = 0;
+        List<Section> specs = def.spec.sections();
+        for (int i = 0; i < specs.size(); i++) {
+            Section s = specs.get(i);
+            if (slot < n + s.inputs()) {
+                return new SlotRole(i, 0);
+            }
+            n += s.inputs();
+            if (s.catalyst() && slot == n) {
+                return new SlotRole(i, 1);
+            }
+            n += s.catalyst() ? 1 : 0;
+            if (slot < n + s.outputs()) {
+                return new SlotRole(i, 2);
+            }
+            n += s.outputs();
+        }
+        return new SlotRole(0, 2);
+    }
+
+    /**
+     * Whether a stack may be put into a slot (by hand or through a port): input slots take what some
+     * recipe of their section uses, the catalyst slot what some recipe uses as its catalyst, output
+     * slots nothing. The same answer on both sides: recipes are synced to clients.
+     */
+    public static boolean accepts(Level level, MachineDef def, int slot, ItemStack stack) {
+        SlotRole role = slotRole(def, slot);
+        Section spec = def.spec.sections().get(role.section());
+        return switch (role.kind()) {
+            case 0 -> MachineRecipes.isInput(level, spec.recipeType().get(), stack);
+            case 1 -> MachineRecipes.isCatalyst(level, spec.recipeType().get(), stack);
+            default -> false;
+        };
+    }
+
     public boolean isOutputSlot(int slot) {
         for (int i = 0; i < sections.length; i++) {
             if (slot >= outputStart[i] && slot < outputStart[i] + def.spec.sections().get(i).outputs()) {
@@ -335,6 +379,55 @@ public class MachineControllerBlockEntity extends BlockEntity implements MenuPro
         return portHandlers.get(port);
     }
 
+    /** Set by a compat package (AE2): makes the network power source of a controller. */
+    public static void setNetworkPowerFactory(java.util.function.Function<MachineControllerBlockEntity, MachinePowerSource> factory) {
+        networkPowerFactory = factory;
+    }
+
+    @Nullable
+    public MachinePowerSource networkPower() {
+        return networkPower;
+    }
+
+    /**
+     * FE the machine would take from an energy network right now: only when power is required
+     * (production.requirePower), the breaker is on, a recipe is in progress and the buffer is not full.
+     */
+    public int wantedEnergy() {
+        if (!enabled || !anyRunning() || !FcwConfig.SERVER.productionRequirePower.get()) {
+            return 0;
+        }
+        return Math.min(ENERGY_MAX_RECEIVE, ENERGY_CAPACITY - energy.getEnergyStored());
+    }
+
+    /** Energy brought by a {@link MachinePowerSource}. */
+    public void acceptEnergy(int fe) {
+        if (fe > 0) {
+            energy.set(energy.getEnergyStored() + fe);
+            setChanged();
+        }
+    }
+
+    @Override
+    public void setRemoved() {
+        super.setRemoved();
+        leaveNetwork();
+    }
+
+    @Override
+    public void onChunkUnloaded() {
+        super.onChunkUnloaded();
+        leaveNetwork();
+    }
+
+    private void leaveNetwork() {
+        if (networkPower != null) {
+            networkPower.remove();
+            networkPower = null;
+            validated = false; // joins again if the block entity comes back (chunk reload)
+        }
+    }
+
     public IEnergyStorage energy() {
         return energy;
     }
@@ -348,13 +441,9 @@ public class MachineControllerBlockEntity extends BlockEntity implements MenuPro
     private final class PortItems implements IItemHandler {
         private final int[] slots;
         private final boolean[] in, out;
-        private final boolean catalystOnly;
-        private final java.util.function.Supplier<net.minecraft.world.item.crafting.RecipeType<MachineRecipe>> recipeType;
 
         PortItems(MachineSpec.PortRole role) {
             Section spec = def.spec.sections().get(role.section());
-            catalystOnly = role.role() == Role.CATALYST;
-            recipeType = spec.recipeType();
             int s = role.section();
             List<Integer> list = new ArrayList<>();
             List<Boolean> ins = new ArrayList<>();
@@ -411,10 +500,7 @@ public class MachineControllerBlockEntity extends BlockEntity implements MenuPro
 
         @Override
         public boolean isItemValid(int slot, ItemStack stack) {
-            if (catalystOnly && level != null) {
-                return MachineRecipes.isCatalyst(level, recipeType.get(), stack);
-            }
-            return in[slot];
+            return in[slot] && level != null && accepts(level, def, slots[slot], stack);
         }
     }
 
@@ -501,6 +587,12 @@ public class MachineControllerBlockEntity extends BlockEntity implements MenuPro
             validated = true;
             shown = shownState();
             MachineStructure.refresh(level, origin(), facing(), def, shown, hatchOpen);
+            if (networkPowerFactory != null) {
+                networkPower = networkPowerFactory.apply(this);
+            }
+        }
+        if (networkPower != null) {
+            networkPower.tick(this);
         }
         if (enabled) {
             for (int i = 0; i < sections.length; i++) {
