@@ -77,22 +77,23 @@ done
 CONFIGURE_FLAGS="$FLAGS"
 # shellcheck disable=SC2086
 ./configure $CONFIGURE_FLAGS
-make -j"$JOBS"
-rm -rf "$WORK/install"
-make install DESTDIR="$WORK/install"
+# только два нужных бинарника: без тестов и остальных утилит QEMU
+make -j"$JOBS" qemu-system-x86_64 qemu-img
 
 STAGE="$WORK/stage/qemu"
 rm -rf "$WORK/stage"; mkdir -p "$STAGE/bin" "$STAGE/share/qemu"
-install -m755 "$WORK/install/qemu/bin/qemu-system-x86_64" "$WORK/install/qemu/bin/qemu-img" "$STAGE/bin/"
+install -m755 build/qemu-system-x86_64 build/qemu-img "$STAGE/bin/"
 strip "$STAGE/bin/"*
 # x86-прошивки и option ROM (BIOS для прямой загрузки ядра, linuxboot),
-# keymaps; edk2 и прошивки других архитектур не нужны
-SRC_SHARE="$WORK/install/qemu/share/qemu"
+# keymaps — готовыми лежат в исходниках (pc-bios/); edk2 и прошивки других
+# архитектур не нужны
+SRC_SHARE="pc-bios"
 for f in bios.bin bios-256k.bin bios-microvm.bin qboot.rom linuxboot.bin linuxboot_dma.bin \
          multiboot.bin multiboot_dma.bin pvh.bin kvmvapic.bin vgabios*.bin efi-*.rom pxe-*.rom; do
   for g in $SRC_SHARE/$f; do [ -f "$g" ] && cp "$g" "$STAGE/share/qemu/"; done
 done
 cp -r "$SRC_SHARE/keymaps" "$STAGE/share/qemu/"
+rm -f "$STAGE/share/qemu/keymaps/meson.build"
 cp COPYING "$STAGE/LICENSE"
 echo "$QEMU_VERSION" > "$STAGE/VERSION"
 cat > "$STAGE/SOURCE.txt" <<EOF

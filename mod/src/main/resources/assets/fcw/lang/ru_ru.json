@@ -92,7 +92,7 @@
   "gui.fcw.error.no_ram": "Нет памяти: поставьте хотя бы один модуль",
   "gui.fcw.error.not_enough_memory": "Мало памяти: %s нужно от %s МБ, стоит %s МБ",
   "gui.fcw.error.qemu_downloading": "QEMU не найден. %s…",
-  "gui.fcw.error.qemu_failed": "QEMU не найден, скачать не удалось: %s. Администратор: /fcw qemu fetch",
+  "gui.fcw.error.qemu_failed": "QEMU не найден, скачать не удалось (%s). Администратор: /fcw qemu fetch",
   "gui.fcw.error.qemu_missing": "QEMU не найден. Администратор: /fcw qemu fetch",
   "gui.fcw.error.qemu_missing_platform": "QEMU не найден, а переносимого QEMU для %s нет: нужен qemu-system-x86_64 в системе или daemon.qemuPath",
   "gui.fcw.error.reinstall_failed": "Переустановка не удалась: %s",

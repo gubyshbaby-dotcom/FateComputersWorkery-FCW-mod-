@@ -269,8 +269,10 @@ public class ComputerBlockEntity extends BlockEntity implements MenuProvider {
             } else if (!isOnState(state)) {
                 pausedByUnload = false;
                 if (d.qemuMissing()) {
-                    // keep wantRunning: started once the portable QEMU is downloaded (daemon resync)
-                    setError(d.qemuProblem());
+                    // Keep wantRunning: started once the portable QEMU is there (the daemon resyncs us).
+                    // The GUI shows the live QEMU state, so no error is stored here.
+                    clearError();
+                    bump();
                     return;
                 }
                 if (FcwConfig.SERVER.restartRunningOnLoad.get() && validate(null) == null) {

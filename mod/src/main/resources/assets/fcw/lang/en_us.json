@@ -92,7 +92,7 @@
   "gui.fcw.error.no_ram": "No memory: install at least one module",
   "gui.fcw.error.not_enough_memory": "Not enough memory: %s needs %s MB, %s MB installed",
   "gui.fcw.error.qemu_downloading": "QEMU not found. %s…",
-  "gui.fcw.error.qemu_failed": "QEMU not found and the download failed: %s. Operator: /fcw qemu fetch",
+  "gui.fcw.error.qemu_failed": "QEMU not found, download failed (%s). Operator: /fcw qemu fetch",
   "gui.fcw.error.qemu_missing": "QEMU not found. Operator: /fcw qemu fetch",
   "gui.fcw.error.qemu_missing_platform": "QEMU not found and there is no portable QEMU for %s: install qemu-system-x86_64 or set daemon.qemuPath",
   "gui.fcw.error.reinstall_failed": "Reinstall failed: %s",

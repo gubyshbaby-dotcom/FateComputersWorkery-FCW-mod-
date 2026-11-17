@@ -859,11 +859,21 @@ public final class DaemonManager {
         }
     }
 
+    /** "HTTP: HTTP status client error (404 Not Found) for url (...)" -> "HTTP 404 Not Found". */
+    static String shortError(String e) {
+        String s = e.replaceAll(" for url \\(.*\\)\\s*$", "").trim();
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("\\((\\d{3} [^)]*)\\)").matcher(s);
+        if (s.startsWith("HTTP") && m.find()) {
+            return "HTTP " + m.group(1);
+        }
+        return s.length() > 100 ? s.substring(0, 100) + "…" : s;
+    }
+
     private void qemuFailed(String error) {
         qemuFetch = QemuFetch.FAILED;
-        qemuFetchError = Component.literal(error);
+        qemuFetchError = Component.literal(shortError(error));
         FcwMod.LOGGER.error("Downloading portable QEMU failed: {}", error);
-        notifyQemu(Component.translatable("gui.fcw.error.qemu_failed", error));
+        notifyQemu(Component.translatable("gui.fcw.error.qemu_failed", qemuFetchError));
         qemuListeners.clear();
     }
 

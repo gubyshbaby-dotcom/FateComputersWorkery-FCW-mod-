@@ -6,7 +6,8 @@ rust-version.workspace = true
 license.workspace = true
 description = "FCW console client for tests without the game"
 
-[dependencies]
+# Пробник работает через Unix-сокет канала управления: на Windows это заглушка.
+[target.'cfg(unix)'.dependencies]
 fcw-proto = { workspace = true }
 fcw-client = { workspace = true }
 tokio = { workspace = true }
