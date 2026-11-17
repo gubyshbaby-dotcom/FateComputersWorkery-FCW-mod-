@@ -13,7 +13,11 @@ import com.fatecomputers.fcw.proto.ControlProto.ListImages;
 import com.fatecomputers.fcw.proto.ControlProto.Request;
 import com.fatecomputers.fcw.proto.ControlProto.Response;
 import com.fatecomputers.fcw.proto.ControlProto.Shutdown;
+import com.fatecomputers.fcw.block.entity.ComputerBlockEntity;
+import com.fatecomputers.fcw.proto.ControlProto.DeleteVm;
+import com.fatecomputers.fcw.proto.ControlProto.StopVm;
 import com.fatecomputers.fcw.server.ComputerTracker;
+import com.fatecomputers.fcw.server.FcwWorldData;
 import com.fatecomputers.fcw.util.NativeFiles;
 import com.fatecomputers.fcw.util.Platform;
 import com.google.gson.JsonObject;
@@ -28,6 +32,7 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -39,7 +44,10 @@ import java.util.Deque;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.LinkedHashSet;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -74,6 +82,14 @@ public final class DaemonManager {
     private final Path imagesDir;
     private final Path vmsDir;
     private final Path qemuDir;
+    /** daemon.mode = remote: connect over TCP to a daemon service on the host instead of starting one. */
+    private final boolean remote;
+    private final String remoteAddress;
+    private volatile boolean stopping;
+    @Nullable
+    private volatile Thread connector;
+    @Nullable
+    private volatile CountDownLatch remoteStops;
     /** --help output of the daemon binary: tells which flags/requests this build knows. */
     private volatile String daemonHelp = "";
     private QemuFetch qemuFetch = QemuFetch.IDLE;
@@ -115,6 +131,8 @@ public final class DaemonManager {
         this.server = server;
         this.imagesDir = FMLPaths.GAMEDIR.get().resolve("fcw").resolve("images").toAbsolutePath().normalize();
         this.qemuDir = FMLPaths.GAMEDIR.get().resolve("fcw").resolve("qemu").toAbsolutePath().normalize();
+        this.remote = "remote".equals(FcwConfig.SERVER.mode.get());
+        this.remoteAddress = FcwConfig.SERVER.remoteAddress.get().trim();
         this.vmsDir = server.getWorldPath(LevelResource.ROOT).resolve("fcw").resolve("vms").toAbsolutePath().normalize();
     }
 
@@ -161,6 +179,10 @@ public final class DaemonManager {
     private void launch() {
         if (!FcwConfig.SERVER.daemonEnabled.get()) {
             fail(Status.DISABLED, Component.translatable("daemon.fcw.disabled_config"));
+            return;
+        }
+        if (remote) {
+            launchRemote();
             return;
         }
         Path binary;
@@ -349,28 +371,37 @@ public final class DaemonManager {
         }
         connection = conn;
 
+        Response r = helloAndWait(conn, "");
+        if (r == null || !r.getOk() || !r.hasHello()) {
+            failLater(Status.FAILED, Component.translatable("daemon.fcw.hello_failed", r == null ? "timeout" : r.getError()));
+            conn.close();
+            p.destroy();
+            return;
+        }
+        onHelloOk(r.getHello(), Component.translatable("daemon.fcw.ready"));
+    }
+
+    /** Sends Hello (first message of a connection) and waits for the answer; null on timeout. */
+    @Nullable
+    private Response helloAndWait(ControlConnection conn, String token) {
         CompletableFuture<Response> helloReply = new CompletableFuture<>();
         long id = ids.incrementAndGet();
         pending.put(id, new Pending(System.currentTimeMillis() + 15_000, helloReply::complete, true));
-        conn.send(Envelope.newBuilder().setId(id).setRequest(Request.newBuilder()
-                .setHello(Hello.newBuilder().setClientName("fcw-mod " + FcwMod.version()).setProtocolVersion(PROTOCOL_VERSION))).build());
-        Response r;
+        Hello.Builder hb = Hello.newBuilder().setClientName("fcw-mod " + FcwMod.version()).setProtocolVersion(PROTOCOL_VERSION);
+        if (!token.isEmpty()) {
+            hb.setAuthToken(token);
+        }
+        conn.send(Envelope.newBuilder().setId(id).setRequest(Request.newBuilder().setHello(hb)).build());
         try {
-            r = helloReply.get(15, TimeUnit.SECONDS);
+            return helloReply.get(15, TimeUnit.SECONDS);
         } catch (Exception e) {
             pending.remove(id);
-            failLater(Status.FAILED, Component.translatable("daemon.fcw.hello_failed", "timeout"));
-            conn.close();
-            p.destroy();
-            return;
+            return null;
         }
-        if (!r.getOk() || !r.hasHello()) {
-            failLater(Status.FAILED, Component.translatable("daemon.fcw.hello_failed", r.getError()));
-            conn.close();
-            p.destroy();
-            return;
-        }
-        HelloResult h = r.getHello();
+    }
+
+    /** A connection said Hello successfully: become READY on the server thread and resync everything. */
+    private void onHelloOk(HelloResult h, Component readyReason) {
         hello = h;
         if (!h.getAccelerator().isEmpty()) {
             accelerator = h.getAccelerator();
@@ -378,22 +409,24 @@ public final class DaemonManager {
         if (h.getProtocolVersion() != PROTOCOL_VERSION) {
             FcwMod.LOGGER.warn("VM daemon speaks protocol {}, the mod expects {}", h.getProtocolVersion(), PROTOCOL_VERSION);
         }
-        FcwMod.LOGGER.info("Connected to VM daemon {} (protocol {}, accelerator {}, QUIC port {}, {} host CPUs, {} MB, network {}{})",
-                h.getDaemonVersion(), h.getProtocolVersion(), accelerator, h.getQuicPort(), h.getHostCpus(), h.getHostMemoryMb(),
+        FcwMod.LOGGER.info("Connected to VM daemon {}{} (protocol {}, accelerator {}, QUIC port {}, {} host CPUs, {} MB, network {}{})",
+                h.getDaemonVersion(), remote ? " at " + remoteAddress : "", h.getProtocolVersion(), accelerator, h.getQuicPort(),
+                h.getHostCpus(), h.getHostMemoryMb(),
                 h.getNetworkEnabled() ? h.getNetworkSubnet() : "off",
                 h.getNetworkEnabled() ? (h.getInternetAllowed() ? ", internet" : ", no internet") : "");
         mainThreadQueue.add(() -> {
-            if (status != Status.STARTING) {
+            if (stopping || status == Status.STOPPED || status == Status.DISABLED) {
                 return;
             }
             status = Status.READY;
-            reason = Component.translatable("daemon.fcw.ready");
+            reason = readyReason;
             // Computers validate their image against the list, so load it before resyncing them.
             refreshImages(() -> {
                 ComputerTracker.onDaemonReady();
+                processPendingDeletes();
                 logQemu();
                 // An explicit daemon.qemuPath wins over the portable QEMU, so downloading would not help then.
-                if (qemuMissing() && FcwConfig.SERVER.qemuAutoDownload.get() && FcwConfig.SERVER.qemuPath.get().isBlank()) {
+                if (!remote && qemuMissing() && FcwConfig.SERVER.qemuAutoDownload.get() && FcwConfig.SERVER.qemuPath.get().isBlank()) {
                     Component why = fetchQemu();
                     if (why != null) {
                         FcwMod.LOGGER.warn("QEMU not found and cannot be downloaded: {}", why.getString());
@@ -401,6 +434,172 @@ public final class DaemonManager {
                 }
             });
         });
+    }
+
+    /** Machines whose block was broken while the daemon was unreachable: delete them now. */
+    private void processPendingDeletes() {
+        FcwWorldData data = FcwWorldData.get(server);
+        for (String id : data.pendingDeletes()) {
+            request(Request.newBuilder().setStopVm(StopVm.newBuilder().setVmId(id).setForce(true)).build(), r ->
+                    request(Request.newBuilder().setDeleteVm(DeleteVm.newBuilder().setVmId(id)).build(), r2 -> {
+                        FcwMod.LOGGER.info("Deleted VM {} of a broken computer{}", id, r2.getOk() ? "" : ": " + r2.getError());
+                        data.removePendingDelete(id);
+                        data.removeMachine(id);
+                    }));
+        }
+    }
+
+    // ------------------------------------------------------------------ remote daemon (TCP)
+
+    private void launchRemote() {
+        if (parseAddress(remoteAddress) == null) {
+            fail(Status.DISABLED, Component.translatable("daemon.fcw.remote.bad_address", remoteAddress));
+            return;
+        }
+        status = Status.STARTING;
+        reason = Component.translatable("daemon.fcw.remote.connecting", remoteAddress);
+        FcwMod.LOGGER.info("Using the remote VM daemon at {}", remoteAddress);
+        Thread t = new Thread(this::remoteLoop, "fcw-daemon-remote");
+        t.setDaemon(true);
+        connector = t;
+        t.start();
+    }
+
+    /** "host:port" or "[v6]:port"; null if malformed. */
+    @Nullable
+    static String[] parseAddress(String a) {
+        String host;
+        String port;
+        if (a.startsWith("[")) {
+            int end = a.indexOf(']');
+            if (end < 0 || end + 1 >= a.length() || a.charAt(end + 1) != ':') {
+                return null;
+            }
+            host = a.substring(1, end);
+            port = a.substring(end + 2);
+        } else {
+            int c = a.lastIndexOf(':');
+            if (c <= 0) {
+                return null;
+            }
+            host = a.substring(0, c);
+            port = a.substring(c + 1);
+        }
+        try {
+            int p = Integer.parseInt(port);
+            return p > 0 && p < 65536 && !host.isBlank() ? new String[]{host, port} : null;
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    private static final int[] BACKOFF_S = {1, 2, 5, 10, 20, 30};
+
+    /** Connector thread: connect, Hello with the token, wait until the connection drops, repeat. */
+    private void remoteLoop() {
+        int failures = 0;
+        while (!stopping) {
+            String[] hp = parseAddress(remoteAddress);
+            int delay = BACKOFF_S[Math.min(failures, BACKOFF_S.length - 1)];
+            CompletableFuture<String> closed = new CompletableFuture<>();
+            ControlConnection conn;
+            try {
+                InetSocketAddress addr = new InetSocketAddress(hp[0], Integer.parseInt(hp[1]));
+                if (addr.isUnresolved()) {
+                    throw new IOException("unknown host " + hp[0]);
+                }
+                conn = ControlConnection.openTcp(addr, 5000, this::onInbound, closed::complete);
+            } catch (IOException e) {
+                failures++;
+                remoteDown(Component.translatable("daemon.fcw.remote.no_connection", remoteAddress, ioMessage(e), delay),
+                        "no connection (" + ioMessage(e) + "), retrying in " + delay + " s");
+                pause(delay);
+                continue;
+            }
+            connection = conn;
+            Response r = helloAndWait(conn, FcwConfig.SERVER.remoteToken.get().trim());
+            if (r == null || !r.getOk() || !r.hasHello()) {
+                conn.close();
+                connection = null;
+                failures++;
+                String err = r == null ? "timeout" : r.getError();
+                boolean unauthorized = err.toLowerCase(java.util.Locale.ROOT).contains("unauthorized");
+                remoteDown(unauthorized
+                        ? Component.translatable("daemon.fcw.remote.unauthorized", remoteAddress, delay)
+                        : Component.translatable("daemon.fcw.remote.hello_failed", remoteAddress, err, delay),
+                        (unauthorized ? "wrong token (daemon.remoteToken)" : "refused the connection (" + err + ")")
+                                + ", retrying in " + delay + " s");
+                pause(delay);
+                continue;
+            }
+            failures = 0;
+            lastRemoteLog = "";
+            onHelloOk(r.getHello(), Component.translatable("daemon.fcw.remote.ready", remoteAddress));
+            String why;
+            try {
+                why = closed.get();
+            } catch (Exception e) {
+                why = e.toString();
+            }
+            connection = null;
+            if (stopping) {
+                break;
+            }
+            final String lost = why;
+            mainThreadQueue.add(() -> onRemoteLost(lost));
+            pause(1);
+        }
+    }
+
+    private static String ioMessage(IOException e) {
+        String m = e.getMessage();
+        return m == null || m.isBlank() ? e.getClass().getSimpleName() : m;
+    }
+
+    private String lastRemoteLog = "";
+
+    /** Not connected (yet): visible in the GUI and /fcw status; logged (in English) when it changes. */
+    private void remoteDown(Component why, String logText) {
+        if (stopping) {
+            return;
+        }
+        if (!logText.equals(lastRemoteLog)) {
+            lastRemoteLog = logText;
+            FcwMod.LOGGER.warn("Remote VM daemon {}: {}", remoteAddress, logText);
+        }
+        if (status != Status.READY) {
+            status = Status.FAILED;
+            reason = why;
+        }
+    }
+
+    /** Server thread: the TCP connection to the remote daemon dropped; the connector reconnects. */
+    private void onRemoteLost(String why) {
+        if (stopping || status != Status.READY) {
+            return;
+        }
+        FcwMod.LOGGER.error("Lost the connection to the remote VM daemon {}: {}", remoteAddress, why);
+        status = Status.FAILED;
+        reason = Component.translatable("daemon.fcw.remote.lost", remoteAddress, why);
+        failAllPending(reason.getString());
+        // The machines keep running on the host: only forget what we knew, resync after reconnecting.
+        ComputerTracker.onDaemonDisconnected();
+    }
+
+    private void pause(int seconds) {
+        try {
+            Thread.sleep(seconds * 1000L);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    public boolean isRemote() {
+        return remote;
+    }
+
+    public String remoteAddress() {
+        return remoteAddress;
     }
 
     private static void startPump(InputStream in, String name, Consumer<String> onLine, Runnable onEof) {
@@ -508,7 +707,15 @@ public final class DaemonManager {
         Status before = status;
         status = Status.STOPPED;
         reason = Component.translatable("daemon.fcw.stopped");
+        stopping = true;
         ControlConnection c = connection;
+        if (remote) {
+            // A daemon service outlives this server: stop only this world's machines.
+            if (before == Status.READY && c != null && !c.isClosed()) {
+                stopOwnMachines(c);
+            }
+            return;
+        }
         if (before == Status.READY && c != null && !c.isClosed()) {
             FcwMod.LOGGER.info("Asking the VM daemon to shut down");
             c.send(Envelope.newBuilder().setId(ids.incrementAndGet())
@@ -517,9 +724,55 @@ public final class DaemonManager {
         }
     }
 
+    /** Soft StopVm for every machine of this world; responses are counted on the reader thread. */
+    private void stopOwnMachines(ControlConnection c) {
+        Set<String> vmIds = new LinkedHashSet<>(FcwWorldData.get(server).machines());
+        for (ComputerBlockEntity be : ComputerTracker.all()) {
+            if (be.isMachineOn()) {
+                vmIds.add(be.vmIdString());
+            }
+        }
+        if (vmIds.isEmpty()) {
+            return;
+        }
+        int timeoutMs = FcwConfig.SERVER.shutdownTimeoutSeconds.get() * 1000;
+        CountDownLatch latch = new CountDownLatch(vmIds.size());
+        remoteStops = latch;
+        FcwMod.LOGGER.info("Stopping {} machine(s) of this world on the remote VM daemon", vmIds.size());
+        for (String id : vmIds) {
+            long rid = ids.incrementAndGet();
+            pending.put(rid, new Pending(System.currentTimeMillis() + timeoutMs + 10_000L, r -> latch.countDown(), true));
+            c.send(Envelope.newBuilder().setId(rid).setRequest(Request.newBuilder()
+                    .setStopVm(StopVm.newBuilder().setVmId(id).setForce(false).setTimeoutMs(timeoutMs))).build());
+        }
+    }
+
     private void stopNow() {
         if (status != Status.STOPPED) {
             requestShutdown();
+        }
+        stopping = true;
+        if (remote) {
+            CountDownLatch latch = remoteStops;
+            if (latch != null) {
+                try {
+                    if (!latch.await(FcwConfig.SERVER.shutdownTimeoutSeconds.get() + 5L, TimeUnit.SECONDS)) {
+                        FcwMod.LOGGER.warn("Not all machines confirmed the shutdown; the daemon finishes it on its own");
+                    }
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+            ControlConnection c = connection;
+            if (c != null) {
+                c.close();
+            }
+            Thread t = connector;
+            if (t != null) {
+                t.interrupt();
+            }
+            pending.clear();
+            return;
         }
         Process p = process;
         if (p != null) {
@@ -723,7 +976,8 @@ public final class DaemonManager {
 
     /** This daemon build knows --qemu-dir / FetchQemu / HelloResult.qemu_* (judged by its --help). */
     public boolean qemuSupported() {
-        return daemonHelp.contains("--qemu-dir");
+        // A remote (service) daemon is newer than the portable QEMU feature; a local one is asked via --help.
+        return remote || daemonHelp.contains("--qemu-dir");
     }
 
     /** The daemon reported that it has no QEMU (only meaningful for daemons that report it). */

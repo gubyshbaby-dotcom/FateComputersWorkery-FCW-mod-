@@ -1,0 +1,63 @@
+# FCW: демон виртуальных машин на узле (хосте) с доступом к /dev/kvm.
+#
+# Нужен, когда сервер Minecraft работает в контейнере без KVM (Pelican,
+# Pterodactyl): демон с QEMU работает на самом узле, мод подключается к нему по
+# TCP (в config/fcw-server.toml: daemon.mode = "remote", daemon.remoteAddress,
+# daemon.remoteToken = содержимое /etc/fcw/token).
+#
+# Это пример: install-host-daemon.sh ставит такой же юнит, подставив адрес
+# канала управления (@CONTROL_ADDR@, обычно шлюз docker-сети Pelican,
+# 172.18.0.1:25700) и UDP-порт для игроков (@QUIC_PORT@).
+# При правке синхронизируйте с шаблоном внутри install-host-daemon.sh.
+
+[Unit]
+Description=Fate Computers Workery VM daemon (QEMU/KVM)
+# адрес канала управления — на мосту Docker; если его ещё нет, демон
+# повторяет bind каждые 2 с
+After=network-online.target docker.service
+Wants=network-online.target docker.service
+
+[Service]
+Type=simple
+User=fcw
+Group=fcw
+SupplementaryGroups=kvm
+Environment=FCW_LOG=info
+ExecStart=/usr/local/bin/fcw-daemon --service \
+    --images-dir /var/lib/fcw/images \
+    --vms-dir /var/lib/fcw/vms \
+    --qemu-dir /var/lib/fcw/qemu \
+    --control-tcp @CONTROL_ADDR@ \
+    --token-file /etc/fcw/token \
+    --quic-bind 0.0.0.0:@QUIC_PORT@
+WorkingDirectory=/var/lib/fcw
+StateDirectory=fcw
+Restart=on-failure
+RestartSec=5
+# SIGTERM получает только демон: он сам гасит машины (ACPI, потом kill).
+# С KillMode=control-group QEMU получил бы SIGTERM сразу и умер без ACPI.
+KillMode=mixed
+TimeoutStopSec=90
+LimitNOFILE=65536
+
+# Усиление. Не включать: PrivateDevices (нужен /dev/kvm) и
+# MemoryDenyWriteExecute (TCG в QEMU генерирует машинный код).
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/var/lib/fcw
+PrivateTmp=yes
+ProtectHome=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+
+[Install]
+WantedBy=multi-user.target

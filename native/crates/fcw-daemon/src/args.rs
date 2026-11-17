@@ -11,9 +11,18 @@ pub struct Args {
     /// Каталог машин мира (<vm_id>/config.json, disk.qcow2, сокеты)
     #[arg(long)]
     pub vms_dir: PathBuf,
-    /// Путь к Unix-сокету канала управления
+    /// Путь к Unix-сокету канала управления (в режиме --service необязателен)
     #[arg(long)]
-    pub control: PathBuf,
+    pub control: Option<PathBuf>,
+    /// Канал управления по TCP (ip:port), требует --token-file
+    #[arg(long)]
+    pub control_tcp: Option<String>,
+    /// Файл с секретом для --control-tcp (создаётся, если его нет)
+    #[arg(long)]
+    pub token_file: Option<PathBuf>,
+    /// Режим службы: не выходить при закрытии stdin, Shutdown по TCP запрещён
+    #[arg(long)]
+    pub service: bool,
     /// Адрес UDP для QUIC-сервера
     #[arg(long, default_value = "0.0.0.0:25600")]
     pub quic_bind: String,
@@ -104,5 +113,43 @@ mod tests {
             "maybe"
         ])
         .is_err());
+    }
+}
+
+impl Args {
+    /// Проверка сочетаний флагов канала управления.
+    pub fn validate(&self) -> Result<(), String> {
+        if self.control.is_none() && self.control_tcp.is_none() {
+            return Err("either --control or --control-tcp is required".into());
+        }
+        if self.control_tcp.is_some() && self.token_file.is_none() {
+            return Err("--control-tcp requires --token-file".into());
+        }
+        if let Some(a) = &self.control_tcp {
+            a.parse::<std::net::SocketAddr>().map_err(|e| format!("--control-tcp {a:?}: {e}"))?;
+        }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod service_tests {
+    use super::*;
+
+    fn parse(extra: &[&str]) -> Args {
+        let mut v = vec!["fcw-daemon", "--images-dir", "i", "--vms-dir", "v"];
+        v.extend_from_slice(extra);
+        Args::try_parse_from(v).unwrap()
+    }
+
+    #[test]
+    fn control_flags() {
+        assert!(parse(&[]).validate().is_err(), "no control channel");
+        assert!(parse(&["--control", "c"]).validate().is_ok());
+        let a = parse(&["--service", "--control-tcp", "172.18.0.1:25700", "--token-file", "/etc/fcw/token"]);
+        assert!(a.service && a.control.is_none());
+        assert!(a.validate().is_ok());
+        assert!(parse(&["--service", "--control-tcp", "127.0.0.1:1"]).validate().is_err(), "token file required");
+        assert!(parse(&["--control-tcp", "nonsense", "--token-file", "t"]).validate().is_err());
     }
 }

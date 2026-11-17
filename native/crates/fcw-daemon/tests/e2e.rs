@@ -184,7 +184,12 @@ async fn control_channel() {
     tokio::spawn(control::serve(d.clone(), l));
     let mut s = tokio::net::UnixStream::connect(&sock).await.unwrap();
 
-    let r = call(&mut s, 1, request::Kind::Hello(pb::Hello { client_name: "test".into(), protocol_version: 1 })).await;
+    let r = call(
+        &mut s,
+        1,
+        request::Kind::Hello(pb::Hello { client_name: "test".into(), protocol_version: 1, ..Default::default() }),
+    )
+    .await;
     assert!(r.ok);
     let Some(response::Kind::Hello(h)) = r.kind else { panic!() };
     assert_eq!((h.quic_port, h.accelerator.as_str(), h.max_vms), (25600, "tcg", 4));

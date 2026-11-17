@@ -8,17 +8,23 @@ use fcw_proto::stream as spb;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio::net::UnixStream;
+use tokio::net::{TcpStream, UnixStream};
 
 #[derive(Parser, Debug)]
 #[command(name = "fcw-probe", version, about = "FCW test client (control socket + QUIC)")]
 struct Cli {
-    /// Unix-сокет канала управления демона
+    /// Канал управления: путь к Unix-сокету или tcp://host:port (демон-служба)
     #[arg(long)]
-    control: PathBuf,
-    /// Адрес демона для QUIC
-    #[arg(long, default_value = "127.0.0.1")]
-    host: String,
+    control: String,
+    /// Токен для tcp:// (или --token-file)
+    #[arg(long)]
+    token: Option<String>,
+    /// Файл с токеном для tcp://
+    #[arg(long)]
+    token_file: Option<PathBuf>,
+    /// Адрес демона для QUIC (по умолчанию хост из tcp:// или 127.0.0.1)
+    #[arg(long)]
+    host: Option<String>,
     /// Общий таймаут ожиданий, секунды
     #[arg(long, default_value_t = 120)]
     timeout: u64,
@@ -240,17 +246,32 @@ pub fn main() -> std::process::ExitCode {
 
 // ------------------------------------------------------------ канал управления
 
+trait CtlStream: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send {}
+impl<T: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send> CtlStream for T {}
+
 struct Control {
-    s: UnixStream,
+    s: Box<dyn CtlStream>,
+    token: String,
     next_id: u64,
     events: Vec<pb::Event>,
 }
 
 impl Control {
-    async fn connect(path: &PathBuf) -> Result<Control> {
-        let s = UnixStream::connect(path).await.with_context(|| format!("connect {}", path.display()))?;
-        let mut c = Control { s, next_id: 1, events: Vec::new() };
-        c.call(request::Kind::Hello(pb::Hello { client_name: "fcw-probe".into(), protocol_version: 1 })).await?;
+    /// `control` — путь к Unix-сокету или `tcp://host:port` (тогда нужен токен).
+    async fn connect(control: &str, token: String) -> Result<Control> {
+        let s: Box<dyn CtlStream> = match control.strip_prefix("tcp://") {
+            Some(addr) => {
+                if token.is_empty() {
+                    bail!("tcp:// needs --token or --token-file");
+                }
+                let s = TcpStream::connect(addr).await.with_context(|| format!("connect {addr}"))?;
+                s.set_nodelay(true)?;
+                Box::new(s)
+            }
+            None => Box::new(UnixStream::connect(control).await.with_context(|| format!("connect {control}"))?),
+        };
+        let mut c = Control { s, token, next_id: 1, events: Vec::new() };
+        c.hello().await?;
         Ok(c)
     }
 
@@ -291,8 +312,13 @@ impl Control {
     }
 
     async fn hello(&mut self) -> Result<pb::HelloResult> {
-        let r =
-            self.ok(request::Kind::Hello(pb::Hello { client_name: "fcw-probe".into(), protocol_version: 1 })).await?;
+        let r = self
+            .ok(request::Kind::Hello(pb::Hello {
+                client_name: "fcw-probe".into(),
+                protocol_version: 1,
+                auth_token: self.token.clone(),
+            }))
+            .await?;
         match r.kind {
             Some(response::Kind::Hello(h)) => Ok(h),
             _ => bail!("bad hello response"),
@@ -514,7 +540,20 @@ fn parse_combo(s: &str) -> Result<Vec<u32>> {
 
 async fn run(cli: Cli) -> Result<()> {
     let timeout = Duration::from_secs(cli.timeout);
-    let mut c = Control::connect(&cli.control).await?;
+    let token = match (&cli.token, &cli.token_file) {
+        (Some(t), _) => t.trim().to_string(),
+        (None, Some(p)) => {
+            std::fs::read_to_string(p).with_context(|| format!("read {}", p.display()))?.trim().to_string()
+        }
+        (None, None) => String::new(),
+    };
+    let quic_host = cli.host.clone().unwrap_or_else(|| {
+        cli.control
+            .strip_prefix("tcp://")
+            .and_then(|a| a.rsplit_once(':').map(|(h, _)| h.trim_matches(['[', ']']).to_string()))
+            .unwrap_or_else(|| "127.0.0.1".into())
+    });
+    let mut c = Control::connect(&cli.control, token).await?;
     use request::Kind as K;
     match cli.cmd {
         Cmd::Hello => {
@@ -650,7 +689,7 @@ async fn run(cli: Cli) -> Result<()> {
             c.ok(K::RevokeTokens(pb::RevokeTokens { vm_id: vm, player_uuid: player })).await?;
         }
         Cmd::Screenshot { vm, screen, out, wait_text, settle_ms, dump_text } => {
-            let q = Quic::open(&mut c, &cli.host, &vm, pb::Permission::PermView as u32, timeout).await?;
+            let q = Quic::open(&mut c, &quic_host, &vm, pb::Permission::PermView as u32, timeout).await?;
             let v = q.view(&screen, wait_text.as_deref(), Duration::from_millis(settle_ms), timeout).await?;
             let (w, h, rgba) = v.snapshot();
             write_png(&out, w, h, &rgba)?;
@@ -663,7 +702,7 @@ async fn run(cli: Cli) -> Result<()> {
             q.close().await;
         }
         Cmd::Text { vm, wait_text, settle_ms } => {
-            let q = Quic::open(&mut c, &cli.host, &vm, pb::Permission::PermView as u32, timeout).await?;
+            let q = Quic::open(&mut c, &quic_host, &vm, pb::Permission::PermView as u32, timeout).await?;
             let v = q.view("tty0", wait_text.as_deref(), Duration::from_millis(settle_ms), timeout).await?;
             print!("{}", v.text_contents());
             q.close().await;
@@ -671,7 +710,7 @@ async fn run(cli: Cli) -> Result<()> {
         Cmd::Type { vm, text, screen, enter } => {
             let info = c.vm(&vm).await?;
             let screen = if screen.is_empty() { if info.gpu { "gfx0" } else { "tty0" }.to_string() } else { screen };
-            let q = Quic::open(&mut c, &cli.host, &vm, 7, timeout).await?;
+            let q = Quic::open(&mut c, &quic_host, &vm, 7, timeout).await?;
             if screen.starts_with("tty") {
                 q.s.send_input(&vm, &screen, spb::input_event::Kind::Text(spb::Text { utf8: text.clone() }));
             } else {
@@ -699,7 +738,7 @@ async fn run(cli: Cli) -> Result<()> {
         }
         Cmd::Key { vm, key, screen, repeat } => {
             let combo = parse_combo(&key)?;
-            let q = Quic::open(&mut c, &cli.host, &vm, 7, timeout).await?;
+            let q = Quic::open(&mut c, &quic_host, &vm, 7, timeout).await?;
             for _ in 0..repeat {
                 for k in &combo {
                     q.key(&screen, *k, true);
@@ -712,7 +751,7 @@ async fn run(cli: Cli) -> Result<()> {
             println!("sent {key}");
         }
         Cmd::Mouse { vm, x, y, click, wheel } => {
-            let q = Quic::open(&mut c, &cli.host, &vm, 7, timeout).await?;
+            let q = Quic::open(&mut c, &quic_host, &vm, 7, timeout).await?;
             q.s.send_pointer(&vm, x, y);
             if let Some(b) = click {
                 let mask = match b.as_str() {
@@ -733,7 +772,7 @@ async fn run(cli: Cli) -> Result<()> {
         Cmd::Audio { vm, seconds, out } => {
             let info = c.vm(&vm).await?;
             let screen = if info.gpu { "gfx0" } else { "tty0" };
-            let q = Quic::open(&mut c, &cli.host, &vm, pb::Permission::PermView as u32, timeout).await?;
+            let q = Quic::open(&mut c, &quic_host, &vm, pb::Permission::PermView as u32, timeout).await?;
             let _v = q.s.open_view(&vm, screen, 5);
             let mut pcm: Vec<i16> = Vec::new();
             let mut buf = vec![0i16; 4800];

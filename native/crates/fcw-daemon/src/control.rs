@@ -1,31 +1,117 @@
-//! Канал управления: мод (сервер Minecraft) <-> демон по Unix-сокету.
-//! Кадр = u32 BE длина + Envelope. Запросы с id > 0, ответы с тем же id,
-//! события с id = 0 (рассылаются всем подключённым).
+//! Канал управления: мод (сервер Minecraft) <-> демон по Unix-сокету или по
+//! TCP (демон-служба на отдельном хосте). Кадр = u32 BE длина + Envelope.
+//! Запросы с id > 0, ответы с тем же id, события с id = 0 (рассылаются всем
+//! подключённым и авторизованным). По TCP первым сообщением должен прийти
+//! Hello с верным `auth_token`.
 
+use crate::auth;
 use crate::daemon::Daemon;
 use crate::images;
-use crate::localsock::{LocalListener, LocalStream};
+use crate::localsock::LocalListener;
 use crate::pb::{self, envelope, request, response};
 use crate::qemu;
 use crate::vm::Vm;
 use crate::AbortOnDrop;
 use anyhow::{anyhow, Result};
 use fcw_proto::frame;
+use std::net::SocketAddr;
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
+use tokio::io::{AsyncRead, AsyncWrite};
+use tokio::net::TcpListener;
 use tokio::sync::{broadcast, mpsc};
 
+/// Что разрешено подключению.
+#[derive(Clone)]
+pub struct ConnPolicy {
+    /// Токен, который нужно предъявить в первом Hello (TCP); `None` — не нужен.
+    pub token: Option<Arc<String>>,
+    /// Разрешён ли запрос Shutdown.
+    pub allow_shutdown: bool,
+    /// Сколько ждать Hello с токеном.
+    pub auth_timeout: Duration,
+}
+
+impl ConnPolicy {
+    pub fn local() -> Self {
+        ConnPolicy { token: None, allow_shutdown: true, auth_timeout: AUTH_TIMEOUT }
+    }
+
+    /// TCP: нужен токен; Shutdown разрешён, только если демон не служба.
+    pub fn tcp(token: Arc<String>, service: bool) -> Self {
+        ConnPolicy { token: Some(token), allow_shutdown: !service, auth_timeout: AUTH_TIMEOUT }
+    }
+}
+
+/// Сколько ждать Hello с токеном от TCP-клиента.
+pub const AUTH_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Unix-сокет (локальный мод): без токена.
 pub async fn serve(d: Arc<Daemon>, listener: LocalListener) {
     loop {
         match listener.accept().await {
             Ok(s) => {
                 let d = d.clone();
-                tokio::spawn(async move { handle_conn(d, s).await });
+                tokio::spawn(async move { handle_conn(d, s, ConnPolicy::local()).await });
             }
             Err(e) => {
                 tracing::warn!("control accept: {e}");
+                tokio::time::sleep(Duration::from_millis(200)).await;
+            }
+        }
+    }
+}
+
+/// Bind с повторами, пока адреса нет (EADDRNOTAVAIL: интерфейс Docker ещё не
+/// поднят). Остальные ошибки возвращаются сразу.
+pub async fn bind_retry<F, Fut>(mut bind: F, interval: Duration) -> std::io::Result<TcpListener>
+where
+    F: FnMut() -> Fut,
+    Fut: std::future::Future<Output = std::io::Result<TcpListener>>,
+{
+    let mut last_warn: Option<std::time::Instant> = None;
+    loop {
+        match bind().await {
+            Ok(l) => return Ok(l),
+            Err(e) if e.kind() == std::io::ErrorKind::AddrNotAvailable => {
+                // раз в минуту, чтобы не засорять журнал
+                let due = match last_warn {
+                    Some(t) => t.elapsed() >= Duration::from_secs(60),
+                    None => true,
+                };
+                if due {
+                    tracing::warn!("control TCP: address not available yet ({e}), retrying every {interval:?}");
+                    last_warn = Some(std::time::Instant::now());
+                }
+                tokio::time::sleep(interval).await;
+            }
+            Err(e) => return Err(e),
+        }
+    }
+}
+
+/// TCP (демон-служба): каждое подключение предъявляет токен в первом Hello.
+/// Возвращается только при фатальной ошибке bind.
+pub async fn serve_tcp(d: Arc<Daemon>, addr: SocketAddr, policy: ConnPolicy) -> std::io::Result<()> {
+    let listener = bind_retry(|| TcpListener::bind(addr), Duration::from_secs(2)).await?;
+    tracing::info!("control TCP listening on {}", listener.local_addr().map(|a| a.to_string()).unwrap_or_default());
+    serve_tcp_on(d, listener, policy).await;
+    Ok(())
+}
+
+pub async fn serve_tcp_on(d: Arc<Daemon>, listener: TcpListener, policy: ConnPolicy) {
+    loop {
+        match listener.accept().await {
+            Ok((s, peer)) => {
+                let _ = s.set_nodelay(true);
+                tracing::info!("control TCP connection from {peer}");
+                let (d, p) = (d.clone(), policy.clone());
+                tokio::spawn(async move { handle_conn(d, s, p).await });
+            }
+            Err(e) => {
+                tracing::warn!("control TCP accept: {e}");
                 tokio::time::sleep(Duration::from_millis(200)).await;
             }
         }
@@ -42,17 +128,49 @@ fn respond(tx: &Tx, id: u64, r: Result<Option<response::Kind>>) {
     let _ = tx.send(pb::Envelope { id, body: Some(envelope::Body::Response(resp)) });
 }
 
-async fn handle_conn(d: Arc<Daemon>, s: LocalStream) {
+async fn handle_conn<S>(d: Arc<Daemon>, s: S, policy: ConnPolicy)
+where
+    S: AsyncRead + AsyncWrite + Send + 'static,
+{
     tracing::debug!("control client connected");
     let (mut rd, mut wr) = tokio::io::split(s);
     let (tx, mut rx) = mpsc::unbounded_channel::<pb::Envelope>();
-    let _writer = AbortOnDrop(tokio::spawn(async move {
+    let mut writer = AbortOnDrop(tokio::spawn(async move {
         while let Some(env) = rx.recv().await {
             if frame::write_async(&mut wr, &env).await.is_err() {
                 break;
             }
         }
     }));
+    // TCP: до верного Hello ничего не обрабатываем и событий не шлём
+    if let Some(token) = &policy.token {
+        let first = tokio::time::timeout(policy.auth_timeout, frame::read_async::<_, pb::Envelope>(&mut rd)).await;
+        let env = match first {
+            Err(_) => {
+                tracing::warn!("control TCP: no Hello in {:?}, closing", policy.auth_timeout);
+                return;
+            }
+            Ok(Ok(Some(env))) => env,
+            Ok(_) => return,
+        };
+        let hello = match env.body {
+            Some(envelope::Body::Request(pb::Request { kind: Some(request::Kind::Hello(h)) })) => Some(h),
+            _ => None,
+        };
+        match hello {
+            Some(h) if auth::ct_eq(h.auth_token.as_bytes(), token.as_bytes()) => {
+                dispatch(&d, &tx, env.id, request::Kind::Hello(h), &policy);
+            }
+            _ => {
+                tracing::warn!("control TCP: unauthorized client, closing");
+                respond(&tx, env.id, Err(anyhow!("unauthorized")));
+                drop(tx);
+                // дописать ответ и закрыть
+                let _ = tokio::time::timeout(Duration::from_secs(2), &mut writer.0).await;
+                return;
+            }
+        }
+    }
     let mut ev_rx = d.events.subscribe();
     let ev_tx = tx.clone();
     let _events = AbortOnDrop(tokio::spawn(async move {
@@ -82,14 +200,14 @@ async fn handle_conn(d: Arc<Daemon>, s: LocalStream) {
             respond(&tx, env.id, Err(anyhow!("empty request")));
             continue;
         };
-        dispatch(&d, &tx, env.id, kind);
+        dispatch(&d, &tx, env.id, kind, &policy);
     }
     tracing::debug!("control client disconnected");
 }
 
 /// Быстрые запросы выполняются сразу; операции над машинами — в задачах,
 /// но место в очереди машины занимается здесь, в порядке поступления.
-fn dispatch(d: &Arc<Daemon>, tx: &Tx, id: u64, kind: request::Kind) {
+fn dispatch(d: &Arc<Daemon>, tx: &Tx, id: u64, kind: request::Kind, policy: &ConnPolicy) {
     use request::Kind as K;
     match kind {
         K::Hello(h) => {
@@ -141,6 +259,11 @@ fn dispatch(d: &Arc<Daemon>, tx: &Tx, id: u64, kind: request::Kind) {
         }
         K::FetchImage(r) => fetch_image(d, tx, id, r),
         K::FetchQemu(r) => fetch_qemu(d, tx, id, r),
+        K::Shutdown(_) if !policy.allow_shutdown => respond(
+            tx,
+            id,
+            Err(anyhow!("Shutdown is not allowed over TCP for the daemon service; stop it with systemctl")),
+        ),
         K::Shutdown(_) => {
             respond(tx, id, Ok(None));
             d.request_shutdown();

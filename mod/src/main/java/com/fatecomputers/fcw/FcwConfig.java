@@ -16,6 +16,9 @@ public final class FcwConfig {
 
     public static final class Server {
         public final ModConfigSpec.BooleanValue daemonEnabled;
+        public final ModConfigSpec.ConfigValue<String> mode;
+        public final ModConfigSpec.ConfigValue<String> remoteAddress;
+        public final ModConfigSpec.ConfigValue<String> remoteToken;
         public final ModConfigSpec.ConfigValue<String> daemonPath;
         public final ModConfigSpec.ConfigValue<String> qemuPath;
         public final ModConfigSpec.IntValue quicPort;
@@ -51,8 +54,18 @@ public final class FcwConfig {
 
         Server(ModConfigSpec.Builder b) {
             b.comment("VM daemon (native fcw-daemon process started by the server)").push("daemon");
-            daemonEnabled = b.comment("Start the VM daemon together with the server.")
+            daemonEnabled = b.comment("Use the VM daemon (start it, or connect to it in remote mode).")
                     .define("enabled", true);
+            mode = b.comment("local  = the server starts its own fcw-daemon (needs QEMU and, for speed, /dev/kvm in this container/host).",
+                            "remote = connect to a daemon running as a system service on the host (Pelican/Pterodactyl, where",
+                            "         containers get no /dev/kvm). Install it on the node with the script from native/packaging,",
+                            "         then set remoteAddress and remoteToken (the token file written by that script).")
+                    .defineInList("mode", "local", Arrays.asList("local", "remote"));
+            remoteAddress = b.comment("remote mode: host:port of the daemon's control channel (--control-tcp). On Pelican/Pterodactyl",
+                            "the Docker host is usually reachable from the container as 172.18.0.1.")
+                    .define("remoteAddress", "172.18.0.1:25700");
+            remoteToken = b.comment("remote mode: the shared secret from the daemon's --token-file.")
+                    .define("remoteToken", "");
             daemonPath = b.comment("Path to an fcw-daemon executable. Empty = the one bundled in the mod jar for this platform.")
                     .define("path", "");
             qemuPath = b.comment("Path to qemu-system-x86_64. Empty = $FCW_QEMU, then the portable QEMU in <gameDir>/fcw/qemu,",
@@ -73,7 +86,8 @@ public final class FcwConfig {
                     .defineInList("accelerator", "auto", Arrays.asList("auto", "kvm", "whpx", "hvf", "tcg")); // List.of rejects contains(null)
             startupTimeoutSeconds = b.comment("How long to wait for the daemon to report FCW-READY.")
                     .defineInRange("startupTimeoutSeconds", 30, 5, 600);
-            shutdownTimeoutSeconds = b.comment("How long to wait for the daemon to stop its VMs when the server stops.")
+            shutdownTimeoutSeconds = b.comment("How long to wait for the daemon to stop its VMs when the server stops",
+                            "(remote mode: the soft shutdown time given to this world's machines; the daemon keeps running).")
                     .defineInRange("shutdownTimeoutSeconds", 15, 1, 300);
             messagesPerTick = b.comment("Maximum number of daemon replies/events applied per server tick.")
                     .defineInRange("messagesPerTick", 64, 1, 10000);

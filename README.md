@@ -152,6 +152,51 @@ fcw redstone set top 15
    медленнее, текстовая консоль — нормально. Если хостер может пробросить
    `/dev/kvm` в контейнер, демон сам включит KVM.
 
+#### KVM через демон на узле (свой узел Pelican / Pterodactyl)
+
+Wings не пробрасывает устройства в контейнеры, поэтому `/dev/kvm` в сервер
+Minecraft не попадёт. Если у вас есть root на самом узле, демон с QEMU можно
+запустить там как службу systemd с прямым доступом к KVM, а мод будет
+подключаться к нему по TCP:
+
+1. Поставить QEMU на узел (`apt install qemu-system-x86 qemu-utils` или
+   аналог) — либо ничего не ставить: демон сам скачает переносимый QEMU в
+   `/var/lib/fcw/qemu`.
+2. Скопировать на узел jar мода и
+   [`native/packaging/install-host-daemon.sh`](native/packaging/install-host-daemon.sh),
+   запустить:
+
+   ```sh
+   sudo ./install-host-daemon.sh fcw-<версия>.jar [--control-addr 172.18.0.1:25700] [--quic-port 25600]
+   ```
+
+   Скрипт достаёт демон из jar в `/usr/local/bin/fcw-daemon`, создаёт
+   пользователя `fcw` (группа `kvm`), каталоги `/var/lib/fcw/{images,vms,qemu}`
+   и токен `/etc/fcw/token`, ставит и включает юнит `fcw-daemon.service`
+   (пример: [`native/packaging/fcw-daemon.service`](native/packaging/fcw-daemon.service)).
+   Без `--control-addr` берётся шлюз docker-сети `pelican_nw`
+   (`pterodactyl_nw`, иначе `docker0`) — адрес узла, видимый из контейнеров.
+3. Прописать в `config/fcw-server.toml` то, что напечатал скрипт:
+
+   ```toml
+   [daemon]
+   mode = "remote"
+   remoteAddress = "172.18.0.1:25700"
+   remoteToken = "<содержимое /etc/fcw/token>"
+   ```
+
+   Мод не запускает свой демон, подключается к узлу (переподключается при
+   обрыве) и при остановке сервера гасит свои машины.
+4. Файрвол узла: TCP-порт управления (25700) открыть только для подсети
+   контейнеров (`ufw allow from 172.18.0.0/16 to 172.18.0.1 port 25700 proto tcp`),
+   UDP-порт игроков (`--quic-port`) — для всех. Игроки подключаются к демону
+   на узле напрямую, `daemon.publicHost` — адрес узла.
+
+Демон-служба не выходит при обрыве связи с модом, останавливается только
+`systemctl stop fcw-daemon` (машины гасятся: ACPI, потом kill). Журнал:
+`journalctl -u fcw-daemon -f`. Проверить без мода (fcw-probe собирается из `native/`):
+`fcw-probe --control tcp://172.18.0.1:25700 --token-file /etc/fcw/token hello`.
+
 Основные настройки сервера (`config/fcw-server.toml`): `daemon.*` (путь,
 QEMU, порт, лимит машин, ускоритель), `vm.*` (язык и раскладки гостя,
 размер экрана, лимит памяти), `network.*` (интернет, лимит скорости,

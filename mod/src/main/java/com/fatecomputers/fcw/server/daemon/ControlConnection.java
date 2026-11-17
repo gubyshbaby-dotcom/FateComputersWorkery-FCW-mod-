@@ -6,7 +6,9 @@ import com.fatecomputers.fcw.proto.ControlProto.Envelope;
 import java.io.Closeable;
 import java.io.EOFException;
 import java.io.IOException;
+import java.net.InetSocketAddress;
 import java.net.StandardProtocolFamily;
+import java.net.StandardSocketOptions;
 import java.net.UnixDomainSocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.channels.SocketChannel;
@@ -46,6 +48,23 @@ final class ControlConnection implements Closeable {
         SocketChannel ch = SocketChannel.open(StandardProtocolFamily.UNIX);
         try {
             ch.connect(UnixDomainSocketAddress.of(socket));
+        } catch (IOException e) {
+            ch.close();
+            throw e;
+        }
+        ControlConnection c = new ControlConnection(ch, onMessage, onClosed);
+        c.reader.start();
+        c.writer.start();
+        return c;
+    }
+
+    /** TCP variant for a daemon running as a service on another host (same frames). */
+    static ControlConnection openTcp(InetSocketAddress address, int timeoutMs, Consumer<Envelope> onMessage, Consumer<String> onClosed) throws IOException {
+        SocketChannel ch = SocketChannel.open();
+        try {
+            ch.setOption(StandardSocketOptions.TCP_NODELAY, true);
+            ch.setOption(StandardSocketOptions.SO_KEEPALIVE, true);
+            ch.socket().connect(address, timeoutMs);
         } catch (IOException e) {
             ch.close();
             throw e;

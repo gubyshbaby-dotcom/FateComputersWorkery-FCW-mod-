@@ -71,6 +71,9 @@ public final class FcwCommands {
                 : st == DaemonManager.Status.STARTING ? ChatFormatting.YELLOW : ChatFormatting.RED;
         src.sendSuccess(() -> Component.translatable("command.fcw.status.daemon",
                 Component.literal(st.name().toLowerCase(Locale.ROOT)).withStyle(color), d.reason()), false);
+        src.sendSuccess(() -> d.isRemote()
+                ? Component.translatable("command.fcw.status.mode_remote", d.remoteAddress())
+                : Component.translatable("command.fcw.status.mode_local"), false);
         if (d.daemonBinary() != null) {
             src.sendSuccess(() -> Component.translatable("command.fcw.status.binary", d.daemonBinary().toString()).withStyle(ChatFormatting.GRAY), false);
         }
@@ -100,11 +103,15 @@ public final class FcwCommands {
             }
         }
         String publicHost = FcwConfig.SERVER.publicHost.get();
-        int publicPort = FcwConfig.SERVER.publicPort.get() != 0 ? FcwConfig.SERVER.publicPort.get() : FcwConfig.SERVER.quicPort.get();
+        // the port the daemon really listens on (in remote mode it is set on the daemon's host)
+        int daemonPort = h != null && h.getQuicPort() != 0 ? h.getQuicPort() : FcwConfig.SERVER.quicPort.get();
+        int publicPort = FcwConfig.SERVER.publicPort.get() != 0 ? FcwConfig.SERVER.publicPort.get() : daemonPort;
         src.sendSuccess(() -> Component.translatable("command.fcw.status.public_host",
                 publicHost.isEmpty() ? Component.translatable("command.fcw.status.public_host.auto") : Component.literal(publicHost),
-                publicPort, FcwConfig.SERVER.quicPort.get()).withStyle(ChatFormatting.GRAY), false);
-        src.sendSuccess(() -> Component.translatable("command.fcw.status.dirs", d.imagesDir().toString(), d.vmsDir().toString()).withStyle(ChatFormatting.GRAY), false);
+                publicPort, daemonPort).withStyle(ChatFormatting.GRAY), false);
+        src.sendSuccess(() -> (d.isRemote()
+                ? Component.translatable("command.fcw.status.dirs_remote")
+                : Component.translatable("command.fcw.status.dirs", d.imagesDir().toString(), d.vmsDir().toString())).withStyle(ChatFormatting.GRAY), false);
         int loaded = ComputerTracker.all().size();
         long running = ComputerTracker.all().stream().filter(ComputerBlockEntity::isMachineOn).count();
         src.sendSuccess(() -> Component.translatable("command.fcw.status.computers", loaded, running), false);
@@ -133,7 +140,8 @@ public final class FcwCommands {
             }
             List<ImageInfo> list = r.getImages().getImagesList();
             if (list.isEmpty()) {
-                src.sendSuccess(() -> Component.translatable("command.fcw.images.empty", d.imagesDir().toString()), false);
+                src.sendSuccess(() -> Component.translatable("command.fcw.images.empty",
+                        d.isRemote() ? Component.translatable("command.fcw.on_daemon_host") : Component.literal(d.imagesDir().toString())), false);
                 return;
             }
             src.sendSuccess(() -> Component.translatable("command.fcw.images.header", list.size()), false);
@@ -289,7 +297,8 @@ public final class FcwCommands {
             return 0;
         }
         qemuLines(src, d);
-        src.sendSuccess(() -> Component.translatable("command.fcw.qemu.dir", d.qemuDir().toString(),
+        src.sendSuccess(() -> Component.translatable("command.fcw.qemu.dir",
+                d.isRemote() ? Component.translatable("command.fcw.on_daemon_host") : Component.literal(d.qemuDir().toString()),
                 Component.translatable(FcwConfig.SERVER.qemuAutoDownload.get() ? "options.on" : "options.off")).withStyle(ChatFormatting.GRAY), false);
         return 1;
     }

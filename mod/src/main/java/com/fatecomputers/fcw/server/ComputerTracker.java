@@ -84,6 +84,13 @@ public final class ComputerTracker {
         }
     }
 
+    /** Remote daemon unreachable for a while: machines keep running on the host, state is unknown. */
+    public static void onDaemonDisconnected() {
+        for (ComputerBlockEntity be : new ArrayList<>(BY_VM.values())) {
+            be.onDaemonDisconnected();
+        }
+    }
+
     public static void handleEvent(Event e) {
         switch (e.getKindCase()) {
             case VM_STATE -> {

@@ -137,7 +137,11 @@ mod tests {
         Envelope {
             id: 7,
             body: Some(envelope::Body::Request(Request {
-                kind: Some(request::Kind::Hello(Hello { client_name: "test".into(), protocol_version: 1 })),
+                kind: Some(request::Kind::Hello(Hello {
+                    client_name: "test".into(),
+                    protocol_version: 1,
+                    ..Default::default()
+                })),
             })),
         }
     }

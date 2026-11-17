@@ -10,14 +10,23 @@
 //! TCP-порты через прокси: `FCW_NET_PROXY_ALL=1`). Лимит скорости — `FCW_NET_RATE`
 //! (байт/с). Раз в 20 с печатает статистику портов в stderr.
 
+#[cfg(unix)]
 use std::time::Duration;
 
+#[cfg(unix)]
 use fcw_net::{NetConfig, NetSwitch};
 
+#[cfg(unix)]
 fn mac_str(m: [u8; 6]) -> String {
     m.iter().map(|b| format!("{b:02x}")).collect::<Vec<_>>().join(":")
 }
 
+#[cfg(not(unix))]
+fn main() {
+    eprintln!("two_vms: только Unix (порты на Unix-сокетах)");
+}
+
+#[cfg(unix)]
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
     tracing_subscriber::fmt()

@@ -6,6 +6,7 @@ pub mod accel;
 pub mod agent;
 pub mod args;
 pub mod audio;
+pub mod auth;
 pub mod cert;
 pub mod control;
 pub mod daemon;

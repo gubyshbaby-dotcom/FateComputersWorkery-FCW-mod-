@@ -22,6 +22,7 @@ import com.fatecomputers.fcw.proto.ControlProto.VmState;
 import com.fatecomputers.fcw.registry.ModBlockEntities;
 import com.fatecomputers.fcw.server.ComputerTracker;
 import com.fatecomputers.fcw.server.FcwServerEvents;
+import com.fatecomputers.fcw.server.FcwWorldData;
 import com.fatecomputers.fcw.server.daemon.DaemonManager;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
@@ -189,7 +190,11 @@ public class ComputerBlockEntity extends BlockEntity implements MenuProvider {
         peripherals.clear();
         String id = vmIdString();
         DaemonManager d = DaemonManager.get();
+        FcwWorldData data = level.getServer() == null ? null : FcwWorldData.get(level.getServer());
         if (d != null && DaemonManager.isReady()) {
+            if (data != null) {
+                data.removeMachine(id);
+            }
             d.send(Request.newBuilder().setRevokeTokens(RevokeTokens.newBuilder().setVmId(id)).build());
             d.request(Request.newBuilder().setStopVm(StopVm.newBuilder().setVmId(id).setForce(true)).build(), r ->
                     d.request(Request.newBuilder().setDeleteVm(DeleteVm.newBuilder().setVmId(id)).build(), r2 -> {
@@ -197,9 +202,17 @@ public class ComputerBlockEntity extends BlockEntity implements MenuProvider {
                             FcwMod.LOGGER.warn("Could not delete VM {}: {}", id, r2.getError());
                         }
                     }));
+        } else if (d != null && d.isRemote()) {
+            // The disk lives on the daemon's host: delete it once the daemon is reachable again.
+            if (data != null) {
+                data.addPendingDelete(id);
+            }
         } else if (d != null) {
-            // No daemon: no process can hold the disk, remove the machine directory directly.
+            // No local daemon: no process can hold the disk, remove the machine directory directly.
             deleteRecursively(d.vmsDir().resolve(id));
+            if (data != null) {
+                data.removeMachine(id);
+            }
         }
     }
 
@@ -221,6 +234,13 @@ public class ComputerBlockEntity extends BlockEntity implements MenuProvider {
 
     public void onDaemonReady() {
         syncWithDaemon();
+    }
+
+    /** The remote daemon is unreachable; the machine is probably still running there. */
+    public void onDaemonDisconnected() {
+        busy = false;
+        controller = "";
+        bump();
     }
 
     public void onDaemonLost(Component reason) {
@@ -399,6 +419,9 @@ public class ComputerBlockEntity extends BlockEntity implements MenuProvider {
         wantRunning = true;
         clearError();
         bump();
+        if (level != null && level.getServer() != null) {
+            FcwWorldData.get(level.getServer()).addMachine(vmIdString());
+        }
         String image = imageId;
         d.request(Request.newBuilder().setCreateVm(buildCreate(reinstall)).build(), r -> {
             if (isRemoved()) {
@@ -566,9 +589,14 @@ public class ComputerBlockEntity extends BlockEntity implements MenuProvider {
             lastErrorComponent = null;
         }
         if (state == VmState.VM_STATE_STOPPED_VALUE || state == VmState.VM_STATE_CRASHED_VALUE) {
-            // Shut down from inside the guest, crashed, or stopped by us: either way it should stay off.
-            wantRunning = false;
             busy = false;
+            // Powered off inside the guest or crashed: stays off. Stopped on request ("stopped", "force stop"):
+            // our own power-off already cleared wantRunning; anything else (a daemon service restart, another
+            // server) keeps the intent, so the machine comes back at the next resync.
+            boolean requested = "stopped".equals(reason) || "force stop".equals(reason) || "stopped during start".equals(reason);
+            if (state == VmState.VM_STATE_CRASHED_VALUE || !requested) {
+                wantRunning = false;
+            }
         }
         applyState(state, true);
     }

@@ -61,6 +61,21 @@ fn file_id(p: &Path) -> Option<(u64, u64)> {
 }
 
 async fn run(args: Args, events: broadcast::Sender<pb::Event>) -> Result<()> {
+    args.validate().map_err(|e| anyhow!(e))?;
+    // секрет TCP-канала: читаем или создаём до всего остального
+    let tcp = match (&args.control_tcp, &args.token_file) {
+        (Some(addr), Some(path)) => {
+            let addr: SocketAddr = addr.parse().with_context(|| format!("--control-tcp {addr:?}"))?;
+            let (token, created) = fcw_daemon::auth::load_or_create_token(path)?;
+            if created {
+                tracing::info!("created control token file {} (copy it to the mod config)", path.display());
+            } else {
+                tracing::info!("control token: {}", path.display());
+            }
+            Some((addr, Arc::new(token)))
+        }
+        _ => None,
+    };
     let accel_req = Accel::parse(&args.accel).ok_or_else(|| anyhow!("unknown --accel {:?}", args.accel))?;
     // переносимый QEMU: --qemu-dir, по умолчанию <images-dir>/../qemu
     let qemu_dir = args.qemu_dir.clone().unwrap_or_else(|| {
@@ -112,29 +127,61 @@ async fn run(args: Args, events: broadcast::Sender<pb::Event>) -> Result<()> {
     let env = Arc::new(Env { images_dir: args.images_dir.clone(), qemu: locator, tz, net });
     let d = Daemon::new(env, args.vms_dir.clone(), args.max_vms, quic_port, cert.sha256_hex.clone(), events);
 
-    if let Some(dir) = args.control.parent().filter(|p| !p.as_os_str().is_empty()) {
-        std::fs::create_dir_all(dir).ok();
+    // Unix-сокет (локальный мод); в режиме службы необязателен
+    let mut unix_listener = None;
+    let mut control_id = None;
+    if let Some(path) = &args.control {
+        if let Some(dir) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
+            std::fs::create_dir_all(dir).ok();
+        }
+        unix_listener = Some(LocalListener::bind(path).with_context(|| format!("bind {}", path.display()))?);
+        control_id = file_id(path);
     }
-    let listener = LocalListener::bind(&args.control).with_context(|| format!("bind {}", args.control.display()))?;
-    let control_id = file_id(&args.control);
 
-    let ready = serde_json::json!({
-        "control": args.control.to_string_lossy(),
+    let control_str = match (&args.control, &tcp) {
+        (Some(p), _) => p.to_string_lossy().to_string(),
+        (None, Some((a, _))) => format!("tcp://{a}"),
+        (None, None) => String::new(),
+    };
+    let mut ready = serde_json::json!({
+        "control": control_str,
         "quic_port": quic_port,
         "cert_sha256": cert.sha256_hex,
         "accelerator": accel.name(),
     });
+    if let Some((a, _)) = &tcp {
+        ready["control_tcp"] = serde_json::json!(a.to_string());
+    }
     {
         let mut out = std::io::stdout().lock();
         writeln!(out, "FCW-READY {ready}")?;
         out.flush()?;
     }
-    tracing::info!("ready: control {}, QUIC port {}", args.control.display(), quic_port);
+    tracing::info!(
+        "ready: control {}{}, QUIC port {}{}",
+        control_str,
+        tcp.as_ref().filter(|_| args.control.is_some()).map(|(a, _)| format!(" + tcp://{a}")).unwrap_or_default(),
+        quic_port,
+        if args.service { " (service mode)" } else { "" }
+    );
 
-    tokio::spawn(control::serve(d.clone(), listener));
+    if let Some(l) = unix_listener {
+        tokio::spawn(control::serve(d.clone(), l));
+    }
+    // фатальная ошибка bind TCP завершает демон (systemd перезапустит)
+    let (tcp_err_tx, mut tcp_err_rx) = tokio::sync::mpsc::unbounded_channel::<std::io::Error>();
+    if let Some((addr, token)) = tcp {
+        let policy = control::ConnPolicy::tcp(token, args.service);
+        let d2 = d.clone();
+        tokio::spawn(async move {
+            if let Err(e) = control::serve_tcp(d2, addr, policy).await {
+                let _ = tcp_err_tx.send(e);
+            }
+        });
+    }
     tokio::spawn(quic::serve(d.clone(), ep.clone()));
 
-    if !args.no_stdin_watch {
+    if !args.no_stdin_watch && !args.service {
         let d2 = d.clone();
         tokio::spawn(async move {
             use tokio::io::AsyncReadExt;
@@ -172,14 +219,26 @@ async fn run(args: Args, events: broadcast::Sender<pb::Event>) -> Result<()> {
     }
 
     let mut sd = d.shutdown_signal();
-    let _ = sd.wait_for(|v| *v).await;
+    let mut fatal = None;
+    tokio::select! {
+        _ = sd.wait_for(|v| *v) => {}
+        Some(e) = tcp_err_rx.recv() => {
+            tracing::error!("control TCP {}: {e}", args.control_tcp.as_deref().unwrap_or(""));
+            fatal = Some(anyhow!("control TCP bind failed: {e}"));
+        }
+    }
     tracing::info!("stopping machines");
     d.stop_all(Duration::from_secs(10)).await;
     ep.close(0u32.into(), b"daemon shutdown");
     // удаляем сокет, только если на его месте не появился чужой (новый демон)
-    if file_id(&args.control) == control_id {
-        let _ = std::fs::remove_file(&args.control);
+    if let Some(path) = &args.control {
+        if file_id(path) == control_id {
+            let _ = std::fs::remove_file(path);
+        }
     }
     tracing::info!("bye");
-    Ok(())
+    match fatal {
+        Some(e) => Err(e),
+        None => Ok(()),
+    }
 }
