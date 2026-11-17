@@ -95,7 +95,11 @@
       "fcw:crafting/euv_port_gas",
       "fcw:crafting/euv_port_exhaust",
       "fcw:crafting/euv_port_data",
-      "fcw:crafting/euv_port_item"
+      "fcw:crafting/euv_port_item",
+      "fcw:crafting/projector_lamp",
+      "fcw:crafting/projector",
+      "fcw:crafting/projection_screen",
+      "fcw:crafting/cinema_seat"
     ]
   }
 }

@@ -37,6 +37,7 @@ public final class FcwMod {
         ModMenus.MENUS.register(modBus);
         ModCreativeTabs.TABS.register(modBus);
         ProductionMachines.register(modBus);
+        com.fatecomputers.fcw.cinema.Cinema.register(modBus);
         com.fatecomputers.fcw.production.machine.net.DataNetwork.register(modBus);
         modBus.addListener(com.fatecomputers.fcw.block.entity.ComputerBlockEntity::registerCapabilities);
         modBus.addListener(FcwNetwork::register);

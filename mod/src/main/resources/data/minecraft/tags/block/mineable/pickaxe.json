@@ -42,6 +42,7 @@
     "fcw:euv_scanner_mk2_hatch",
     "fcw:chip_line_part",
     "fcw:chip_line_hatch",
-    "fcw:router"
+    "fcw:router",
+    "fcw:projector"
   ]
 }

@@ -1,0 +1,319 @@
+{
+	"parent": "minecraft:block/block",
+	"textures": {
+		"0": "fcw:block/cinema_seat_fabric",
+		"1": "fcw:block/cinema_seat_frame",
+		"particle": "fcw:block/cinema_seat_fabric"
+	},
+	"elements": [
+		{
+			"name": "arm",
+			"from": [
+				0,
+				2,
+				3
+			],
+			"to": [
+				1,
+				10,
+				13
+			],
+			"faces": {
+				"north": {
+					"uv": [
+						0,
+						0,
+						1,
+						8
+					],
+					"texture": "#1"
+				},
+				"east": {
+					"uv": [
+						0,
+						0,
+						10,
+						8
+					],
+					"texture": "#1"
+				},
+				"south": {
+					"uv": [
+						0,
+						0,
+						1,
+						8
+					],
+					"texture": "#1"
+				},
+				"up": {
+					"uv": [
+						0,
+						0,
+						1,
+						10
+					],
+					"texture": "#1"
+				},
+				"down": {
+					"uv": [
+						0,
+						0,
+						1,
+						10
+					],
+					"texture": "#1"
+				}
+			}
+		},
+		{
+			"name": "arm_pad",
+			"from": [
+				0,
+				10,
+				3
+			],
+			"to": [
+				1,
+				10.75,
+				12
+			],
+			"faces": {
+				"north": {
+					"uv": [
+						0,
+						0,
+						1,
+						0.75
+					],
+					"texture": "#0"
+				},
+				"east": {
+					"uv": [
+						0,
+						0,
+						9,
+						0.75
+					],
+					"texture": "#0"
+				},
+				"south": {
+					"uv": [
+						0,
+						0,
+						1,
+						0.75
+					],
+					"texture": "#0"
+				},
+				"up": {
+					"uv": [
+						0,
+						0,
+						1,
+						9
+					],
+					"texture": "#0"
+				},
+				"down": {
+					"uv": [
+						0,
+						0,
+						1,
+						9
+					],
+					"texture": "#0"
+				}
+			}
+		},
+		{
+			"name": "cushion_fill",
+			"from": [
+				1,
+				2,
+				2
+			],
+			"to": [
+				2,
+				6,
+				13
+			],
+			"faces": {
+				"north": {
+					"uv": [
+						0,
+						0,
+						1,
+						4
+					],
+					"texture": "#0"
+				},
+				"east": {
+					"uv": [
+						0,
+						0,
+						11,
+						4
+					],
+					"texture": "#0"
+				},
+				"south": {
+					"uv": [
+						0,
+						0,
+						1,
+						4
+					],
+					"texture": "#0"
+				},
+				"west": {
+					"uv": [
+						0,
+						0,
+						11,
+						4
+					],
+					"texture": "#0"
+				},
+				"up": {
+					"uv": [
+						0,
+						0,
+						1,
+						11
+					],
+					"texture": "#0"
+				},
+				"down": {
+					"uv": [
+						0,
+						0,
+						1,
+						11
+					],
+					"texture": "#0"
+				}
+			}
+		},
+		{
+			"name": "back_fill",
+			"from": [
+				0,
+				6,
+				11.5
+			],
+			"to": [
+				2,
+				16,
+				13.5
+			],
+			"faces": {
+				"north": {
+					"uv": [
+						0,
+						0,
+						2,
+						10
+					],
+					"texture": "#0"
+				},
+				"east": {
+					"uv": [
+						0,
+						0,
+						2.0,
+						10
+					],
+					"texture": "#0"
+				},
+				"south": {
+					"uv": [
+						0,
+						0,
+						2,
+						10
+					],
+					"texture": "#0"
+				},
+				"up": {
+					"uv": [
+						0,
+						0,
+						2,
+						2.0
+					],
+					"texture": "#0"
+				},
+				"down": {
+					"uv": [
+						0,
+						0,
+						2,
+						2.0
+					],
+					"texture": "#0"
+				}
+			}
+		},
+		{
+			"name": "shell_fill",
+			"from": [
+				0,
+				2,
+				13.5
+			],
+			"to": [
+				1.5,
+				16,
+				14.5
+			],
+			"faces": {
+				"north": {
+					"uv": [
+						0,
+						0,
+						1.5,
+						14
+					],
+					"texture": "#1"
+				},
+				"east": {
+					"uv": [
+						0,
+						0,
+						1.0,
+						14
+					],
+					"texture": "#1"
+				},
+				"south": {
+					"uv": [
+						0,
+						0,
+						1.5,
+						14
+					],
+					"texture": "#1"
+				},
+				"up": {
+					"uv": [
+						0,
+						0,
+						1.5,
+						1.0
+					],
+					"texture": "#1"
+				},
+				"down": {
+					"uv": [
+						0,
+						0,
+						1.5,
+						1.0
+					],
+					"texture": "#1"
+				}
+			}
+		}
+	]
+}

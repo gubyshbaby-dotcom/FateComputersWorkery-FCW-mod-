@@ -29,7 +29,12 @@ public enum DeviceModel {
     SUBWOOFER(box(2.5, 0, 2.5, 13.5, 12, 13.5)),
     SOUNDBAR(box(0.5, 0, 6, 15.5, 3, 9.5)),
     // body with feet and ridge, then the fan of three antennas at the back
-    ROUTER(box(3, 0, 5, 13, 2.5, 11), box(1, 2.5, 10, 15, 10, 11));
+    ROUTER(box(3, 0, 5, 13, 2.5, 11), box(1, 2.5, 10, 15, 10, 11)),
+    // кино: проектор на ножках и под потолком (корпус, объектив, штанга), полотно экрана, кресло
+    PROJECTOR(box(2.5, 0, 4, 13.5, 5.5, 13.5), box(4, 1.5, 2, 8, 5, 4)),
+    PROJECTOR_CEILING(box(2.5, 5, 4, 13.5, 10, 13.5), box(4, 5.5, 2, 8, 9, 4), box(5.5, 10, 6.5, 10.5, 16, 11.5)),
+    PROJECTION_SCREEN(box(0, 0, 15, 16, 16, 16)),
+    CINEMA_SEAT(box(0, 0, 2, 16, 6, 14.5), box(0, 6, 11.5, 16, 16, 14.5));
 
     private final Map<Direction, VoxelShape> shapes = new EnumMap<>(Direction.class);
 

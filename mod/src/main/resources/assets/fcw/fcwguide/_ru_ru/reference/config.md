@@ -61,6 +61,14 @@ navigation:
 | `requirePower` | false | true: машины работают только от FE |
 | `speedMultiplier` | 1.0 | скорость всех рецептов: 2.0 вдвое быстрее |
 
+### cinema: кино
+
+| Ключ | По умолчанию | Значение |
+|---|---|---|
+| `projectorRange` | 24 | на сколько блоков светит проектор |
+| `lampLifeHours` | 40 | ресурс лампы проектора в часах проекции; 0: лампы не изнашиваются |
+| `projectorPower` | 30 | расход проектора, FE за тик, при `requirePower = true` |
+
 ## fcw-client.toml
 
 | Ключ | По умолчанию | Значение |
@@ -70,3 +78,4 @@ navigation:
 | `screens.farDistance` | 12 | с какого расстояния экран считается дальним |
 | `screens.controlFps` | 60 | частота кадров, пока игрок сидит за компьютером |
 | `audio.enabled`, `audio.volume` | true, 1.0 | звук компьютеров через колонки |
+| `cinema.projectorBeam` | true | рисовать луч проектора и пыль в нём |

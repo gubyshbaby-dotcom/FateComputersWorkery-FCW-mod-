@@ -3,6 +3,10 @@ package com.fatecomputers.fcw.client;
 import com.fatecomputers.fcw.FcwMod;
 import com.fatecomputers.fcw.SidedHooks;
 import com.fatecomputers.fcw.block.entity.MonitorBlockEntity;
+import com.fatecomputers.fcw.cinema.Cinema;
+import com.fatecomputers.fcw.cinema.ProjectorBlockEntity;
+import com.fatecomputers.fcw.client.render.ProjectorRenderer;
+import net.minecraft.client.renderer.entity.NoopRenderer;
 import com.fatecomputers.fcw.block.entity.PeripheralBlockEntity;
 import com.fatecomputers.fcw.client.audio.SpeakerAudio;
 import com.fatecomputers.fcw.client.gui.ComputerScreen;
@@ -50,6 +54,16 @@ public final class FcwClient {
             }
 
             @Override
+            public void projectorLoaded(ProjectorBlockEntity be) {
+                ScreenViewManager.get().projectorLoaded(be);
+            }
+
+            @Override
+            public void projectorUnloaded(ProjectorBlockEntity be) {
+                ScreenViewManager.get().projectorUnloaded(be);
+            }
+
+            @Override
             public void speakerLoaded(PeripheralBlockEntity be) {
                 SpeakerAudio.get().speakerLoaded(be);
             }
@@ -85,6 +99,8 @@ public final class FcwClient {
 
     private static void onRegisterRenderers(EntityRenderersEvent.RegisterRenderers event) {
         event.registerBlockEntityRenderer(ModBlockEntities.MONITOR.get(), MonitorRenderer::new);
+        event.registerBlockEntityRenderer(Cinema.PROJECTOR_BE.get(), ProjectorRenderer::new);
+        event.registerEntityRenderer(Cinema.SEAT.get(), NoopRenderer::new);
     }
 
     private static void onClientTick(ClientTickEvent.Post event) {

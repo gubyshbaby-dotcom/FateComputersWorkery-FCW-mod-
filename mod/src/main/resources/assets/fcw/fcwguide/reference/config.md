@@ -61,6 +61,14 @@ Two files in the `config` folder: `fcw-server.toml` (server; also applies in sin
 | `requirePower` | false | true: machines run only on FE |
 | `speedMultiplier` | 1.0 | speed of all recipes: 2.0 is twice as fast |
 
+### cinema: cinema
+
+| Key | Default | Meaning |
+|---|---|---|
+| `projectorRange` | 24 | how many blocks a projector throws its picture |
+| `lampLifeHours` | 40 | life of a projector lamp in hours of projection; 0: lamps do not wear |
+| `projectorPower` | 30 | FE per tick a projector draws with `requirePower = true` |
+
 ## fcw-client.toml
 
 | Key | Default | Meaning |
@@ -70,3 +78,4 @@ Two files in the `config` folder: `fcw-server.toml` (server; also applies in sin
 | `screens.farDistance` | 12 | distance from which a screen counts as far |
 | `screens.controlFps` | 60 | frame rate while a player sits at the computer |
 | `audio.enabled`, `audio.volume` | true, 1.0 | computer sound through speakers |
+| `cinema.projectorBeam` | true | draw the beam of a projector and the dust in it |
