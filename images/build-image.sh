@@ -157,7 +157,12 @@ stage_packages() {
 stage_configure() {
   mount_chroot
   log "настройка"
-  cp -a "$HERE/overlay/." "$ROOT/"
+  # Файлы overlay ставим от root и не трогаем владельца и права уже
+  # существующих каталогов (/etc, /usr...): `cp -a` перенёс бы владельца
+  # файлов из рабочей копии репозитория (в CI это uid раннера, 1001), и
+  # sudo, ssh и прочие отказались бы работать.
+  tar -C "$HERE/overlay" --owner=0 --group=0 --numeric-owner -cf - . \
+    | tar -C "$ROOT" --no-overwrite-dir --numeric-owner -xpf -
   # Оформление под дистрибутив
   sed -i "s/@DISTRO_NAME@/$PRETTY/g; s/@ACCENT@/$ACCENT/g" \
     "$ROOT/etc/xdg/labwc/autostart" "$ROOT/etc/xdg/labwc/themerc-override" "$ROOT/etc/xdg/alacritty/alacritty.toml" \
@@ -253,6 +258,39 @@ slim_rootfs() {
   in_root_nomount depmod -a "$kver"
 }
 
+# Каждый файл должен принадлежать пользователю и группе, которые есть в самом
+# госте: иначе в образ протёк владелец с машины сборки (например, uid раннера
+# CI), и sudo, ssh и прочие откажутся работать.
+check_ownership() {
+  python3 -I - "$ROOT" <<'PY'
+import os, sys
+root = sys.argv[1]
+def ids(path):
+    out = set()
+    with open(os.path.join(root, path)) as f:
+        for line in f:
+            parts = line.split(":")
+            if len(parts) > 2 and parts[2].isdigit():
+                out.add(int(parts[2]))
+    return out
+uids, gids = ids("etc/passwd"), ids("etc/group")
+bad = []
+dev = os.lstat(root).st_dev
+for dirpath, dirnames, filenames in os.walk(root):
+    dirnames[:] = [d for d in dirnames if os.lstat(os.path.join(dirpath, d)).st_dev == dev]
+    for name in [""] + dirnames + filenames:
+        p = os.path.join(dirpath, name)
+        st = os.lstat(p)
+        if st.st_uid not in uids or st.st_gid not in gids:
+            bad.append(f"{st.st_uid}:{st.st_gid} {os.path.relpath(p, root)}")
+if bad:
+    print(f"файлы с владельцем, которого нет в госте ({len(bad)}):", file=sys.stderr)
+    for b in bad[:20]:
+        print("  " + b, file=sys.stderr)
+    sys.exit(1)
+PY
+}
+
 # depmod не нужны /proc и /dev, chroot без монтирования
 in_root_nomount() {
   chroot "$ROOT" /usr/bin/env -i PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin "$@"
@@ -279,6 +317,7 @@ stage_pack() {
   local raw="$WORK_DIR/$DISTRO/rootfs.ext4"
   rm -f "$raw"
   truncate -s "$DISK_SIZE" "$raw"
+  check_ownership
   if [[ -n "$(mounts_under_root)" ]]; then
     echo "в $ROOT ещё что-то смонтировано, упаковывать нельзя:" >&2
     mounts_under_root >&2
