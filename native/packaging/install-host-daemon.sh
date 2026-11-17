@@ -114,9 +114,12 @@ if [[ -z "$CONTROL_ADDR" ]]; then
   GW=""
   if command -v docker >/dev/null 2>&1; then
     for net in pelican_nw pterodactyl_nw; do
-      GW="$(docker network inspect "$net" -f '{{range .IPAM.Config}}{{.Gateway}}{{end}}' 2>/dev/null || true)"
+      # у сети может быть и IPv4, и IPv6: берём только IPv4
+      GW="$(docker network inspect "$net" -f '{{range .IPAM.Config}}{{.Gateway}} {{end}}' 2>/dev/null \
+            | tr ' ' '\n' | grep -E '^[0-9]+(\.[0-9]+){3}$' | head -n1 || true)"
       if [[ -n "$GW" ]]; then
-        SUBNET="$(docker network inspect "$net" -f '{{range .IPAM.Config}}{{.Subnet}}{{end}}' 2>/dev/null || true)"
+        SUBNET="$(docker network inspect "$net" -f '{{range .IPAM.Config}}{{.Subnet}} {{end}}' 2>/dev/null \
+                  | tr ' ' '\n' | grep -E '^[0-9]+(\.[0-9]+){3}/[0-9]+$' | head -n1 || true)"
         info "docker-сеть $net: шлюз $GW${SUBNET:+, подсеть $SUBNET}"
         break
       fi
@@ -132,6 +135,10 @@ if [[ -z "$CONTROL_ADDR" ]]; then
 fi
 CONTROL_IP="${CONTROL_ADDR%:*}"
 CONTROL_PORT="${CONTROL_ADDR##*:}"
+# IPv4:порт или [IPv6]:порт
+if ! [[ "$CONTROL_ADDR" =~ ^[0-9]+(\.[0-9]+){3}:[0-9]+$ || "$CONTROL_ADDR" =~ ^\[[0-9a-fA-F:]+\]:[0-9]+$ ]]; then
+  die "адрес управления '$CONTROL_ADDR' не похож на IPv4:порт или [IPv6]:порт; укажите --control-addr"
+fi
 
 # --- юнит systemd (синхронно с packaging/fcw-daemon.service) ----------------
 mkdir -p "$(dirname "$UNIT")"
