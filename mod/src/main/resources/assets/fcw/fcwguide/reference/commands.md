@@ -36,8 +36,12 @@ Machine names for `/fcw machine place`: `arc_furnace`, `crystal_puller`, `waferi
 | `fcw machine euv-1 status` | any panel command for the machine of that name |
 | `fcw machine euv-1 log 20 --follow` | the journal; new entries are printed as they appear |
 | `fcw machine euv-1 wait idle --timeout 600` | wait for the state `idle`, `run` or `fault` |
+| `fcw top` | a full-screen summary of the machines of the network |
+| `fcw litho euv-1`, `fcw mon euv-1` | the full-screen program of a machine: wafer map, defects, log |
+| `fcw yield` | the shift report |
+| `fcw apc on`, `fcw apc off`, `fcw apc status` | the computing service for the machines |
 
-More: [Redstone and fcw](../computers/redstone.md).
+More: [Redstone and fcw](../computers/redstone.md), [Console Programs](../production/programs.md).
 
 ## Machines from a computer
 

@@ -133,7 +133,8 @@ public static List<Link> links(ServerLevel level, BlockPos computerPos);    // �
 - Код выхода `fcw machine` = `exit` ответа; при `exit` ≠ 0 текст идёт в stderr. С `--json` в stdout
   печатается `json` ответа (если он есть), иначе текст.
 - Подписка `machine_watch` / `machine_unwatch` → `machine_frame`, служба `apc_beat` и `op` = `yield`
-  описаны в `docs/CONTRACT.md` §7 («Машины: APC, отчёт и подписка на снимки»).
+  описаны в `docs/CONTRACT.md` §7 («Машины: APC, отчёт и подписка на снимки»); как ими пользуются
+  программы `fcw top`, `fcw litho`, … и `fcw apc` — там же, «Программы: подписка и служба APC внутри гостя».
 
 ## Питание компьютеров
 

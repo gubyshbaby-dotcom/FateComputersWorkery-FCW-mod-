@@ -7,6 +7,7 @@ members = [
     "crates/fcw-probe",
     "crates/fcw-agent",
     "crates/fcw-net",
+    "crates/fcw-tui",
 ]
 
 [workspace.package]
@@ -19,6 +20,7 @@ rust-version = "1.88"
 fcw-proto = { path = "crates/fcw-proto" }
 fcw-client = { path = "crates/fcw-client" }
 fcw-net = { path = "crates/fcw-net" }
+fcw-tui = { path = "crates/fcw-tui" }
 prost = "0.13"
 prost-build = "0.13"
 protoc-bin-vendored = "3"
@@ -54,3 +56,8 @@ strip = true
 opt-level = "z"
 codegen-units = 1
 strip = true
+
+# экраны программ едут в гостя внутри агента: тоже на размер
+[profile.release.package.fcw-tui]
+opt-level = "z"
+codegen-units = 1

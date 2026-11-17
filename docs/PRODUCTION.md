@@ -260,7 +260,11 @@ public final class MachineRecipes {
   (помещение, вода, вибрация) и APC; `yield` — отчёт за смену (игровые сутки, сегодня и вчера):
   пластины, годность, классы, причины, простои. `status --json` — полный снимок машины
   (`machine_frame` из `docs/design/CONSOLE_APPS.md`): к прежним полям добавлены `kind`, `reason`,
-  `phase`, `log_seq`, `defects`, `apc`, `litho` (или `env` у остальных машин), `shift`.
+  `phase`, `log_seq`, `defects`, `apc`, `litho` (или `env` у остальных машин), `shift`, а для
+  консольных программ — `use` (расход сейчас, FE/t) и `sections` (состояние, рецепт и ход каждого
+  участка); у пластин в `lot_wafers` есть `time`.
+- **Программы на компьютере** (`fcw top`, `fcw litho`, `fcw yield`, …, служба `fcw apc`) показывают
+  всё это полноэкранно: `docs/design/CONSOLE_APPS.md`, протокол — `docs/CONTRACT.md` §7.
 - Журнал: `wafer` (класс и число годных), `brownout`, `room` (смена класса помещения), `apc`.
 
 ## Сеть данных и компьютеры

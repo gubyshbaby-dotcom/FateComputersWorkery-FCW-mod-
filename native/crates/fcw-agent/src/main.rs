@@ -4,16 +4,22 @@
 //!   хостом) и локальный сокет `/run/fcw/agent.sock` для команд;
 //! * `fcw redstone get [side]`, `fcw redstone set <side> <0-15>`;
 //! * `fcw machine …` — производственные машины мира (модуль `machine`);
+//! * `fcw top`, `fcw litho <имя>`, …, `fcw yield`, `fcw mon <имя>` — полноэкранные программы
+//!   (модуль `tui`; экраны рисует крейт `fcw-tui`); те же программы отзываются на имена
+//!   `fcw-top`, `fcw-litho`, … — ссылки на этот бинарник;
+//! * `fcw apc on|off|status` — служба вычислений для машин (модуль `apc`);
 //! * `fcw info`, `fcw send '<json>'` (произвольное сообщение хосту).
 //!
 //! Служба ещё и обновляет сама себя: мод присылает свежий бинарник (модуль `update`).
 
+mod apc;
 mod hash;
-mod json;
 mod machine;
+mod term;
+mod tui;
 mod update;
 
-use json::{n, obj, s, Json};
+use fcw_tui::json::{n, obj, s, Json};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader, Read, Write};
@@ -41,6 +47,10 @@ fn usage() -> ! {
          fcw machine <name> <command...> [--json]   status, start, stop, recipe, log, help\n  \
          fcw machine <name> log [n] --follow        print new log records as they appear\n  \
          fcw machine <name> wait <state> [--timeout N]   wait for off, idle, run or fault\n  \
+         fcw top | litho | furnace | puller | saw | line [name]   full-screen programs (also fcw-top, ...)\n  \
+         fcw mon <name>                             the program that fits the machine\n  \
+         fcw yield [name]                           shift report\n  \
+         fcw apc on|off|status                      compute service for the machines\n  \
          fcw info                                   agent status\n  \
          fcw send '<json>'                          send a JSON message to the world\n\n\
          sides: front back left right top bottom"
@@ -48,8 +58,21 @@ fn usage() -> ! {
     std::process::exit(2)
 }
 
+/// Имена, под которыми бинарник запускает программу сразу: `fcw-litho euv-1` = `fcw litho euv-1`.
+const APPLETS: [&str; 9] = ["top", "litho", "furnace", "puller", "saw", "line", "yield", "mon", "apc"];
+
+/// Программа по имени, под которым вызвали бинарник (`argv[0]`): `/usr/local/bin/fcw-litho` → `litho`.
+fn applet(argv0: &str) -> Option<&'static str> {
+    let name = Path::new(argv0).file_name()?.to_str()?;
+    let rest = name.strip_prefix("fcw-")?;
+    APPLETS.iter().find(|a| **a == rest).copied()
+}
+
 fn main() {
-    let args: Vec<String> = std::env::args().skip(1).collect();
+    let mut args: Vec<String> = std::env::args().skip(1).collect();
+    if let Some(a) = std::env::args().next().as_deref().and_then(applet) {
+        args.insert(0, a.to_string());
+    }
     let a: Vec<&str> = args.iter().map(String::as_str).collect();
     let code = match a.as_slice() {
         ["agent", rest @ ..] => {
@@ -98,6 +121,16 @@ fn main() {
             }
         }),
         ["machine", rest @ ..] => machine_cli(rest),
+        ["apc", rest @ ..] => apc_cli(rest),
+        [program @ ("top" | "litho" | "furnace" | "puller" | "saw" | "line" | "yield" | "mon"), rest @ ..] => {
+            match tui::parse_args(program, rest) {
+                Ok(o) => tui::run(&o, &sock_path(), &machine::lang_from_env(|k| std::env::var(k).ok())),
+                Err(e) => {
+                    eprintln!("fcw: {e}\n{}", tui::USAGE);
+                    2
+                }
+            }
+        }
         ["send", msg] => {
             if Json::parse(msg).is_none() {
                 eprintln!("fcw: not valid JSON");
@@ -161,7 +194,7 @@ fn cli(req: Json, show: impl FnOnce(&Json)) -> i32 {
 }
 
 /// Запрос `machine_req` через службу; ответа нет за 5 с — [`machine::NoAnswer`].
-fn machine_call(sock: &str, req: &Json) -> Result<machine::Resp, machine::NoAnswer> {
+pub(crate) fn machine_call(sock: &str, req: &Json) -> Result<machine::Resp, machine::NoAnswer> {
     let wrapped = obj(vec![("cmd", s("machine")), ("req", req.clone())]);
     // служба сама ждёт мир 5 с; секунда сверху — чтобы её ответ «timeout» успел дойти
     let resp = ask(sock, &wrapped, machine::TIMEOUT + Duration::from_secs(1)).map_err(|_| machine::NoAnswer)?;
@@ -169,6 +202,91 @@ fn machine_call(sock: &str, req: &Json) -> Result<machine::Resp, machine::NoAnsw
         return Err(machine::NoAnswer);
     }
     resp.get("resp").and_then(machine::parse_resp).ok_or(machine::NoAnswer)
+}
+
+/// `fcw apc on|off|status`: флаг ставит служба агента (у неё есть права на `/var/lib/fcw`);
+/// если службы нет — пробуем записать сами.
+fn apc_cli(args: &[&str]) -> i32 {
+    let cmd = match apc::parse_args(args) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("fcw: {e}\n{}", apc::USAGE);
+            return 2;
+        }
+    };
+    let lang = machine::lang_from_env(|k| std::env::var(k).ok());
+    let ru = lang.starts_with("ru");
+    let sock = sock_path();
+    let set = |on: bool, machines: &[String]| -> Result<(), String> {
+        let list = Json::Arr(machines.iter().map(|m| s(m)).collect());
+        let req = obj(vec![("cmd", s("apc")), ("on", Json::Bool(on)), ("machines", list)]);
+        match ask(&sock, &req, Duration::from_secs(5)) {
+            Ok(r) if r.flag("ok") => Ok(()),
+            Ok(r) => Err(r.text("error").to_string()),
+            // службы нет: флаг всё равно можно поставить, она подхватит его при запуске
+            Err(_) => {
+                let path = apc::flag_path();
+                let r = if on { apc::write_flag(&path, machines) } else { apc::clear_flag(&path) };
+                r.map_err(|e| format!("{}: {e}", path.display()))
+            }
+        }
+    };
+    match &cmd {
+        apc::Cmd::On(machines) => {
+            if let Err(e) = set(true, machines) {
+                eprintln!("fcw: {e}");
+                return 1;
+            }
+        }
+        apc::Cmd::Off => {
+            if let Err(e) = set(false, &[]) {
+                eprintln!("fcw: {e}");
+                return 1;
+            }
+        }
+        apc::Cmd::Status => {}
+    }
+    let flag = apc::read_flag(&apc::flag_path());
+    match (&flag, ru) {
+        (Some(m), true) if m.is_empty() => println!("служба APC: включена, для всех машин сети"),
+        (Some(m), true) => println!("служба APC: включена, для машин: {}", m.join(" ")),
+        (None, true) => println!("служба APC: выключена — машины получают 75 % вычислительной мощности"),
+        (Some(m), false) if m.is_empty() => println!("APC service: on, for every machine of the network"),
+        (Some(m), false) => println!("APC service: on, for machines: {}", m.join(" ")),
+        (None, false) => println!("APC service: off — machines get 75 % of the compute units"),
+    }
+    if cmd != apc::Cmd::Status {
+        // мир считает CU раз в секунду, а остановку службы замечает через три пропуска
+        println!(
+            "{}",
+            if ru {
+                "машины учтут это за несколько секунд"
+            } else {
+                "the machines follow within a few seconds"
+            }
+        );
+    }
+    let call = |req: &Json| machine_call(&sock, req);
+    match call(&machine::request("list", None, None, true, &lang)) {
+        Ok(machine::Resp { json: Some(list), .. }) => {
+            for m in list.items("machines") {
+                let name = m.text("name");
+                if let Ok(machine::Resp { json: Some(st), .. }) =
+                    call(&machine::request("exec", Some(name), Some("status"), true, &lang))
+                {
+                    if let Some(line) = apc::machine_line(name, &st, ru) {
+                        println!("{line}");
+                    }
+                }
+            }
+        }
+        _ => eprintln!("fcw: {}", machine::no_answer_text(&lang)),
+    }
+    if flag.is_some() {
+        0
+    } else {
+        1
+    }
 }
 
 fn machine_cli(args: &[&str]) -> i32 {
@@ -221,7 +339,21 @@ struct Agent {
     restart: Box<dyn Fn() + Send + Sync>,
     /// Сколько ждать ответа мира на `machine_req`.
     world_timeout: Duration,
+    /// Программы, подписанные на снимки машин (`machine_frame`).
+    watchers: Mutex<Vec<Watcher>>,
+    /// Файл-флаг службы вычислений (`fcw apc on`).
+    apc_flag: PathBuf,
 }
+
+/// Одна программа (`fcw top`, `fcw litho`, …) на локальном сокете: какие машины ей нужны и куда слать кадры.
+struct Watcher {
+    id: u64,
+    machines: Vec<String>,
+    out: UnixStream,
+}
+
+/// Мост мода отдаёт снимки не больше чем восьми машин и не чаще 4 раз в секунду.
+const MAX_WATCHED: usize = 8;
 
 impl Agent {
     fn new(port: File, exe: PathBuf, restart: Box<dyn Fn() + Send + Sync>) -> Agent {
@@ -235,6 +367,73 @@ impl Agent {
             update: Mutex::new(None),
             restart,
             world_timeout: machine::TIMEOUT,
+            watchers: Mutex::new(Vec::new()),
+            apc_flag: apc::flag_path(),
+        }
+    }
+
+    /// Подписка у мира одна на компьютер: шлём объединение того, что нужно всем программам.
+    fn rewatch(&self) {
+        let mut all: Vec<String> = Vec::new();
+        let any = {
+            let ws = self.watchers.lock().unwrap();
+            for m in ws.iter().flat_map(|w| &w.machines) {
+                if all.len() < MAX_WATCHED && !all.contains(m) {
+                    all.push(m.clone());
+                }
+            }
+            !ws.is_empty()
+        };
+        if any && !all.is_empty() {
+            let list = Json::Arr(all.iter().map(|m| s(m)).collect());
+            self.send(&obj(vec![("type", s("machine_watch")), ("id", n(1)), ("machines", list), ("hz", n(4))]));
+        } else {
+            self.send(&obj(vec![("type", s("machine_unwatch"))]));
+        }
+    }
+
+    /// Кадр `machine_frame` от мира — всем подписанным программам; кто не читает, тот отключается.
+    fn forward_frame(&self, line: &str) {
+        let mut ws = self.watchers.lock().unwrap();
+        let before = ws.len();
+        ws.retain_mut(|w| w.out.write_all(line.as_bytes()).and_then(|_| w.out.write_all(b"\n")).is_ok());
+        let dropped = ws.len() != before;
+        drop(ws);
+        if dropped {
+            self.rewatch();
+        }
+    }
+
+    /// Программа на локальном сокете подписалась на снимки: соединение живёт, пока она работает.
+    /// Новая строка `watch` в том же соединении меняет набор машин.
+    fn serve_watch(&self, conn: &UnixStream, first: &Json) {
+        let Ok(out) = conn.try_clone() else { return };
+        let _ = out.set_write_timeout(Some(Duration::from_secs(1)));
+        let _ = conn.set_read_timeout(None);
+        let id = self.next_id.fetch_add(1, Ordering::Relaxed);
+        let names = |req: &Json| -> Vec<String> {
+            req.items("machines").iter().filter_map(Json::as_str).take(MAX_WATCHED).map(str::to_string).collect()
+        };
+        self.watchers.lock().unwrap().push(Watcher { id, machines: names(first), out });
+        self.rewatch();
+        for line in BufReader::new(conn).lines() {
+            let Ok(line) = line else { break };
+            let Some(req) = Json::parse(line.trim()) else { continue };
+            if req.text("cmd") == "watch" {
+                if let Some(w) = self.watchers.lock().unwrap().iter_mut().find(|w| w.id == id) {
+                    w.machines = names(&req);
+                }
+                self.rewatch();
+            }
+        }
+        self.watchers.lock().unwrap().retain(|w| w.id != id);
+        self.rewatch();
+    }
+
+    /// Раз в секунду, пока стоит флаг `fcw apc on`: подтверждение миру, что завод под управлением.
+    fn apc_beat(&self) {
+        if let Some(machines) = apc::read_flag(&self.apc_flag) {
+            self.send(&apc::beat(&machines));
         }
     }
 
@@ -352,7 +551,14 @@ impl Agent {
                     let _ = std::process::Command::new("poweroff").status();
                 }
             }
-            "ping" => self.hello(),
+            "ping" => {
+                self.hello();
+                // хост мог забыть подписку (перезапуск мира при работающей ВМ)
+                if !self.watchers.lock().unwrap().is_empty() {
+                    self.rewatch();
+                }
+            }
+            "machine_frame" => self.forward_frame(line.trim()),
             "machine_resp" => {
                 if let Some(id) = m.get("id").and_then(Json::as_f64) {
                     if let Some(tx) = self.pending.lock().unwrap().remove(&(id as u64)) {
@@ -405,6 +611,7 @@ impl Agent {
                     ("port", Json::Bool(self.port.lock().unwrap().is_some())),
                     ("host_seen", Json::Bool(connected)),
                     ("uptime_s", n(st.started.elapsed().as_secs() as f64)),
+                    ("apc", Json::Bool(self.apc_flag.exists())),
                     ("inputs", Self::levels_json(&st.inputs)),
                     ("outputs", Self::levels_json(&st.outputs)),
                 ])
@@ -413,6 +620,23 @@ impl Agent {
                 Some(resp) => obj(vec![("ok", Json::Bool(true)), ("resp", resp)]),
                 None => err("timeout"),
             },
+            "apc" => {
+                let machines: Vec<String> =
+                    req.items("machines").iter().filter_map(Json::as_str).map(str::to_string).collect();
+                let r = if req.flag("on") {
+                    apc::write_flag(&self.apc_flag, &machines)
+                } else {
+                    apc::clear_flag(&self.apc_flag)
+                };
+                match r {
+                    Ok(()) => {
+                        // первое подтверждение сразу, не дожидаясь секунды
+                        self.apc_beat();
+                        obj(vec![("ok", Json::Bool(true))])
+                    }
+                    Err(e) => err(&format!("{}: {e}", self.apc_flag.display())),
+                }
+            }
             "send" => {
                 let Some(m) = req.get("json").and_then(Json::as_str).and_then(Json::parse) else {
                     return err("bad json");
@@ -442,7 +666,7 @@ fn os_name() -> String {
         .unwrap_or_else(|| "Linux".into())
 }
 
-fn hostname() -> String {
+pub(crate) fn hostname() -> String {
     std::fs::read_to_string("/proc/sys/kernel/hostname").map(|s| s.trim().to_string()).unwrap_or_default()
 }
 
@@ -475,6 +699,22 @@ fn open_port(path: &str) -> File {
     }
 }
 
+/// Ссылки `fcw-top`, `fcw-litho`, … рядом с бинарником (`/usr/local/bin`): программы доступны и под
+/// отдельными именами. Создаются при старте службы, если их ещё нет; чужие файлы не трогаются.
+fn install_links(exe: &Path) {
+    let (Some(dir), Some(target)) = (exe.parent(), exe.file_name()) else { return };
+    for a in APPLETS {
+        let link = dir.join(format!("fcw-{a}"));
+        if link.symlink_metadata().is_ok() {
+            continue;
+        }
+        if let Err(e) = std::os::unix::fs::symlink(target, &link) {
+            eprintln!("fcw agent: link {}: {e}", link.display());
+            return;
+        }
+    }
+}
+
 /// Заменить процесс свежим бинарником с теми же аргументами. Если не вышло — выйти:
 /// systemd (`Restart=always`) поднимет службу заново, уже с новым файлом.
 fn reexec(exe: &Path) {
@@ -495,6 +735,7 @@ fn agent(port_path: &str, sock_path: &str) -> i32 {
     };
     let exe = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("/usr/local/bin/fcw"));
     let restart_exe = exe.clone();
+    install_links(&exe);
     let a = Arc::new(Agent::new(port, exe, Box::new(move || reexec(&restart_exe))));
     let _ = write_redstone_files(&[0; 6]);
     eprintln!("fcw agent {VERSION}: connected to {port_path}");
@@ -511,6 +752,18 @@ fn serve(a: Arc<Agent>, reader: File, sock_path: &str) -> ! {
         std::thread::spawn(move || loop {
             std::thread::sleep(Duration::from_secs(10));
             a.send(&obj(vec![("type", s("heartbeat"))]));
+            // подписка на снимки: напоминаем, пока есть кому их показывать
+            if !a.watchers.lock().unwrap().is_empty() {
+                a.rewatch();
+            }
+        });
+    }
+    // служба вычислений: подтверждение раз в секунду, пока стоит флаг
+    {
+        let a = a.clone();
+        std::thread::spawn(move || loop {
+            a.apc_beat();
+            std::thread::sleep(Duration::from_secs(1));
         });
     }
     // локальный сокет для CLI
@@ -541,6 +794,7 @@ fn serve(a: Arc<Agent>, reader: File, sock_path: &str) -> ! {
                         return;
                     }
                     let resp = match Json::parse(line.trim()) {
+                        Some(req) if req.text("cmd") == "watch" => return a.serve_watch(&c, &req),
                         Some(req) => a.on_local(&req),
                         None => obj(vec![("ok", Json::Bool(false)), ("error", s("bad request"))]),
                     };
@@ -597,6 +851,7 @@ mod tests {
         let flag = restarted.clone();
         let mut agent = Agent::new(port, exe, Box::new(move || flag.store(true, Ordering::SeqCst)));
         agent.world_timeout = world_timeout;
+        agent.apc_flag = dir.join("apc");
         let sock = dir.join("agent.sock").to_string_lossy().into_owned();
         let sock2 = sock.clone();
         std::thread::spawn(move || serve(Arc::new(agent), reader, &sock2));
@@ -666,6 +921,122 @@ mod tests {
         }
         let texts: Vec<String> = clients.into_iter().map(|c| c.join().unwrap().unwrap().text).collect();
         assert_eq!(texts, ["ответ для eaf-1", "ответ для euv-1"]);
+    }
+
+    #[test]
+    fn programs_answer_to_their_own_names() {
+        assert_eq!(applet("/usr/local/bin/fcw-litho"), Some("litho"));
+        assert_eq!(applet("fcw-top"), Some("top"));
+        assert_eq!(applet("fcw-apc"), Some("apc"));
+        assert_eq!(applet("/usr/local/bin/fcw"), None);
+        assert_eq!(applet("fcw-agent"), None);
+    }
+
+    #[test]
+    fn links_are_made_once_and_never_overwrite() {
+        let dir = tmp_dir("links");
+        let exe = dir.join("fcw");
+        std::fs::write(&exe, b"binary").unwrap();
+        std::fs::write(dir.join("fcw-top"), b"someone else's file").unwrap();
+        install_links(&exe);
+        install_links(&exe);
+        for a in APPLETS {
+            let link = dir.join(format!("fcw-{a}"));
+            if a == "top" {
+                assert_eq!(std::fs::read(&link).unwrap(), b"someone else's file");
+            } else {
+                assert_eq!(std::fs::read_link(&link).unwrap(), PathBuf::from("fcw"));
+                assert_eq!(std::fs::read(&link).unwrap(), b"binary");
+            }
+        }
+    }
+
+    /// Имена машин из сообщения `machine_watch`.
+    fn watched(m: &Json) -> Vec<String> {
+        m.items("machines").iter().filter_map(Json::as_str).map(str::to_string).collect()
+    }
+
+    #[test]
+    fn frames_reach_every_program_that_watches() {
+        let dir = tmp_dir("watch");
+        let (host, sock, _) = start(&dir, dir.join("no-such-binary"), Duration::from_secs(5));
+        let mut to_guest = host.try_clone().unwrap();
+        let mut host = BufReader::new(host);
+        next(&mut host, "hello");
+
+        // первая программа смотрит одну машину
+        let mut one = UnixStream::connect(&sock).unwrap();
+        writeln!(one, r#"{{"cmd":"watch","machines":["euv-1"],"hz":4}}"#).unwrap();
+        let w = next(&mut host, "machine_watch");
+        assert_eq!(watched(&w), ["euv-1"]);
+        assert_eq!(w.num("hz"), 4.0);
+        // вторая — две: у мира подписка одна, в ней объединение
+        let mut two = UnixStream::connect(&sock).unwrap();
+        writeln!(two, r#"{{"cmd":"watch","machines":["cz-1","euv-1"],"hz":4}}"#).unwrap();
+        assert_eq!(watched(&next(&mut host, "machine_watch")), ["euv-1", "cz-1"]);
+
+        let frame = r#"{"type":"machine_frame","id":1,"seq":7,"machines":[{"name":"euv-1"}]}"#;
+        writeln!(to_guest, "{frame}").unwrap();
+        for st in [&one, &two] {
+            st.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+            let mut line = String::new();
+            BufReader::new(st).read_line(&mut line).unwrap();
+            assert_eq!(line.trim(), frame);
+        }
+        // программа меняет набор машин в том же соединении
+        writeln!(one, r#"{{"cmd":"watch","machines":["saw-1"]}}"#).unwrap();
+        assert_eq!(watched(&next(&mut host, "machine_watch")), ["saw-1", "cz-1", "euv-1"]);
+        // программы закрылись: подписка снимается
+        drop(one);
+        assert_eq!(watched(&next(&mut host, "machine_watch")), ["cz-1", "euv-1"]);
+        drop(two);
+        next(&mut host, "machine_unwatch");
+        // обычные команды сокета работают как раньше
+        let info = ask(&sock, &obj(vec![("cmd", s("info"))]), Duration::from_secs(5)).unwrap();
+        assert_eq!(info.get("apc").and_then(Json::as_bool), Some(false));
+    }
+
+    #[test]
+    fn apc_flag_makes_the_service_beat() {
+        let dir = tmp_dir("apc");
+        let (host, sock, _) = start(&dir, dir.join("no-such-binary"), Duration::from_secs(5));
+        let mut host = BufReader::new(host);
+        next(&mut host, "hello");
+        let set = |on: bool, machines: Vec<Json>| {
+            let req = obj(vec![("cmd", s("apc")), ("on", Json::Bool(on)), ("machines", Json::Arr(machines))]);
+            let r = ask(&sock, &req, Duration::from_secs(5)).unwrap();
+            assert_eq!(r.get("ok").and_then(Json::as_bool), Some(true), "{r}");
+        };
+        set(true, vec![]);
+        assert!(dir.join("apc").exists());
+        // подтверждения идут раз в секунду, пока стоит флаг
+        let started = Instant::now();
+        for _ in 0..3 {
+            assert_eq!(next(&mut host, "apc_beat").get("machines"), None);
+        }
+        assert!(started.elapsed() >= Duration::from_millis(1500), "{:?}", started.elapsed());
+        assert!(started.elapsed() < Duration::from_secs(4), "{:?}", started.elapsed());
+        set(true, vec![s("euv-1")]);
+        loop {
+            let b = next(&mut host, "apc_beat");
+            if b.get("machines").is_some() {
+                assert_eq!(watched(&b), ["euv-1"]);
+                break;
+            }
+        }
+        set(false, vec![]);
+        assert!(!dir.join("apc").exists());
+        // флаг снят — подтверждений больше нет (одно могло уйти до снятия)
+        host.get_ref().set_read_timeout(Some(Duration::from_millis(2500))).unwrap();
+        let mut beats = 0;
+        let mut line = String::new();
+        while host.read_line(&mut line).map(|n| n > 0).unwrap_or(false) {
+            if line.contains("apc_beat") {
+                beats += 1;
+            }
+            line.clear();
+        }
+        assert!(beats <= 1, "{beats} beats after off");
     }
 
     #[test]
