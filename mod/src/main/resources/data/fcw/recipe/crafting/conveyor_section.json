@@ -1,0 +1,28 @@
+{
+  "type": "minecraft:crafting_shapeless",
+  "category": "misc",
+  "ingredients": [
+    {
+      "item": "fcw:steel_plate"
+    },
+    {
+      "item": "fcw:steel_plate"
+    },
+    {
+      "item": "fcw:steel_plate"
+    },
+    {
+      "item": "fcw:electric_motor"
+    },
+    {
+      "item": "minecraft:leather"
+    },
+    {
+      "item": "minecraft:leather"
+    }
+  ],
+  "result": {
+    "id": "fcw:conveyor_section",
+    "count": 2
+  }
+}

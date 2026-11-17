@@ -1,0 +1,28 @@
+{
+  "type": "minecraft:crafting_shapeless",
+  "category": "misc",
+  "ingredients": [
+    {
+      "item": "fcw:electric_motor"
+    },
+    {
+      "item": "fcw:electric_motor"
+    },
+    {
+      "item": "fcw:steel_frame"
+    },
+    {
+      "item": "minecraft:chain"
+    },
+    {
+      "item": "minecraft:chain"
+    },
+    {
+      "item": "minecraft:chain"
+    }
+  ],
+  "result": {
+    "id": "fcw:pulling_head",
+    "count": 1
+  }
+}

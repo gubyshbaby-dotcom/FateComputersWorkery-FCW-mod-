@@ -1,0 +1,21 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "pattern": [
+    "GBG",
+    "G G",
+    "G G"
+  ],
+  "key": {
+    "G": {
+      "item": "fcw:graphite"
+    },
+    "B": {
+      "item": "fcw:copper_bar"
+    }
+  },
+  "result": {
+    "id": "fcw:graphite_electrode",
+    "count": 1
+  }
+}

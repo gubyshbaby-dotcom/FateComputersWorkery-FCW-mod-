@@ -1,0 +1,10 @@
+{
+  "type": "fcw:legacy_chip",
+  "chip": {
+    "item": "fcw:ram_simm"
+  },
+  "result": {
+    "id": "fcw:chip_memory",
+    "count": 1
+  }
+}

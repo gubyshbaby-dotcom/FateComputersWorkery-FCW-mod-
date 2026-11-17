@@ -5,27 +5,28 @@
       "item": "fcw:euv_collector"
     }
   ],
-  "type": "minecraft:crafting_shaped",
+  "type": "minecraft:crafting_shapeless",
   "category": "building",
-  "pattern": [
-    "MMM",
-    "MDM",
-    "SCS"
-  ],
-  "key": {
-    "M": {
-      "item": "fcw:euv_mirror"
+  "ingredients": [
+    {
+      "item": "fcw:multilayer_mirror"
     },
-    "D": {
-      "item": "minecraft:diamond"
+    {
+      "item": "fcw:multilayer_mirror"
     },
-    "S": {
-      "tag": "c:ingots/steel"
+    {
+      "item": "fcw:multilayer_mirror"
     },
-    "C": {
+    {
+      "item": "fcw:multilayer_mirror"
+    },
+    {
       "item": "fcw:euv_casing"
+    },
+    {
+      "item": "minecraft:diamond"
     }
-  },
+  ],
   "result": {
     "id": "fcw:euv_collector",
     "count": 1

@@ -1,0 +1,25 @@
+{
+  "type": "minecraft:crafting_shapeless",
+  "category": "misc",
+  "ingredients": [
+    {
+      "item": "fcw:pump"
+    },
+    {
+      "item": "fcw:electric_motor"
+    },
+    {
+      "item": "fcw:steel_plate"
+    },
+    {
+      "item": "fcw:steel_plate"
+    },
+    {
+      "item": "fcw:chip_controller"
+    }
+  ],
+  "result": {
+    "id": "fcw:turbo_pump",
+    "count": 1
+  }
+}

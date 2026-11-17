@@ -63,6 +63,37 @@ public final class MachineStructure {
         }
     }
 
+    /**
+     * Lays out a construction site: scaffolding in every cell of the future machine and the terminal cell
+     * as a pallet (state "site") with the controller that runs the build. The caller has checked {@link #blockers}.
+     */
+    public static MachineControllerBlockEntity placeSite(Level level, BlockPos origin, Direction facing, MachineDef def) {
+        DISMANTLING.add(origin);
+        try {
+            for (MachineDef.Cell cell : def.cells) {
+                boolean terminal = cell.x() == def.terminal.x() && cell.y() == def.terminal.y() && cell.z() == def.terminal.z();
+                level.setBlock(MachineDef.worldPos(origin, facing, cell), terminal
+                        ? cellState(def, cell, facing, MachineState.SITE, false)
+                        : ProductionMachines.scaffoldState(def, cell, facing), FLAGS);
+            }
+        } finally {
+            DISMANTLING.remove(origin);
+        }
+        return level.getBlockEntity(def.controllerPos(origin, facing)) instanceof MachineControllerBlockEntity be ? be : null;
+    }
+
+    /** Replaces one block of a machine or site without the "a cell is gone, take the machine apart" reaction. */
+    public static void replaceQuietly(Level level, BlockPos origin, BlockPos pos, BlockState state) {
+        boolean added = DISMANTLING.add(origin);
+        try {
+            level.setBlock(pos, state, FLAGS);
+        } finally {
+            if (added) {
+                DISMANTLING.remove(origin);
+            }
+        }
+    }
+
     public static void setState(Level level, BlockPos origin, Direction facing, MachineDef def, MachineState state) {
         for (MachineDef.Cell cell : def.cells) {
             BlockPos pos = MachineDef.worldPos(origin, facing, cell);
@@ -70,7 +101,8 @@ public final class MachineStructure {
                 continue;
             }
             BlockState now = level.getBlockState(pos);
-            if (now.getBlock() instanceof MachineCellBlock b && b.def() == def && now.getValue(MachineCellBlock.STATE) != state) {
+            if (now.getBlock() instanceof MachineCellBlock b && b.def() == def && now.getValue(MachineCellBlock.STATE) != state
+                    && now.getValue(MachineCellBlock.STATE) != MachineState.SITE) {
                 level.setBlock(pos, now.setValue(MachineCellBlock.STATE, state), FLAGS);
             }
         }

@@ -1,0 +1,37 @@
+{
+  "type": "minecraft:crafting_shapeless",
+  "category": "misc",
+  "ingredients": [
+    {
+      "item": "fcw:polished_mirror_blank"
+    },
+    {
+      "item": "fcw:silicon_wafer"
+    },
+    {
+      "item": "fcw:silicon_wafer"
+    },
+    {
+      "item": "fcw:silicon_wafer"
+    },
+    {
+      "item": "fcw:silicon_wafer"
+    },
+    {
+      "item": "minecraft:amethyst_shard"
+    },
+    {
+      "item": "minecraft:amethyst_shard"
+    },
+    {
+      "item": "minecraft:amethyst_shard"
+    },
+    {
+      "item": "minecraft:amethyst_shard"
+    }
+  ],
+  "result": {
+    "id": "fcw:multilayer_mirror",
+    "count": 1
+  }
+}

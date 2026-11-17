@@ -20,3 +20,4 @@ images/work/
 
 # рабочие копии агентов Claude Code
 .claude/
+__pycache__/

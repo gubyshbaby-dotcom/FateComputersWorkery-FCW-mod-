@@ -2,8 +2,12 @@
 usage: gen.py <repo root>"""
 import json
 import os
+import math
 import shutil
 import sys
+
+sys.path.insert(0, __import__("os").path.dirname(__file__))
+import build_data as BD  # noqa: E402
 
 ROOT = sys.argv[1]
 RES = f"{ROOT}/mod/src/main/resources"
@@ -79,13 +83,35 @@ for k in ("controller", "memory", "gpu", "cpu"):
     ITEMS[f"wafer_{k}"] = (w[0], w[1], f"Литограф: пластина + {ru.lower()}", w[3],
                            f"Lithography scanner: wafer + {en.lower()}", w[5])
 
+# =============================================================== construction components
+WHERE_RU = {"craft": "Верстак", "smelting": "Печь", "blasting": "Плавильная печь", "stonecutting": "Камнерез",
+            "wafering": "Резка и полировка"}
+WHERE_EN = {"craft": "Crafting table", "smelting": "Furnace", "blasting": "Blast furnace", "stonecutting": "Stonecutter",
+            "wafering": "Wafering cell"}
+_made = {r[0]: "craft" for r in BD.CRAFT}
+_made.update({r[2]: r[0] for r in BD.COOK})
+_made.update({r[1]: "stonecutting" for r in BD.STONECUT})
+_made.update({r[1]: r[0] for r in BD.MACHINE_RECIPES})
+_used = {}
+for _m, _stages in BD.STAGES.items():
+    for (_sid, _ru, _en, _sec, _items) in _stages:
+        for _it, _n in _items:
+            _used.setdefault(_it, {}).setdefault(_m, 0)
+            _used[_it][_m] += _n
+for _k, (_ru, _en, _stack, _group) in BD.COMPONENTS.items():
+    _u = _used.get(_k)
+    to_ru = ("Нужен: " + ", ".join(f"{BD.MACHINE_NAMES[m][0]} ×{n}" for m, n in _u.items())) if _u else "Деталь других компонентов"
+    to_en = ("Needed by: " + ", ".join(f"{BD.MACHINE_NAMES[m][1]} ×{n}" for m, n in _u.items())) if _u else "A part of other components"
+    ITEMS[_k] = (_ru, _en, WHERE_RU[_made[_k]], to_ru, WHERE_EN[_made[_k]], to_en)
+
 # names of everything else that appears in the docs
 RU = {k.split(".")[-1]: v for k, v in json.load(open(f"{ASSETS}/lang/ru_ru.json", encoding="utf-8")).items()
       if k.startswith(("item.fcw.", "block.fcw."))}
 RU.update({k: v[0] for k, v in ITEMS.items()})
 RU.update({
-    "arc_furnace_kit": "Комплект дуговой печи", "crystal_puller_kit": "Комплект ростовой печи",
-    "wafering_cell_kit": "Комплект участка резки и полировки", "chip_line_kit": "Комплект линии электроники",
+    "arc_furnace_blueprint": "Проект: дуговая печь", "crystal_puller_blueprint": "Проект: ростовая печь",
+    "wafering_cell_blueprint": "Проект: резка и полировка", "chip_line_blueprint": "Проект: линия электроники",
+    "euv_scanner_mk2_blueprint": "Проект: литограф EUV Mk2", "wrench": "Гаечный ключ",
     "euv_casing": "Корпус литографа", "euv_casing_glass": "Корпус литографа со стеклом",
     "euv_casing_vent": "Корпус литографа с решёткой", "euv_frame": "Каркас литографа",
     "euv_vacuum_chamber": "Стенка вакуумной камеры", "euv_mirror": "Многослойное зеркало",
@@ -108,6 +134,9 @@ VANILLA = {
     "obsidian": "обсидиан", "amethyst_shard": "осколок аметиста", "dispenser": "раздатчик", "packed_ice": "плотный лёд",
     "smooth_quartz": "гладкий кварц", "lightning_rod": "громоотвод", "cauldron": "котёл",
     "glass_bottle": "пузырёк", "iron_trapdoor": "железный люк", "comparator": "компаратор",
+    "white_concrete_powder": "белый цемент", "polished_granite": "полированный гранит", "clay_ball": "глина",
+    "sand": "песок", "coal_block": "блок угля", "chain": "цепь", "rail": "рельсы", "leather": "кожа",
+    "tinted_glass": "тонированное стекло", "slime_ball": "слизь", "lever": "рычаг", "blue_dye": "синий краситель",
     "#minecraft:coals": "уголь", "#minecraft:planks": "доски", "#minecraft:wool": "шерсть",
     "#c:ingots/steel": "сталь", "#c:silicon": "технический кремний",
 }
@@ -182,6 +211,8 @@ M = [
      [("fcw:ram_server", 1, 1)], 600, 512),
 ]
 
+M += BD.MACHINE_RECIPES
+
 shutil.rmtree(f"{DATA}/fcw/recipe", ignore_errors=True)
 for (typ, nm, inputs, cat, results, ticks, fe) in M:
     r = {"type": f"fcw:{typ}",
@@ -243,53 +274,16 @@ C = [
      {"S": STEEL, "G": "minecraft:glass_pane", "Q": "minecraft:quartz", "X": "minecraft:diamond"}),
     ("reticles", "reticle_cpu", 1, ["SGS", "GXG", "SQS"],
      {"S": STEEL, "G": "minecraft:glass_pane", "Q": "minecraft:quartz", "X": "fcw:cpu_qfp"}),
-    # --- machine kits
-    ("kits", "arc_furnace_kit", 1, ["IBI", "CFC", "IRI"],
-     {"I": "minecraft:iron_block", "B": "minecraft:bricks", "C": "minecraft:copper_block",
-      "F": "minecraft:blast_furnace", "R": RB}),
-    ("kits", "crystal_puller_kit", 1, ["SPS", "QFQ", "MRM"],
-     {"S": STEEL, "P": P, "Q": "minecraft:quartz_block", "F": "minecraft:blast_furnace", "M": SILICON, "R": RB}),
-    ("kits", "wafering_cell_kit", 1, ["SDS", "DPD", "RBR"],
-     {"S": STEEL, "D": "minecraft:diamond", "P": P, "R": RB, "B": "fcw:silicon_boule"}),
-    ("kits", "chip_line_kit", 1, ["SHS", "WQW", "PRP"],
-     {"S": STEEL, "H": H, "W": "fcw:silicon_wafer", "Q": "fcw:cpu_qfp", "P": P, "R": RB}),
-    # --- EUV scanner blocks
-    ("euv", "euv_casing", 8, ["SIS", "I I", "SIS"], {"S": STEEL, "I": I}),
-    ("euv", "euv_casing_glass", 1, None, ["fcw:euv_casing", G]),
-    ("euv", "euv_casing_vent", 1, None, ["fcw:euv_casing", "minecraft:iron_bars"]),
-    ("euv", "euv_frame", 8, ["SVS", "V V", "SVS"], {"S": STEEL, "V": "minecraft:iron_bars"}),
-    ("euv", "euv_vacuum_chamber", 4, ["SOS", "O O", "SOS"], {"S": STEEL, "O": "minecraft:obsidian"}),
-    ("euv", "euv_mirror", 2, ["PPP", "WAW", "SSS"],
-     {"P": "minecraft:glass_pane", "W": "fcw:silicon_wafer", "A": "minecraft:amethyst_shard", "S": STEEL}),
-    ("euv", "euv_collector", 1, ["MMM", "MDM", "SCS"],
-     {"M": "fcw:euv_mirror", "D": "minecraft:diamond", "S": STEEL, "C": "fcw:euv_casing"}),
-    ("euv", "euv_droplet_generator", 1, ["SHS", "KDK", "SCS"],
-     {"S": STEEL, "H": H, "K": "minecraft:copper_ingot", "D": "minecraft:dispenser", "C": "fcw:euv_casing"}),
-    ("euv", "euv_laser_amplifier", 2, ["SPS", "ARA", "SKS"],
-     {"S": STEEL, "P": "minecraft:glass_pane", "A": "minecraft:amethyst_shard", "R": RB, "K": "minecraft:copper_block"}),
-    ("euv", "euv_chiller", 2, ["SVS", "IKI", "SVS"],
-     {"S": STEEL, "V": "minecraft:iron_bars", "I": "minecraft:packed_ice", "K": "minecraft:copper_block"}),
-    ("euv", "euv_wafer_stage", 4, ["QQQ", "PRP", "SSS"], {"Q": "minecraft:smooth_quartz", "P": P, "R": R, "S": STEEL}),
-    ("euv", "euv_reticle_stage", 3, ["SSS", "PRP", "GGG"], {"S": STEEL, "P": P, "R": R, "G": "minecraft:glass_pane"}),
-    ("euv", "euv_wafer_handler", 2, ["SPS", "HXH", "SRS"], {"S": STEEL, "P": P, "H": H, "X": "fcw:cpu_dip", "R": R}),
-    ("euv", "euv_load_port", 1, ["SGS", "HCH", "SRS"],
-     {"S": STEEL, "G": "minecraft:glass_pane", "H": H, "C": "fcw:euv_casing", "R": R}),
-    ("euv", "euv_vacuum_pump", 1, ["SVS", "PCP", "SRS"],
-     {"S": STEEL, "V": "minecraft:iron_bars", "P": P, "C": "fcw:euv_casing", "R": RB}),
-    ("euv", "euv_power_unit", 1, ["SLS", "RCR", "SKS"],
-     {"S": STEEL, "L": "minecraft:lightning_rod", "R": RB, "C": "fcw:euv_casing", "K": "minecraft:copper_block"}),
-    ("euv", "euv_controller", 1, ["SMS", "QCQ", "SBS"],
-     {"S": STEEL, "M": "fcw:crt_monitor", "Q": "fcw:cpu_qfp", "C": "fcw:euv_casing", "B": "fcw:motherboard"}),
-    ("euv", "euv_port_energy", 1, None, ["fcw:euv_casing", RB]),
-    ("euv", "euv_port_coolant", 1, None, ["fcw:euv_casing", "minecraft:cauldron"]),
-    ("euv", "euv_port_gas", 1, None, ["fcw:euv_casing", "minecraft:glass_bottle"]),
-    ("euv", "euv_port_exhaust", 1, None, ["fcw:euv_casing", "minecraft:iron_trapdoor"]),
-    ("euv", "euv_port_data", 1, None, ["fcw:euv_casing", "minecraft:comparator"]),
-    ("euv", "euv_port_item", 1, None, ["fcw:euv_casing", H]),
+    # --- machine blueprints and the wrench (docs/design/MACHINE_BUILD.md)
+] + [("build", f"{m}_blueprint", 1, None, ["minecraft:paper"] * 4 + ["minecraft:blue_dye", BD.BLUEPRINT_CPU[m]]) for m in BD.MACHINES] + [
+    ("build", "wrench", 1, ["P P", " I "], {"P": "fcw:steel_plate", "I": I}),
+    ("build", "wrench_iron", 1, ["P P", " I "], {"P": "fcw:iron_plate", "I": I}),
+] + [("components", res, count, pattern, key) for (res, count, pattern, key) in BD.CRAFT] + [
+    ("euv", res, count, None, key) for (res, count, key) in BD.EUV
 ]
 # items registered by the machines agent: recipes are skipped until those items exist
-DEFERRED = ("euv_", "_kit")
-CATEGORY = {"parts": "misc", "computers": "misc", "peripherals": "misc", "network": "misc", "reticles": "misc", "kits": "misc", "euv": "building"}
+DEFERRED = ("euv_", "_blueprint")
+CATEGORY = {"parts": "misc", "computers": "misc", "peripherals": "misc", "network": "misc", "reticles": "misc", "build": "misc", "components": "misc", "euv": "building"}
 for (sec, res, count, pattern, key) in C:
     r = {}
     if res.startswith(DEFERRED[0]) or res.endswith(DEFERRED[1]):
@@ -303,8 +297,30 @@ for (sec, res, count, pattern, key) in C:
     else:
         r.update({"type": "minecraft:crafting_shapeless", "category": CATEGORY[sec],
                   "ingredients": [ing(v) for v in key]})
-    r["result"] = {"id": f"fcw:{res}", "count": count}
+    r["result"] = {"id": "fcw:wrench" if res == "wrench_iron" else f"fcw:{res}", "count": count}
     write(f"{DATA}/fcw/recipe/crafting/{res}.json", r)
+
+# =============================================================== furnaces, stonecutter, bench chips
+for (kind, inp, res, xp, ticks) in BD.COOK:
+    write(f"{DATA}/fcw/recipe/{kind}/{res}.json", {"type": f"minecraft:{kind}", "category": "misc", "ingredient": ing(inp),
+                                                   "result": {"id": f"fcw:{res}"}, "experience": xp, "cookingtime": ticks})
+for (inp, res, count) in BD.STONECUT:
+    write(f"{DATA}/fcw/recipe/stonecutting/{res}.json", {"type": "minecraft:stonecutting", "ingredient": ing(inp),
+                                                         "result": {"id": f"fcw:{res}", "count": count}})
+for (nm, chip, extra, res) in BD.LEGACY_CHIPS:
+    r = {"type": "fcw:legacy_chip", "chip": ing(chip), "result": {"id": f"fcw:{res}", "count": 1}}
+    if extra:
+        r["extra"] = ing(extra)
+    write(f"{DATA}/fcw/recipe/crafting/{nm}.json", r)
+
+# =============================================================== construction data read by the game
+shutil.rmtree(f"{DATA}/fcw/construction", ignore_errors=True)
+for m, stages in BD.STAGES.items():
+    write(f"{DATA}/fcw/construction/{m}.json", {"stages": [
+        {"id": sid, "ru": ru, "en": en, "seconds": sec,
+         "items": [{"item": it if ":" in it else f"fcw:{it}", "count": n} for it, n in items]}
+        for (sid, ru, en, sec, items) in stages]})
+write(f"{DATA}/fcw/construction/components.json", {"components": [{"id": k, "stack": v[2]} for k, v in BD.COMPONENTS.items()]})
 
 # =============================================================== recipe book unlock
 # One advancement: the first redstone, iron or quartz in the inventory shows every recipe of the mod
@@ -346,7 +362,7 @@ tag("fcw", "chips/any", ["#fcw:chips/micron", "#fcw:chips/duv", "#fcw:chips/imme
 assert set(MICRON + EUV) == set(CPU + MEM + ["chip_gpu", "chip_controller"])
 
 # =============================================================== item models + lang
-FLAT = [k for k in ITEMS if k not in ("silicon_boule", "pcb_blank")]
+FLAT = [k for k in ITEMS if k not in ("silicon_boule", "pcb_blank")] + [f"{m}_blueprint" for m in BD.MACHINES] + ["wrench"]
 for k in FLAT:
     assert os.path.exists(f"{ASSETS}/textures/item/{k}.png"), k
     with open(f"{ASSETS}/models/item/{k}.json", "w") as f:
@@ -360,6 +376,11 @@ for lang, ni, fi, ti, uses in (("ru_ru", 0, 2, 3, "Осталось экспоз
         d[f"tooltip.fcw.{k}.from"] = v[fi]
         d[f"tooltip.fcw.{k}.to"] = v[ti]
     d["tooltip.fcw.uses_left"] = uses
+    for m in BD.MACHINES:
+        d[f"item.fcw.{m}_blueprint"] = ("Проект: " if ni == 0 else "Blueprint: ") + BD.MACHINE_NAMES[m][ni]
+        if m != "euv_scanner_mk2":
+            d[f"item.fcw.{m}_kit"] = ("Комплект (старый): " if ni == 0 else "Kit (legacy): ") + BD.MACHINE_NAMES[m][ni]
+    d["item.fcw.wrench"] = "Гаечный ключ" if ni == 0 else "Wrench"
     with open(path, "w", encoding="utf-8") as f:
         json.dump(dict(sorted(d.items())), f, ensure_ascii=False, indent=2)
         f.write("\n")
@@ -442,22 +463,20 @@ A("## Крафт на верстаке")
 A("")
 SEC_RU = {"parts": "Детали без машин", "computers": "Компьютеры", "peripherals": "Мониторы, ввод и звук",
           "network": "Сеть данных",
-          "reticles": "Фотошаблоны", "kits": "Комплекты машин", "euv": "Блоки литографа EUV"}
+          "reticles": "Фотошаблоны", "build": "Проекты машин и ключ", "components": "Компоненты машин (верстак)",
+          "euv": "Блоки литографа EUV"}
 SEC_NOTE = {
     "parts": "Материнская плата на верстаке обходится дороже, чем на линии электроники, зато доступна сразу.",
     "computers": "Все корпуса работают одинаково, отличается только вид. Простые из железа, современные из стали.",
     "network": "Кабель данных соединяет компьютер с машинами; роутер добавляет в сеть машины в радиусе 32 блоков "
                "без кабеля. Управление: `fcw machine` в компьютере.",
     "reticles": "Образец в центре определяет, что будет на пластине. Прочность: 64 экспозиции.",
-    "kits": "Комплект ставит машину целиком (ПКМ по земле). Дуговая печь собирается из ванильных материалов, "
-            "каждая следующая машина требует сталь и продукт предыдущей.",
+    "build": "Проект ставит стройплощадку машины (ПКМ по земле); цена машины в её ведомости, см. «Постройка». "
+             "Ключ разбирает машину: Shift + ПКМ по пульту выключенной машины, второй раз для подтверждения.",
+    "components": "Из компонентов собирают машины на стройплощадке. Часть рецептов не на верстаке: см. таблицу ниже.",
     "euv": "В скобках после названия: сколько таких блоков идёт на один литограф (всего 301).",
 }
-EUV_COUNT = {"euv_casing": 97, "euv_casing_glass": 29, "euv_casing_vent": 12, "euv_chiller": 9, "euv_collector": 1,
-             "euv_controller": 1, "euv_droplet_generator": 1, "euv_frame": 24, "euv_laser_amplifier": 22,
-             "euv_load_port": 2, "euv_mirror": 22, "euv_port_coolant": 2, "euv_port_data": 1, "euv_port_energy": 1,
-             "euv_port_exhaust": 1, "euv_port_gas": 2, "euv_port_item": 2, "euv_power_unit": 1, "euv_reticle_stage": 9,
-             "euv_vacuum_chamber": 23, "euv_vacuum_pump": 2, "euv_wafer_handler": 13, "euv_wafer_stage": 24}
+EUV_COUNT = BD.EUV_COUNT
 cur = None
 for (sec, res, count, pattern, key) in C:
     if sec != cur:
@@ -471,7 +490,7 @@ for (sec, res, count, pattern, key) in C:
             A("")
         A("| Предмет | Выход | Сетка | Обозначения |")
         A("|---|---|---|---|")
-    title = RU[res] + (f" ({EUV_COUNT[res]})" if res in EUV_COUNT else "")
+    title = RU["wrench" if res == "wrench_iron" else res] + (f" ({EUV_COUNT[res]})" if res in EUV_COUNT else "")
     if pattern:
         grid = "<br>".join("`" + p.replace(" ", "·") + "`" for p in pattern)
         legend = ", ".join(f"`{k}` {name(v)}" for k, v in key.items())
@@ -482,6 +501,46 @@ for (sec, res, count, pattern, key) in C:
             cnt[v] = cnt.get(v, 0) + 1
         legend = " + ".join(fmt(v, c) for v, c in cnt.items())
     A(f"| {title} (`{res}`) | {count} | {grid} | {legend} |")
+A("")
+A("### Компоненты: печи, камнерез, машины")
+A("")
+A("| Предмет | Из чего | Где |")
+A("|---|---|---|")
+for (kind, inp, res, xp, ticks) in BD.COOK:
+    A(f"| {RU[res]} (`{res}`) | {name(inp)} | {WHERE_RU[kind].lower()} |")
+for (inp, res, count) in BD.STONECUT:
+    A(f"| {fmt('fcw:' + res, count)} (`{res}`) | {name(inp)} | камнерез |")
+for (typ, nm, inputs, cat, results, ticks, fe) in BD.MACHINE_RECIPES:
+    A(f"| {RU[nm]} (`{nm}`) | {' + '.join(fmt(i, c) for i, c in inputs)} | {MACHINE_RU[typ].lower()}, {secs(ticks)}, {fe} FE/т |")
+A("")
+A("Чипы для первого литографа. Контроллеры, память и процессоры PGA нельзя сделать без литографа, поэтому")
+A("первый литограф строится на чипах с верстака: на уровне `engineer` три за один, на `standard` один за один,")
+A("на `fab` замены нет.")
+A("")
+A("| Получается | Из чего (на `engineer`) |")
+A("|---|---|")
+for (nm, chip, extra, res) in BD.LEGACY_CHIPS:
+    A(f"| {RU[res]} (`{res}`) | 3 × {name(chip)}" + (f" + {name(extra)}" if extra else "") + " |")
+A("")
+A("## Постройка машин")
+A("")
+A("Машину ставит проект: ПКМ по земле размечает стройплощадку с лесами и поддоном на месте будущего пульта.")
+A("Компоненты завозят на поддон или на леса (ПКМ предметом, воронки, трубы), можно все сразу. Этап начинается")
+A("сам, когда закончен предыдущий и его компоненты на месте; в конце 30 секунд пусконаладки. Литограф можно")
+A("также выложить руками из блоков по схеме: тогда ПКМ по контроллеру запускает только пусконаладку (10 минут).")
+A("Числа ниже для уровня `engineer` (`production.difficulty`); на `standard` четверть количества и времени.")
+A("")
+for m, stages in BD.STAGES.items():
+    total = sum(n for st in stages for _, n in st[4])
+    A(f"### {BD.MACHINE_NAMES[m][0][0].upper() + BD.MACHINE_NAMES[m][0][1:]}: {total} шт., {sum(st[3] for st in stages) // 60} мин")
+    A("")
+    A("| Этап | Время | Компоненты |")
+    A("|---|---|---|")
+    for i, (sid, ru, en, sec, items) in enumerate(stages):
+        A(f"| {i + 1}. {ru} | {sec} с | " + ", ".join(f"{name(it if ':' in it else 'fcw:' + it)} ×{n}" for it, n in items) + " |")
+    A("")
+A("Разбор: гаечным ключом, этапы идут в обратном порядке за половину времени, возвращается 75 % компонентов")
+A("(на `standard` всё, на `fab` 60 %); шкафы управления и проект возвращаются всегда.")
 A("")
 A("## Теги")
 A("")

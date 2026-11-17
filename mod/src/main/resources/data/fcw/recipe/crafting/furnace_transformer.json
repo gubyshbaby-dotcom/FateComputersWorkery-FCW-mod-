@@ -1,0 +1,27 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "pattern": [
+    "PCP",
+    "CFC",
+    "BCB"
+  ],
+  "key": {
+    "P": {
+      "item": "fcw:iron_plate"
+    },
+    "C": {
+      "item": "fcw:copper_coil"
+    },
+    "F": {
+      "item": "fcw:iron_frame"
+    },
+    "B": {
+      "item": "fcw:copper_bar"
+    }
+  },
+  "result": {
+    "id": "fcw:furnace_transformer",
+    "count": 1
+  }
+}

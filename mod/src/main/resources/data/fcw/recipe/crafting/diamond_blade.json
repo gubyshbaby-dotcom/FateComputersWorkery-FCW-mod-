@@ -1,0 +1,21 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "pattern": [
+    " D ",
+    "DSD",
+    " D "
+  ],
+  "key": {
+    "D": {
+      "item": "minecraft:diamond"
+    },
+    "S": {
+      "item": "fcw:steel_plate"
+    }
+  },
+  "result": {
+    "id": "fcw:diamond_blade",
+    "count": 1
+  }
+}

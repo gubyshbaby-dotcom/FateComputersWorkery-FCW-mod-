@@ -37,7 +37,7 @@ final class MachineStatusRenderer {
     private static final int COLS = 16;
     /** Size of the readout in blocks: 16 cells of 8x16 font pixels, two lines. */
     private static final float WIDTH = 0.875f, CELL_W = WIDTH / COLS, CELL_H = CELL_W * 2, HEIGHT = CELL_H * 2;
-    private static final int GLASS = 0x0B0C0F, TEXT = 0xC9CDD6, LAMP_OFF = 0x2A2B30, LAMP_RED = 0xFF3B30, LAMP_WHITE = 0xF4F6FA;
+    private static final int GLASS = 0x0B0C0F, TEXT = 0xC9CDD6, LAMP_OFF = 0x2A2B30, LAMP_RED = 0xFF3B30, LAMP_YELLOW = 0xFFC400, LAMP_WHITE = 0xF4F6FA;
 
     private MachineStatusRenderer() {
     }
@@ -48,7 +48,9 @@ final class MachineStatusRenderer {
         if (level == null) {
             return;
         }
-        items(be, pose, buffers, level);
+        if (be.site() == null) {
+            items(be, pose, buffers, level);
+        }
 
         ConsoleFont font = ConsoleFont.get();
         VertexConsumer vc = buffers.getBuffer(RenderType.text(ConsoleFont.TEXTURE));
@@ -81,7 +83,11 @@ final class MachineStatusRenderer {
         boolean fault = be.isEnabled() && be.faultStatus() != null;
         boolean blink = level.getGameTime() / 10 % 2 == 0;
         Vector3f lamp = new Vector3f(c).add(new Vector3f(up).mul(HEIGHT / 2 + 0.11f));
-        cube(vc, m, font, block, lamp, n, r, up, 0.11f, fault && blink ? LAMP_RED : LAMP_OFF);
+        boolean waiting = be.site() != null && be.site().waiting();
+        cube(vc, m, font, block, lamp, n, r, up, 0.11f, fault && blink ? LAMP_RED : waiting && blink ? LAMP_YELLOW : LAMP_OFF);
+        if (be.site() != null) {
+            marking(vc, m, font, block, def);
+        }
 
         // lamp at the power inlet
         MachineDef.Port power = def.port("power");
@@ -94,8 +100,62 @@ final class MachineStatusRenderer {
         }
     }
 
+    /** The outline of the future machine on the ground: a yellow and black line around its footprint. */
+    private static void marking(VertexConsumer vc, Matrix4f m, ConsoleFont font, int block, MachineDef def) {
+        float w = 0.12f, y = 0.02f;
+        Vector3f x = new Vector3f(1, 0, 0), back = new Vector3f(0, 0, -1), left = new Vector3f(1, 0, 0);
+        for (int i = 0; i < def.sx * 2; i++) {
+            int c = i % 2 == 0 ? 0xF2C230 : 0x1A1A1C;
+            quad(vc, m, font, block, new Vector3f(i * 0.5f, y, -w), x, back, 0.5f, w, c);
+            quad(vc, m, font, block, new Vector3f(i * 0.5f, y, def.sz), x, back, 0.5f, w, c);
+        }
+        for (int i = 0; i < def.sz * 2; i++) {
+            int c = i % 2 == 0 ? 0x1A1A1C : 0xF2C230;
+            quad(vc, m, font, block, new Vector3f(-w, y, i * 0.5f), left, new Vector3f(0, 0, -1), w, 0.5f, c);
+            quad(vc, m, font, block, new Vector3f(def.sx, y, i * 0.5f), left, new Vector3f(0, 0, -1), w, 0.5f, c);
+        }
+    }
+
+    private static String fit(String left, String right) {
+        int room = COLS - right.length() - 1;
+        left = left.length() > room ? left.substring(0, Math.max(0, room)) : left;
+        return left + " ".repeat(Math.max(1, COLS - left.length() - right.length())) + right;
+    }
+
+    /** The pallet of a site: the stage and its progress, and below what is missing (one item at a time, two seconds each). */
+    private static String[] siteReadout(MachineControllerBlockEntity be) {
+        com.fatecomputers.fcw.production.machine.construction.ConstructionSite site = be.site();
+        var plan = site.plan();
+        int index = Math.max(0, Math.min(site.stage(), plan.stages.size() - 1));
+        String line1 = fit(I18n.get("readout.fcw.stage", index + 1, plan.stages.size()), (int) Math.round(site.stageProgress() * 100) + " %");
+        String line2;
+        if (site.mode() == com.fatecomputers.fcw.production.machine.construction.ConstructionSite.Mode.TEARDOWN) {
+            line2 = I18n.get("readout.fcw.teardown");
+        } else if (site.waitingPower()) {
+            line2 = I18n.get("readout.fcw.reason.no_power");
+        } else if (site.started()) {
+            line2 = I18n.get("readout.fcw.assembly");
+        } else {
+            List<int[]> missing = site.missing(index);
+            if (missing.isEmpty()) {
+                line2 = "";
+            } else {
+                int[] lack = missing.get((int) (System.currentTimeMillis() / 2000 % missing.size()));
+                String name = plan.stages.get(index).entries().get(lack[0]).item().getDescription().getString();
+                line2 = fit(I18n.get("readout.fcw.lacks") + " " + name, String.valueOf(lack[1]));
+            }
+        }
+        return new String[] {line1.toUpperCase(Locale.ROOT), line2.toUpperCase(Locale.ROOT)};
+    }
+
     /** Two lines of at most 16 characters: the state, and a detail. */
     static String[] readout(MachineControllerBlockEntity be) {
+        if (be.site() != null) {
+            return siteReadout(be);
+        }
+        if (be.isCommissioning()) {
+            return new String[] {I18n.get("readout.fcw.commissioning").toUpperCase(Locale.ROOT), (be.commissioningTicks() / 20) + " S"};
+        }
         String state, detail = "";
         Status fault = be.faultStatus();
         if (!be.isEnabled()) {

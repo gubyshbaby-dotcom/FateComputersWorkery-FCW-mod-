@@ -8,6 +8,8 @@ import com.fatecomputers.fcw.production.machine.MachineLog;
 import com.fatecomputers.fcw.production.machine.MachineNames;
 import com.fatecomputers.fcw.production.machine.MachineRecipeNames;
 import com.fatecomputers.fcw.production.machine.MachineSpec.Role;
+import com.fatecomputers.fcw.production.machine.construction.ConstructionPlan;
+import com.fatecomputers.fcw.production.machine.construction.ConstructionSite;
 import com.fatecomputers.fcw.production.machine.MachineSpec.Section;
 import com.fatecomputers.fcw.production.machine.MachineSpec.Zone;
 import com.fatecomputers.fcw.production.recipe.ChanceResult;
@@ -41,7 +43,7 @@ import java.util.Locale;
  */
 public final class MachineShell {
     /** Имена команд, для автодополнения на пульте. */
-    public static final List<String> COMMANDS = List.of("status", "start", "stop", "recipe", "log", "name", "help", "exit");
+    public static final List<String> COMMANDS = List.of("status", "start", "stop", "recipe", "log", "name", "bom", "stage", "cancel", "help", "exit");
     private static final DateTimeFormatter CLOCK = DateTimeFormatter.ofPattern("HH:mm:ss").withZone(ZoneId.systemDefault());
 
     private MachineShell() {
@@ -113,6 +115,9 @@ public final class MachineShell {
             case "recipe" -> recipe(machine, t, json, args);
             case "log" -> log(machine, t, json, args);
             case "name" -> name(machine, t, args, actor);
+            case "bom" -> bom(machine, t, lang, json);
+            case "stage" -> stage(machine, t, lang);
+            case "cancel" -> cancel(machine, t, actor);
             case "help" -> help(t);
             default -> error(t, t.tr("unknown", cmd));
         };
@@ -171,6 +176,12 @@ public final class MachineShell {
 
     /** off, idle, run or fault: the machine as a whole. */
     public static String stateCode(MachineControllerBlockEntity m) {
+        if (m.site() != null) {
+            return m.site().mode() == ConstructionSite.Mode.BUILD ? "build" : "teardown";
+        }
+        if (m.isCommissioning()) {
+            return "commissioning";
+        }
         if (!m.isEnabled()) {
             return "off";
         }
@@ -213,7 +224,23 @@ public final class MachineShell {
     // ───────────────────────── status
 
     private static Rich status(MachineControllerBlockEntity m, ShellLang t, boolean json) {
+        if (m.site() != null) {
+            return siteStatus(m, t, json);
+        }
         List<Line> lines = new ArrayList<>();
+        if (m.isCommissioning()) {
+            String headC = label(t, "label.state"), wordC = t.tr("state.commissioning");
+            lines.add(new Line(headC + wordC + ": " + t.tr("site.seconds_left", m.commissioningTicks() / 20), headC.length(), headC.length() + wordC.length()));
+            JsonObject oc = null;
+            if (json) {
+                oc = new JsonObject();
+                oc.addProperty("name", name(m));
+                oc.addProperty("type", m.def().name);
+                oc.addProperty("state", "commissioning");
+                oc.addProperty("seconds_left", m.commissioningTicks() / 20);
+            }
+            return new Rich(0, lines, oc);
+        }
         String code = stateCode(m);
         Status fault = m.faultStatus();
         String word, detail;
@@ -346,6 +373,9 @@ public final class MachineShell {
     // ───────────────────────── start, stop
 
     private static Rich start(MachineControllerBlockEntity m, ShellLang t, String actor) {
+        if (m.site() != null || m.isCommissioning()) {
+            return new Rich(1, List.of(refused(t, t.tr("site.not_ready"))), null);
+        }
         boolean was = m.isEnabled() && !m.isStopping();
         m.setEnabled(true, actor);
         Status fault = m.faultStatus();
@@ -528,6 +558,157 @@ public final class MachineShell {
         return new Rich(0, lines, o);
     }
 
+    // ───────────────────────── construction site
+
+    private static String stageTitle(ConstructionPlan.Stage s, String lang) {
+        return s.title(lang).toLowerCase(Locale.ROOT);
+    }
+
+    /** One word for what a stage of a site is doing. */
+    private static String stageState(MachineControllerBlockEntity m, ShellLang t, int index) {
+        ConstructionSite site = m.site();
+        if (site == null || index < site.stage()) {
+            return t.tr("site.stage.done");
+        }
+        if (index > site.stage()) {
+            return t.tr("site.stage.waits");
+        }
+        if (!site.started()) {
+            return t.tr("site.stage.materials");
+        }
+        String word = t.tr(site.mode() == ConstructionSite.Mode.BUILD ? "site.stage.building" : "site.stage.teardown");
+        int pct = (int) Math.round(site.stageProgress() * 100);
+        return word + " " + pct + " %" + (site.waitingPower() ? ", " + t.tr("reason.no_power") : "");
+    }
+
+    private static Rich siteStatus(MachineControllerBlockEntity m, ShellLang t, boolean json) {
+        ConstructionSite site = m.site();
+        ConstructionPlan plan = site.plan();
+        String lang = t.tr("lang.code");
+        List<Line> lines = new ArrayList<>();
+        boolean build = site.mode() == ConstructionSite.Mode.BUILD;
+        String head = label(t, "label.state"), word = t.tr(build ? "state.build" : "state.teardown");
+        int index = Math.max(0, Math.min(site.stage(), plan.stages.size() - 1));
+        ConstructionPlan.Stage s = plan.stages.get(index);
+        lines.add(new Line(head + word + ": " + t.tr("site.stage_of", index + 1, plan.stages.size(), stageTitle(s, lang)) + ", " + stageState(m, t, index),
+                head.length(), head.length() + word.length()));
+        JsonObject missing = new JsonObject();
+        if (build && !site.started()) {
+            StringBuilder sb = new StringBuilder();
+            for (int[] lack : site.missing(index)) {
+                String id = s.entries().get(lack[0]).itemId().getPath();
+                sb.append(sb.isEmpty() ? "" : ", ").append(id).append(" x").append(lack[1]);
+                missing.addProperty(s.entries().get(lack[0]).itemId().toString(), lack[1]);
+            }
+            lines.add(Line.plain(label(t, "label.missing") + sb));
+        }
+        int cost = com.fatecomputers.fcw.production.ProductionDifficulty.current().buildEnergyPerTick();
+        lines.add(Line.plain(label(t, "label.power") + (cost > 0
+                ? fe(m.energy().getEnergyStored()) + "/" + fe(MachineControllerBlockEntity.ENERGY_CAPACITY) + " FE  " + t.tr("site.needs", cost)
+                : t.tr("site.no_power_needed"))));
+        JsonObject o = null;
+        if (json) {
+            o = new JsonObject();
+            o.addProperty("name", name(m));
+            o.addProperty("type", m.def().name);
+            o.addProperty("state", build ? "build" : "teardown");
+            o.addProperty("stage", index + 1);
+            o.addProperty("stages", plan.stages.size());
+            o.addProperty("stage_id", s.id());
+            o.addProperty("started", site.started());
+            o.addProperty("progress", site.stageProgress());
+            o.addProperty("waiting_power", site.waitingPower());
+            o.add("missing", missing);
+            o.addProperty("missing_total", site.missingTotal());
+            o.addProperty("energy", m.energy().getEnergyStored());
+            o.addProperty("capacity", MachineControllerBlockEntity.ENERGY_CAPACITY);
+        }
+        return new Rich(0, lines, o);
+    }
+
+    /** The whole bill of materials by stage: delivered / needed. For a finished machine, what it was built of. */
+    private static Rich bom(MachineControllerBlockEntity m, ShellLang t, String lang, boolean json) {
+        ConstructionSite site = m.site();
+        ConstructionPlan plan = ConstructionPlan.of(m.def());
+        List<Line> lines = new ArrayList<>();
+        JsonArray stages = new JsonArray();
+        for (int i = 0; i < plan.stages.size(); i++) {
+            ConstructionPlan.Stage s = plan.stages.get(i);
+            String title = stageTitle(s, lang);
+            String head = t.tr("site.stage_n", i + 1) + "  " + title + " ".repeat(Math.max(1, 26 - title.length()));
+            boolean open = site != null && site.mode() == ConstructionSite.Mode.BUILD && i >= site.stage() && !(i == site.stage() && site.started());
+            int have = 0, need = 0;
+            JsonArray items = new JsonArray();
+            List<Line> rows = new ArrayList<>();
+            for (int e = 0; e < s.entries().size(); e++) {
+                ConstructionPlan.Entry entry = s.entries().get(e);
+                int h = site == null ? entry.need() : site.have(i, e);
+                have += h;
+                need += entry.need();
+                String id = entry.itemId().getPath();
+                rows.add(Line.plain("          " + id + " ".repeat(Math.max(1, 24 - id.length())) + String.format(Locale.ROOT, "%3d/%d", h, entry.need())));
+                JsonObject it = new JsonObject();
+                it.addProperty("id", entry.itemId().toString());
+                it.addProperty("have", h);
+                it.addProperty("need", entry.need());
+                items.add(it);
+            }
+            String state = stageState(m, t, i);
+            // stages still open show their lines only when something of them has arrived; else a total
+            boolean detail = open && (have > 0 || i == site.stage());
+            lines.add(Line.plain(head + state + (open && !detail ? "    " + have + "/" + need : "")));
+            if (detail || (site != null && i == site.stage() && site.started())) {
+                lines.addAll(rows);
+            }
+            JsonObject so = new JsonObject();
+            so.addProperty("id", s.id());
+            so.addProperty("title", s.title(lang));
+            so.addProperty("seconds", s.ticks() / 20);
+            so.add("items", items);
+            stages.add(so);
+        }
+        if (site != null && site.mode() == ConstructionSite.Mode.BUILD) {
+            lines.add(Line.plain(t.tr("site.missing_total", site.missingTotal())));
+        }
+        JsonObject o = null;
+        if (json) {
+            o = new JsonObject();
+            o.add("stages", stages);
+            o.addProperty("missing_total", site == null ? 0 : site.missingTotal());
+        }
+        return new Rich(0, lines, o);
+    }
+
+    private static Rich stage(MachineControllerBlockEntity m, ShellLang t, String lang) {
+        ConstructionSite site = m.site();
+        if (site == null) {
+            return new Rich(0, List.of(Line.plain(t.tr("site.built"))), null);
+        }
+        ConstructionPlan plan = site.plan();
+        int index = Math.max(0, Math.min(site.stage(), plan.stages.size() - 1));
+        ConstructionPlan.Stage s = plan.stages.get(index);
+        List<Line> lines = new ArrayList<>();
+        lines.add(Line.plain(t.tr("site.stage_of", index + 1, plan.stages.size(), stageTitle(s, lang)) + "  " + stageState(m, t, index)
+                + "  " + (s.ticks() / 20) + " s"));
+        for (int e = 0; e < s.entries().size(); e++) {
+            String id = s.entries().get(e).itemId().getPath();
+            lines.add(Line.plain("  " + id + " ".repeat(Math.max(1, 24 - id.length())) + site.have(index, e) + "/" + s.entries().get(e).need()));
+        }
+        return new Rich(0, lines, null);
+    }
+
+    private static Rich cancel(MachineControllerBlockEntity m, ShellLang t, String actor) {
+        ConstructionSite site = m.site();
+        if (site == null) {
+            return new Rich(1, List.of(refused(t, t.tr("site.cancel_built"))), null);
+        }
+        if (site.mode() == ConstructionSite.Mode.TEARDOWN) {
+            return new Rich(0, List.of(Line.plain(t.tr("site.already_teardown"))), null);
+        }
+        site.beginTeardown(actor);
+        return new Rich(0, List.of(Line.plain(t.tr("site.cancelled"))), null);
+    }
+
     // ───────────────────────── name, help
 
     private static Rich name(MachineControllerBlockEntity m, ShellLang t, List<String> args, String actor) {
@@ -549,7 +730,7 @@ public final class MachineShell {
 
     private static Rich help(ShellLang t) {
         List<Line> lines = new ArrayList<>();
-        for (String c : List.of("status", "start", "stop", "recipe", "log", "name", "help", "exit")) {
+        for (String c : List.of("status", "start", "stop", "recipe", "log", "name", "bom", "stage", "cancel", "help", "exit")) {
             lines.add(Line.plain(t.tr("help." + c)));
         }
         return new Rich(0, lines, null);

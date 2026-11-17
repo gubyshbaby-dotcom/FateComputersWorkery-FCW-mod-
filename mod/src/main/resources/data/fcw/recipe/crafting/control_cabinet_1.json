@@ -1,0 +1,33 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "pattern": [
+    "PLP",
+    "CXC",
+    "PMB"
+  ],
+  "key": {
+    "P": {
+      "item": "fcw:iron_plate"
+    },
+    "L": {
+      "item": "minecraft:lever"
+    },
+    "C": {
+      "item": "minecraft:comparator"
+    },
+    "X": {
+      "item": "fcw:cpu_dip"
+    },
+    "M": {
+      "item": "fcw:ram_dip"
+    },
+    "B": {
+      "item": "minecraft:redstone_block"
+    }
+  },
+  "result": {
+    "id": "fcw:control_cabinet_1",
+    "count": 1
+  }
+}

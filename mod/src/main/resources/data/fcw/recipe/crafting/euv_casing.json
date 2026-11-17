@@ -5,23 +5,21 @@
       "item": "fcw:euv_casing"
     }
   ],
-  "type": "minecraft:crafting_shaped",
+  "type": "minecraft:crafting_shapeless",
   "category": "building",
-  "pattern": [
-    "SIS",
-    "I I",
-    "SIS"
-  ],
-  "key": {
-    "S": {
-      "tag": "c:ingots/steel"
+  "ingredients": [
+    {
+      "item": "fcw:steel_frame"
     },
-    "I": {
-      "item": "minecraft:iron_ingot"
+    {
+      "item": "fcw:enclosure_panel"
+    },
+    {
+      "item": "fcw:enclosure_panel"
     }
-  },
+  ],
   "result": {
     "id": "fcw:euv_casing",
-    "count": 8
+    "count": 2
   }
 }

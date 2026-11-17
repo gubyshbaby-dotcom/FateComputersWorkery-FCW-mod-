@@ -1,0 +1,12 @@
+{
+  "type": "minecraft:blasting",
+  "category": "misc",
+  "ingredient": {
+    "item": "fcw:crucible_blank"
+  },
+  "result": {
+    "id": "fcw:quartz_crucible"
+  },
+  "experience": 0.5,
+  "cookingtime": 400
+}

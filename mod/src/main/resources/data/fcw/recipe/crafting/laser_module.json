@@ -1,0 +1,37 @@
+{
+  "type": "minecraft:crafting_shapeless",
+  "category": "misc",
+  "ingredients": [
+    {
+      "item": "fcw:steel_frame"
+    },
+    {
+      "item": "fcw:copper_coil"
+    },
+    {
+      "item": "fcw:copper_coil"
+    },
+    {
+      "item": "fcw:copper_coil"
+    },
+    {
+      "item": "minecraft:tinted_glass"
+    },
+    {
+      "item": "minecraft:tinted_glass"
+    },
+    {
+      "item": "minecraft:amethyst_shard"
+    },
+    {
+      "item": "minecraft:amethyst_shard"
+    },
+    {
+      "item": "fcw:chip_controller"
+    }
+  ],
+  "result": {
+    "id": "fcw:laser_module",
+    "count": 1
+  }
+}

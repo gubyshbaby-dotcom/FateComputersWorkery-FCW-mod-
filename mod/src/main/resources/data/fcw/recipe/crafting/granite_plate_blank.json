@@ -1,0 +1,17 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "pattern": [
+    "GG",
+    "GG"
+  ],
+  "key": {
+    "G": {
+      "item": "minecraft:polished_granite"
+    }
+  },
+  "result": {
+    "id": "fcw:granite_plate_blank",
+    "count": 1
+  }
+}

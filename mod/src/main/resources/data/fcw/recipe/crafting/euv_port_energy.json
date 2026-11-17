@@ -12,7 +12,10 @@
       "item": "fcw:euv_casing"
     },
     {
-      "item": "minecraft:redstone_block"
+      "item": "fcw:copper_bar"
+    },
+    {
+      "item": "fcw:copper_bar"
     }
   ],
   "result": {

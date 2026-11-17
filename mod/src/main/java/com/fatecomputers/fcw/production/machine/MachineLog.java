@@ -28,6 +28,14 @@ public final class MachineLog {
     public static final String WAIT = "wait";           // arg: reason (no_input)
     public static final String PIN = "pin";             // arg: recipe or "auto"
     public static final String RENAME = "rename";       // arg: new name
+    // construction site
+    public static final String SITE_START = "site_start";           // arg: who
+    public static final String SITE_STAGE = "site_stage";           // arg: stage number
+    public static final String SITE_STAGE_DONE = "site_stage_done"; // arg: stage number
+    public static final String SITE_DONE = "site_done";             // arg: -
+    public static final String SITE_READY = "site_ready";           // arg: -
+    public static final String SITE_TEARDOWN = "site_teardown";     // arg: who
+    public static final String SITE_RESUME = "site_resume";         // arg: who
 
     /** @param time wall clock, epoch milliseconds */
     public record Entry(long seq, long time, String code, String arg) {

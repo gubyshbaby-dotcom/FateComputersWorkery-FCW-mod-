@@ -1,0 +1,22 @@
+{
+  "type": "minecraft:crafting_shapeless",
+  "category": "misc",
+  "ingredients": [
+    {
+      "item": "fcw:linear_stage"
+    },
+    {
+      "item": "fcw:linear_stage"
+    },
+    {
+      "item": "fcw:granite_plate"
+    },
+    {
+      "item": "fcw:chip_controller"
+    }
+  ],
+  "result": {
+    "id": "fcw:precision_stage",
+    "count": 1
+  }
+}

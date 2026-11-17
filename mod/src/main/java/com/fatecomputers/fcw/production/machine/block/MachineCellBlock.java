@@ -3,6 +3,7 @@ package com.fatecomputers.fcw.production.machine.block;
 import com.fatecomputers.fcw.production.machine.MachineControllerBlockEntity;
 import com.fatecomputers.fcw.production.machine.MachineDef;
 import com.fatecomputers.fcw.production.machine.MachineSpec;
+import com.fatecomputers.fcw.production.machine.construction.ConstructionSite;
 import com.fatecomputers.fcw.production.machine.console.MachineConsoleNet;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
@@ -187,8 +188,25 @@ public abstract class MachineCellBlock extends Block implements EntityBlock {
     protected ItemInteractionResult useItemOn(ItemStack stack, BlockState state, Level level, BlockPos pos, Player player,
                                               InteractionHand hand, BlockHitResult hit) {
         MachineDef.Cell c = cell(state);
-        MachineSpec.Zone zone = c == null ? null : def.zoneAt(c);
-        if (stack.isEmpty() || zone == null || hand != InteractionHand.MAIN_HAND) {
+        if (stack.isEmpty() || c == null || hand != InteractionHand.MAIN_HAND) {
+            return ItemInteractionResult.PASS_TO_DEFAULT_BLOCK_INTERACTION;
+        }
+        MachineControllerBlockEntity machine = controller(level, pos, state);
+        if (machine != null && machine.site() != null) {
+            // a construction site: any of its cells takes components, the wrench cancels or resumes
+            if (!level.isClientSide) {
+                useOnSite(machine, level, pos, player, stack);
+            }
+            return ItemInteractionResult.sidedSuccess(level.isClientSide);
+        }
+        if (machine != null && stack.is(ProductionMachines.WRENCH.get()) && player.isShiftKeyDown() && isTerminal(state)) {
+            if (!level.isClientSide && player instanceof ServerPlayer sp) {
+                wrenchMachine(machine, sp);
+            }
+            return ItemInteractionResult.sidedSuccess(level.isClientSide);
+        }
+        MachineSpec.Zone zone = def.zoneAt(c);
+        if (zone == null) {
             return ItemInteractionResult.PASS_TO_DEFAULT_BLOCK_INTERACTION;
         }
         boolean fits = MachineControllerBlockEntity.zoneAccepts(level, def, zone, stack);
@@ -212,6 +230,47 @@ public abstract class MachineCellBlock extends Block implements EntityBlock {
             refuse(level, pos, player, zone, reject);
         }
         return ItemInteractionResult.CONSUME;
+    }
+
+    /** Shift + right click with the wrench on the terminal of a machine that is switched off: asked twice, then it comes apart. */
+    private static void wrenchMachine(MachineControllerBlockEntity machine, ServerPlayer player) {
+        Component name = Component.translatable("machine.fcw." + machine.def().name);
+        if (machine.isEnabled() || machine.isCommissioning()) {
+            MachineConsoleNet.notice(player, Component.translatable("interact.fcw.wrench.switch_off", name));
+        } else if (!machine.confirmWrench()) {
+            MachineConsoleNet.notice(player, Component.translatable("interact.fcw.wrench.confirm", name));
+        } else if (machine.beginTeardown(player.getGameProfile().getName())) {
+            player.level().playSound(null, machine.getBlockPos(), SoundEvents.ANVIL_LAND, SoundSource.BLOCKS, 0.4f, 1.4f);
+        }
+    }
+
+    /** An item in the hand on a construction site (pallet, scaffolding or a cell already built). */
+    public static void useOnSite(MachineControllerBlockEntity machine, Level level, BlockPos pos, Player player, ItemStack stack) {
+        ConstructionSite site = machine.site();
+        String who = player.getGameProfile().getName();
+        ServerPlayer sp = player instanceof ServerPlayer p ? p : null;
+        if (stack.is(ProductionMachines.WRENCH.get())) {
+            if (site.mode() == ConstructionSite.Mode.TEARDOWN) {
+                site.resumeBuild(who);
+            } else if (machine.confirmWrench()) {
+                site.beginTeardown(who);
+            } else if (sp != null) {
+                MachineConsoleNet.notice(sp, Component.translatable("interact.fcw.wrench.confirm_site"));
+            }
+            return;
+        }
+        int taken = site.deliver(stack, false);
+        if (taken > 0) {
+            stack.shrink(taken);
+            machine.siteChanged();
+            level.playSound(null, pos, SoundEvents.IRON_TRAPDOOR_CLOSE, SoundSource.BLOCKS, 0.4f, 1.3f);
+        } else {
+            level.playSound(null, pos, SoundEvents.DISPENSER_FAIL, SoundSource.BLOCKS, 0.6f, 1.0f);
+            if (sp != null) {
+                MachineConsoleNet.notice(sp, Component.translatable(site.mode() == ConstructionSite.Mode.TEARDOWN
+                        ? "interact.fcw.site.teardown" : "interact.fcw.site.not_needed", stack.getHoverName()));
+            }
+        }
     }
 
     private void refuse(Level level, BlockPos pos, Player player, MachineSpec.Zone zone, MachineControllerBlockEntity.Reject reject) {
@@ -253,6 +312,23 @@ public abstract class MachineCellBlock extends Block implements EntityBlock {
         }
         boolean emptyHand = player.getMainHandItem().isEmpty();
         boolean sneaking = player.isShiftKeyDown();
+        if (be.site() != null) {
+            if (!isTerminal(state)) {
+                return InteractionResult.PASS;
+            }
+            // the pallet: an empty hand opens the site's console; sneaking, it takes back the stack delivered last
+            ItemStack back = emptyHand && sneaking ? be.site().takeBack() : ItemStack.EMPTY;
+            if (!back.isEmpty()) {
+                be.siteChanged();
+                if (!player.getInventory().add(back)) {
+                    player.drop(back, false);
+                }
+                level.playSound(null, pos, SoundEvents.ITEM_PICKUP, SoundSource.PLAYERS, 0.3f, 1.2f);
+            } else if (player instanceof ServerPlayer sp) {
+                MachineConsoleNet.open(sp, be);
+            }
+            return InteractionResult.CONSUME;
+        }
         if (zone != null && !terminal && emptyHand && (zone.handTakes() || sneaking)) {
             if (be.handCanTake(zone)) {
                 List<ItemStack> taken = be.handTake(zone, sneaking);
@@ -287,20 +363,20 @@ public abstract class MachineCellBlock extends Block implements EntityBlock {
 
     @Override
     protected float getDestroyProgress(BlockState state, Player player, BlockGetter level, BlockPos pos) {
-        return player.isShiftKeyDown() ? super.getDestroyProgress(state, player, level, pos) : 0.0f;
+        return 0.0f; // machines are taken apart with the wrench, not mined
     }
 
     @Override
     protected void attack(BlockState state, Level level, BlockPos pos, Player player) {
         if (!level.isClientSide && !player.isShiftKeyDown()) {
-            player.displayClientMessage(Component.translatable("message.fcw.machine.sneak_to_break").withStyle(ChatFormatting.YELLOW), true);
+            player.displayClientMessage(Component.translatable("message.fcw.machine.use_wrench").withStyle(ChatFormatting.YELLOW), true);
         }
     }
 
     @Override
     public boolean onDestroyedByPlayer(BlockState state, Level level, BlockPos pos, Player player, boolean willHarvest, FluidState fluid) {
-        if (!player.isShiftKeyDown()) {
-            return false; // creative players break instantly: same rule for them
+        if (!player.isShiftKeyDown() || !player.isCreative()) {
+            return false; // only a sneaking creative player (a map maker) removes a machine by hand
         }
         CREATIVE_BREAK.set(player.isCreative());
         try {

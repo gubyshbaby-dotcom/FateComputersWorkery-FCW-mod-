@@ -1,0 +1,17 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "pattern": [
+    "FF",
+    "FF"
+  ],
+  "key": {
+    "F": {
+      "item": "fcw:firebrick"
+    }
+  },
+  "result": {
+    "id": "fcw:refractory_lining",
+    "count": 1
+  }
+}

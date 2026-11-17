@@ -6,7 +6,9 @@ import com.fatecomputers.fcw.production.machine.MachineAnimation.Event;
 import com.fatecomputers.fcw.production.machine.MachineSpec.Role;
 import com.fatecomputers.fcw.production.machine.MachineSpec.Section;
 import com.fatecomputers.fcw.production.machine.MachineSpec.Zone;
+import com.fatecomputers.fcw.production.ProductionDifficulty;
 import com.fatecomputers.fcw.production.machine.block.MachineCellBlock;
+import com.fatecomputers.fcw.production.machine.construction.ConstructionSite;
 import com.fatecomputers.fcw.production.recipe.MachineRecipe;
 import com.fatecomputers.fcw.production.recipe.MachineRecipes;
 import net.minecraft.core.BlockPos;
@@ -189,6 +191,12 @@ public class MachineControllerBlockEntity extends BlockEntity {
     private boolean fault;
     private boolean worked;
     private boolean syncWanted;
+    /** Not null while the machine is being built or taken apart: then this controller is the site's pallet. */
+    @Nullable
+    private ConstructionSite site;
+    /** Ticks of commissioning left after the build: the breaker is locked, the mechanisms run idle. */
+    private int commissioning;
+    private long wrenchConfirmUntil;
     private int syncCooldown;
 
     // client: when the synced progress values were taken
@@ -550,6 +558,11 @@ public class MachineControllerBlockEntity extends BlockEntity {
      * (production.requirePower), the breaker is on, a recipe is in progress and the buffer is not full.
      */
     public int wantedEnergy() {
+        if (site != null || commissioning > 0) {
+            // a site or a machine being commissioned draws what the work costs, when it costs anything
+            return ProductionDifficulty.current().buildEnergyPerTick() > 0
+                    ? Math.min(ENERGY_MAX_RECEIVE, ENERGY_CAPACITY - energy.getEnergyStored()) : 0;
+        }
         if (!enabled || !anyRunning() || !FcwConfig.SERVER.productionRequirePower.get()) {
             return 0;
         }
@@ -657,6 +670,138 @@ public class MachineControllerBlockEntity extends BlockEntity {
         }
     }
 
+    // ───────────────────────── construction
+
+    @Nullable
+    public ConstructionSite site() {
+        return site;
+    }
+
+    public boolean isCommissioning() {
+        return commissioning > 0;
+    }
+
+    public int commissioningTicks() {
+        return commissioning;
+    }
+
+    /** Something of the site changed that clients should see soon. */
+    public void siteChanged() {
+        syncWanted = true;
+        setChanged();
+    }
+
+    /** Takes energy from the buffer for building; false (and nothing taken) when there is not enough. */
+    public boolean useEnergy(int fe) {
+        if (energy.getEnergyStored() < fe) {
+            return false;
+        }
+        energy.use(fe);
+        return true;
+    }
+
+    /** A blueprint was placed: this controller starts as the pallet of a construction site. */
+    public void beginConstruction(boolean allDelivered, String actor) {
+        site = new ConstructionSite(this);
+        if (allDelivered) {
+            site.fillAll();
+        }
+        log.add(MachineLog.SITE_START, actor);
+        machineName();
+        sync();
+    }
+
+    /** The machine stands (built by the site, or laid out by hand): run it idle for a while, then unlock the breaker. */
+    public void beginCommissioning(int ticks) {
+        commissioning = Math.max(1, ticks);
+        log.add(MachineLog.SITE_DONE, "");
+        sync();
+    }
+
+    /**
+     * The wrench asks twice within five seconds before anything is taken apart. Returns true on the
+     * second ask.
+     */
+    public boolean confirmWrench() {
+        long now = level == null ? 0 : level.getGameTime();
+        if (now <= wrenchConfirmUntil) {
+            wrenchConfirmUntil = 0;
+            return true;
+        }
+        wrenchConfirmUntil = now + 100;
+        return false;
+    }
+
+    /** The wrench on the terminal of a finished, switched-off machine: it becomes a site that takes itself apart. */
+    public boolean beginTeardown(String actor) {
+        if (level == null || site != null || enabled || commissioning > 0) {
+            return false;
+        }
+        for (int i = 0; i < items.getSlots(); i++) {
+            ItemStack stack = items.getStackInSlot(i);
+            if (!stack.isEmpty()) {
+                BlockPos at = worldPosition.relative(facing());
+                Containers.dropItemStack(level, at.getX() + 0.5, at.getY() + 0.5, at.getZ() + 0.5, stack.copy());
+                items.setStackInSlot(i, ItemStack.EMPTY);
+            }
+        }
+        site = new ConstructionSite(this);
+        site.startTeardownOfFinished();
+        log.add(MachineLog.SITE_TEARDOWN, actor);
+        level.setBlock(worldPosition, getBlockState().setValue(MachineCellBlock.STATE, MachineState.SITE), 2 | 16);
+        shown = MachineState.SITE;
+        sync();
+        return true;
+    }
+
+    private void tickSite(ServerLevel sl) {
+        boolean done = site.tick();
+        if (done && site.mode() == ConstructionSite.Mode.BUILD) {
+            site = null;
+            level.setBlock(worldPosition, getBlockState().setValue(MachineCellBlock.STATE, MachineState.OFF), 2 | 16);
+            shown = MachineState.OFF;
+            beginCommissioning(ProductionDifficulty.current().stageTicks(30));
+            return;
+        }
+        if (done) {
+            // taken apart: scaffolding and pallet go, the blueprint comes back
+            site.clearScaffolding(sl);
+            if (name != null) {
+                MachineNames.get(sl.getServer()).release(sl, worldPosition, name);
+            }
+            BlockPos at = worldPosition.relative(facing());
+            Containers.dropItemStack(sl, at.getX() + 0.5, at.getY() + 0.5, at.getZ() + 0.5, ProductionMachines.sourceItem(def));
+            MachineStructure.replaceQuietly(sl, origin(), worldPosition, net.minecraft.world.level.block.Blocks.AIR.defaultBlockState());
+            return;
+        }
+        if (syncCooldown > 0) {
+            syncCooldown--;
+        }
+        if (syncWanted && syncCooldown == 0) {
+            sync();
+        }
+    }
+
+    /** Commissioning: the first clip of the machine's work runs idle; with power required, it needs power. */
+    private void tickCommissioning() {
+        int cost = ProductionDifficulty.current().buildEnergyPerTick();
+        if (cost > 0 && !useEnergy(cost)) {
+            return;
+        }
+        if (oneShot == null && !def.spec.phases().isEmpty()) {
+            startOneShot(def.spec.phases().get(0).clip());
+        }
+        if (--commissioning <= 0) {
+            commissioning = 0;
+            oneShot = null;
+            log.add(MachineLog.SITE_READY, "");
+            level.playSound(null, worldPosition, SoundEvents.NOTE_BLOCK_CHIME.value(), SoundSource.BLOCKS, 0.8f, 1.2f);
+            sync();
+        } else if (commissioning % 20 == 0) {
+            syncWanted = true;
+        }
+    }
+
     // ───────────────────────── name
 
     /** The machine's name ("euv-1"): given on first use, unique in the world, kept with the controller. */
@@ -702,7 +847,7 @@ public class MachineControllerBlockEntity extends BlockEntity {
      * been consumed yet). {@code actor} goes to the journal.
      */
     public void setEnabled(boolean on, String actor) {
-        if (level == null || level.isClientSide || (enabled == on && !stopAfter)) {
+        if (level == null || level.isClientSide || (enabled == on && !stopAfter) || site != null || commissioning > 0) {
             return;
         }
         stopAfter = false;
@@ -804,7 +949,9 @@ public class MachineControllerBlockEntity extends BlockEntity {
         if (!validated) {
             validated = true;
             shown = shownState();
-            MachineStructure.refresh(level, origin(), facing(), def, shown, hatchOpen);
+            if (site == null) {
+                MachineStructure.refresh(level, origin(), facing(), def, shown, hatchOpen);
+            }
             if (name != null) {
                 String kept = MachineNames.get(sl.getServer()).claim(sl, worldPosition, name, def.spec.namePrefix());
                 changed |= !kept.equals(name);
@@ -817,6 +964,13 @@ public class MachineControllerBlockEntity extends BlockEntity {
         }
         if (networkPower != null) {
             networkPower.tick(this);
+        }
+        if (site != null) {
+            tickSite(sl);
+            return;
+        }
+        if (commissioning > 0) {
+            tickCommissioning();
         }
         if (now % 20 == 0) {
             income = receivedInWindow / 20;
@@ -1242,6 +1396,10 @@ public class MachineControllerBlockEntity extends BlockEntity {
             tag.putString("Name", name);
         }
         tag.put("Items", items.serializeNBT(registries));
+        if (site != null) {
+            tag.put("Site", site.save());
+        }
+        tag.putInt("Commissioning", commissioning);
     }
 
     private void readShared(CompoundTag tag, HolderLookup.Provider registries) {
@@ -1265,6 +1423,15 @@ public class MachineControllerBlockEntity extends BlockEntity {
         oneShot = tag.contains("OneShot") ? tag.getString("OneShot") : null;
         oneShotAge = tag.getInt("OneShotAge");
         name = tag.contains("Name") ? tag.getString("Name") : null;
+        if (tag.contains("Site")) {
+            if (site == null) {
+                site = new ConstructionSite(this);
+            }
+            site.load(tag.getCompound("Site"));
+        } else {
+            site = null;
+        }
+        commissioning = tag.getInt("Commissioning");
         if (tag.contains("Items")) {
             CompoundTag it = tag.getCompound("Items").copy();
             it.remove("Size"); // the slot layout comes from the code

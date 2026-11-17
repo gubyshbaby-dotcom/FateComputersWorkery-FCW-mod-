@@ -59,6 +59,7 @@ public final class FcwConfig {
         public final ModConfigSpec.IntValue machineRequestsPerSecond;
 
         public final ModConfigSpec.ConfigValue<String> onPowerLoss;
+        public final ModConfigSpec.EnumValue<com.fatecomputers.fcw.production.ProductionDifficulty> productionDifficulty;
 
         Server(ModConfigSpec.Builder b) {
             b.comment("VM daemon (native fcw-daemon process started by the server)").push("daemon");
@@ -169,6 +170,11 @@ public final class FcwConfig {
             machineRequestsPerSecond = b.comment("How many `fcw machine` requests per second one computer may send to machines.",
                             "Requests above the limit are refused, so a script in a tight loop cannot stall the server.")
                     .defineInRange("machineRequestsPerSecond", 20, 1, 1000);
+            productionDifficulty = b.comment("How hard the production chain is (docs/MACHINE_CONTROL.md):",
+                            "standard = a quarter of the bills of materials and of the build time, full refund on teardown;",
+                            "engineer = the designed numbers;",
+                            "fab      = twice the build time, building always needs power, 60 % refund, no bench chips for the first scanner.")
+                    .defineEnum("difficulty", com.fatecomputers.fcw.production.ProductionDifficulty.ENGINEER);
             b.pop();
 
             b.comment("Computers as power consumers (only with production.requirePower = true)").push("computers");

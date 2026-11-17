@@ -1,0 +1,100 @@
+{
+  "stages": [
+    {
+      "id": "foundation",
+      "ru": "Фундамент и башня",
+      "en": "Foundation and tower",
+      "seconds": 180,
+      "items": [
+        {
+          "item": "fcw:iron_frame",
+          "count": 24
+        },
+        {
+          "item": "fcw:iron_plate",
+          "count": 24
+        }
+      ]
+    },
+    {
+      "id": "hearth",
+      "ru": "Горн и футеровка",
+      "en": "Hearth and lining",
+      "seconds": 240,
+      "items": [
+        {
+          "item": "fcw:refractory_lining",
+          "count": 36
+        },
+        {
+          "item": "fcw:water_cooled_panel",
+          "count": 8
+        },
+        {
+          "item": "fcw:iron_plate",
+          "count": 16
+        }
+      ]
+    },
+    {
+      "id": "electrodes",
+      "ru": "Электроды и механика",
+      "en": "Electrodes and mechanics",
+      "seconds": 180,
+      "items": [
+        {
+          "item": "fcw:graphite_electrode",
+          "count": 3
+        },
+        {
+          "item": "fcw:hydraulic_cylinder",
+          "count": 4
+        },
+        {
+          "item": "fcw:electric_motor",
+          "count": 4
+        },
+        {
+          "item": "fcw:pump",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "id": "transformer",
+      "ru": "Трансформатор и шины",
+      "en": "Transformer and busbars",
+      "seconds": 120,
+      "items": [
+        {
+          "item": "fcw:furnace_transformer",
+          "count": 1
+        },
+        {
+          "item": "fcw:copper_bar",
+          "count": 12
+        }
+      ]
+    },
+    {
+      "id": "casing",
+      "ru": "Обшивка и пульт",
+      "en": "Casing and terminal",
+      "seconds": 120,
+      "items": [
+        {
+          "item": "fcw:enclosure_panel",
+          "count": 32
+        },
+        {
+          "item": "minecraft:tinted_glass",
+          "count": 8
+        },
+        {
+          "item": "fcw:control_cabinet_1",
+          "count": 1
+        }
+      ]
+    }
+  ]
+}

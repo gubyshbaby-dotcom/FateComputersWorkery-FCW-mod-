@@ -1,0 +1,31 @@
+{
+  "type": "minecraft:crafting_shapeless",
+  "category": "misc",
+  "ingredients": [
+    {
+      "item": "fcw:firebrick"
+    },
+    {
+      "item": "fcw:firebrick"
+    },
+    {
+      "item": "fcw:firebrick"
+    },
+    {
+      "item": "fcw:firebrick"
+    },
+    {
+      "item": "fcw:graphite_heater"
+    },
+    {
+      "item": "fcw:steel_plate"
+    },
+    {
+      "item": "fcw:steel_plate"
+    }
+  ],
+  "result": {
+    "id": "fcw:oven_module",
+    "count": 1
+  }
+}

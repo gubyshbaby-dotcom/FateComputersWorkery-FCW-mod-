@@ -1,0 +1,19 @@
+{
+  "type": "minecraft:crafting_shapeless",
+  "category": "misc",
+  "ingredients": [
+    {
+      "item": "fcw:iron_plate"
+    },
+    {
+      "item": "fcw:iron_plate"
+    },
+    {
+      "item": "minecraft:white_concrete_powder"
+    }
+  ],
+  "result": {
+    "id": "fcw:enclosure_panel",
+    "count": 2
+  }
+}

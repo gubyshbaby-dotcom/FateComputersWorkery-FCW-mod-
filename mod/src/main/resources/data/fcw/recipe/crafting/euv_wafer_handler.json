@@ -5,30 +5,25 @@
       "item": "fcw:euv_wafer_handler"
     }
   ],
-  "type": "minecraft:crafting_shaped",
+  "type": "minecraft:crafting_shapeless",
   "category": "building",
-  "pattern": [
-    "SPS",
-    "HXH",
-    "SRS"
-  ],
-  "key": {
-    "S": {
-      "tag": "c:ingots/steel"
+  "ingredients": [
+    {
+      "item": "fcw:linear_stage"
     },
-    "P": {
-      "item": "minecraft:piston"
+    {
+      "item": "fcw:electric_motor"
     },
-    "H": {
-      "item": "minecraft:hopper"
+    {
+      "item": "fcw:steel_plate"
     },
-    "X": {
-      "item": "fcw:cpu_dip"
+    {
+      "item": "fcw:steel_plate"
     },
-    "R": {
-      "item": "minecraft:redstone"
+    {
+      "item": "fcw:chip_controller"
     }
-  },
+  ],
   "result": {
     "id": "fcw:euv_wafer_handler",
     "count": 2
