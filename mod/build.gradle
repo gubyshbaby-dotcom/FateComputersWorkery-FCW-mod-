@@ -143,6 +143,11 @@ processResources {
             into 'natives'
         }
     }
+    // The console font of the machines is the PSF the native client draws tty0 with: one file, two users.
+    from('../native/crates/fcw-client/assets') {
+        include 'terminus-uni2-8x16.psf'
+        into 'assets/fcw/font'
+    }
     // The .proto files are not needed at runtime.
     exclude '**/*.proto'
     duplicatesStrategy = DuplicatesStrategy.INCLUDE

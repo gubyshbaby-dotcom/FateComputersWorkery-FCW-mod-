@@ -13,25 +13,30 @@ import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.neoforge.client.event.EntityRenderersEvent;
 import net.neoforged.neoforge.client.event.ModelEvent;
-import net.neoforged.neoforge.client.event.RegisterMenuScreensEvent;
+import net.neoforged.neoforge.client.event.RegisterGuiLayersEvent;
+import net.neoforged.neoforge.client.gui.VanillaGuiLayers;
+import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.client.event.RegisterParticleProvidersEvent;
 
 import java.util.HashSet;
 import java.util.Set;
 
-/** Client side of the production machines: terminal screen, renderer of moving parts, dyn/ models, particles. */
+/** Client side of the production machines: terminal console, hints, renderer of moving parts, dyn/ models, particles. */
 @Mod(value = FcwMod.MODID, dist = Dist.CLIENT)
 public final class ProductionClient {
     public ProductionClient(IEventBus modBus, ModContainer container) {
-        modBus.addListener(ProductionClient::onRegisterScreens);
+        modBus.addListener(ProductionClient::onRegisterLayers);
         modBus.addListener(ProductionClient::onRegisterRenderers);
         modBus.addListener(ProductionClient::onRegisterModels);
         modBus.addListener(ProductionClient::onRegisterParticles);
         MachineClientHooks.setTicker(MachineParticles::tick);
+        MachineClientHooks.setConsole(MachineConsoleScreen::handle);
+        MachineClientHooks.setNotice(MachineHud::notice);
+        NeoForge.EVENT_BUS.addListener(MachineHud::onHighlight);
     }
 
-    private static void onRegisterScreens(RegisterMenuScreensEvent event) {
-        event.register(ProductionMachines.MENU.get(), MachineScreen::new);
+    private static void onRegisterLayers(RegisterGuiLayersEvent event) {
+        event.registerAbove(VanillaGuiLayers.HOTBAR, ResourceLocation.fromNamespaceAndPath(FcwMod.MODID, "machine_hint"), MachineHud::render);
     }
 
     private static void onRegisterRenderers(EntityRenderersEvent.RegisterRenderers event) {

@@ -2,6 +2,13 @@ package com.fatecomputers.fcw.production.machine.block;
 
 import com.fatecomputers.fcw.production.machine.MachineControllerBlockEntity;
 import com.fatecomputers.fcw.production.machine.MachineDef;
+import com.fatecomputers.fcw.production.machine.MachineSpec;
+import com.fatecomputers.fcw.production.machine.console.MachineConsoleNet;
+import net.minecraft.sounds.SoundEvents;
+import net.minecraft.sounds.SoundSource;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.ItemInteractionResult;
+import java.util.List;
 import com.fatecomputers.fcw.production.machine.MachineState;
 import com.fatecomputers.fcw.production.machine.MachineStructure;
 import com.fatecomputers.fcw.production.machine.ProductionMachines;
@@ -171,14 +178,70 @@ public abstract class MachineCellBlock extends Block implements EntityBlock {
 
     // ───────────────────────── use
 
+    /**
+     * Right click with an item on a loading zone puts the stack into the machine. An item that does not
+     * belong there is refused with a dull click and a line above the hotbar; on a hatch cell that is not
+     * an attempt to load at all, the click falls through to the hatch.
+     */
+    @Override
+    protected ItemInteractionResult useItemOn(ItemStack stack, BlockState state, Level level, BlockPos pos, Player player,
+                                              InteractionHand hand, BlockHitResult hit) {
+        MachineDef.Cell c = cell(state);
+        MachineSpec.Zone zone = c == null ? null : def.zoneAt(c);
+        if (stack.isEmpty() || zone == null || hand != InteractionHand.MAIN_HAND) {
+            return ItemInteractionResult.PASS_TO_DEFAULT_BLOCK_INTERACTION;
+        }
+        boolean fits = MachineControllerBlockEntity.zoneAccepts(level, def, zone, stack);
+        if (!fits && c.hatch() != null) {
+            return ItemInteractionResult.PASS_TO_DEFAULT_BLOCK_INTERACTION;
+        }
+        if (level.isClientSide) {
+            return ItemInteractionResult.SUCCESS;
+        }
+        MachineControllerBlockEntity be = controller(level, pos, state);
+        if (be == null) {
+            return ItemInteractionResult.FAIL;
+        }
+        MachineControllerBlockEntity.Reject reject = be.handInsert(zone, stack);
+        if (reject == null) {
+            level.playSound(null, pos, SoundEvents.IRON_TRAPDOOR_CLOSE, SoundSource.BLOCKS, 0.4f, 1.3f);
+            if (zone.role() == MachineSpec.Role.CATALYST) {
+                level.playSound(null, pos, SoundEvents.IRON_TRAPDOOR_CLOSE, SoundSource.BLOCKS, 0.4f, 1.6f);
+            }
+        } else {
+            refuse(level, pos, player, zone, reject);
+        }
+        return ItemInteractionResult.CONSUME;
+    }
+
+    private void refuse(Level level, BlockPos pos, Player player, MachineSpec.Zone zone, MachineControllerBlockEntity.Reject reject) {
+        level.playSound(null, pos, SoundEvents.DISPENSER_FAIL, SoundSource.BLOCKS, 0.6f, 1.0f);
+        if (player instanceof ServerPlayer sp) {
+            Component name = Component.translatable("interact.fcw." + def.name + "." + zone.id());
+            Component text = switch (reject) {
+                case NOT_ACCEPTED -> Component.translatable("interact.fcw.reject.not_accepted", name,
+                        Component.translatable("interact.fcw." + def.name + "." + zone.id() + ".accepts"));
+                case FULL -> Component.translatable("interact.fcw.reject.full", name);
+                case BUSY -> Component.translatable("interact.fcw.reject.busy", name);
+                case OUTPUT_ONLY -> Component.translatable("interact.fcw.reject.output_only", name);
+            };
+            MachineConsoleNet.notice(sp, text);
+        }
+    }
+
+    /**
+     * Empty hand (or an item that is of no use here): a zone gives one stack back (everything when
+     * sneaking), the terminal opens the console, a hatch opens or closes, the breaker switches the machine.
+     */
     @Override
     protected InteractionResult useWithoutItem(BlockState state, Level level, BlockPos pos, Player player, BlockHitResult hit) {
         MachineDef.Cell c = cell(state);
         if (c == null) {
             return InteractionResult.PASS;
         }
-        boolean terminal = isTerminal(state) || (c.hatch() == null && def.opensTerminal(c));
-        if (!terminal && c.hatch() == null) {
+        MachineSpec.Zone zone = def.zoneAt(c);
+        boolean terminal = isTerminal(state) || (c.hatch() == null && zone == null && def.opensTerminal(c));
+        if (!terminal && c.hatch() == null && zone == null) {
             return InteractionResult.PASS;
         }
         if (level.isClientSide) {
@@ -188,15 +251,34 @@ public abstract class MachineCellBlock extends Block implements EntityBlock {
         if (be == null) {
             return InteractionResult.FAIL;
         }
+        boolean emptyHand = player.getMainHandItem().isEmpty();
+        boolean sneaking = player.isShiftKeyDown();
+        if (zone != null && !terminal && emptyHand && (zone.handTakes() || sneaking)) {
+            if (be.handCanTake(zone)) {
+                List<ItemStack> taken = be.handTake(zone, sneaking);
+                for (ItemStack s : taken) {
+                    if (!player.getInventory().add(s)) {
+                        player.drop(s, false);
+                    }
+                }
+                level.playSound(null, pos, SoundEvents.ITEM_PICKUP, SoundSource.PLAYERS, 0.3f, 1.2f);
+                return InteractionResult.CONSUME;
+            }
+            if (zone.role() == MachineSpec.Role.CATALYST && !be.zoneContents(zone).isEmpty()) {
+                refuse(level, pos, player, zone, MachineControllerBlockEntity.Reject.BUSY);
+                return InteractionResult.CONSUME;
+            }
+        }
         if (terminal) {
             if (player instanceof ServerPlayer sp) {
-                sp.openMenu(be, buf -> {
-                    buf.writeBlockPos(be.getBlockPos());
-                    buf.writeUtf(def.name);
-                });
+                MachineConsoleNet.open(sp, be);
             }
-        } else {
-            be.toggleHatch(c.hatch());
+        } else if (c.hatch() != null) {
+            be.toggleHatch(c.hatch(), player.getGameProfile().getName());
+            if (c.hatch().equals(MachineDef.BREAKER)) {
+                level.playSound(null, pos, SoundEvents.LEVER_CLICK, SoundSource.BLOCKS, 0.5f, be.isEnabled() ? 0.6f : 0.5f);
+                level.playSound(null, pos, SoundEvents.PISTON_CONTRACT, SoundSource.BLOCKS, 0.25f, 1.6f);
+            }
         }
         return InteractionResult.CONSUME;
     }

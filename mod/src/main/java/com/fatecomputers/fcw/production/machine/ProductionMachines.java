@@ -6,13 +6,11 @@ import com.fatecomputers.fcw.production.machine.block.MachineHatchBlock;
 import com.fatecomputers.fcw.production.machine.block.MachinePartBlock;
 import com.fatecomputers.fcw.production.machine.euv.EuvControllerBlock;
 import com.fatecomputers.fcw.production.machine.euv.EuvKitBlock;
-import com.fatecomputers.fcw.production.machine.menu.MachineMenu;
 import com.fatecomputers.fcw.registry.ModItems;
 import net.minecraft.core.Direction;
 import net.minecraft.core.particles.ParticleType;
 import net.minecraft.core.particles.SimpleParticleType;
 import net.minecraft.core.registries.Registries;
-import net.minecraft.world.inventory.MenuType;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
@@ -26,7 +24,6 @@ import net.neoforged.bus.api.IEventBus;
 import net.neoforged.neoforge.capabilities.Capabilities;
 import net.neoforged.neoforge.capabilities.RegisterCapabilitiesEvent;
 import net.neoforged.neoforge.common.NeoForge;
-import net.neoforged.neoforge.common.extensions.IMenuTypeExtension;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
 import net.neoforged.neoforge.registries.DeferredBlock;
 import net.neoforged.neoforge.registries.DeferredHolder;
@@ -48,7 +45,6 @@ public final class ProductionMachines {
     private static final DeferredRegister.Blocks BLOCKS = DeferredRegister.createBlocks(FcwMod.MODID);
     private static final DeferredRegister.Items ITEMS = DeferredRegister.createItems(FcwMod.MODID);
     private static final DeferredRegister<BlockEntityType<?>> BLOCK_ENTITIES = DeferredRegister.create(Registries.BLOCK_ENTITY_TYPE, FcwMod.MODID);
-    private static final DeferredRegister<MenuType<?>> MENUS = DeferredRegister.create(Registries.MENU, FcwMod.MODID);
     private static final DeferredRegister<ParticleType<?>> PARTICLES = DeferredRegister.create(Registries.PARTICLE_TYPE, FcwMod.MODID);
 
     private static final Map<String, DeferredBlock<MachinePartBlock>> PARTS = new LinkedHashMap<>();
@@ -105,9 +101,6 @@ public final class ProductionMachines {
     public static final DeferredHolder<BlockEntityType<?>, BlockEntityType<MachineControllerBlockEntity>> CONTROLLER =
             BLOCK_ENTITIES.register("machine_controller", () -> BlockEntityType.Builder.of(MachineControllerBlockEntity::new, cellBlocks()).build(null));
 
-    public static final DeferredHolder<MenuType<?>, MenuType<MachineMenu>> MENU =
-            MENUS.register("machine", () -> IMenuTypeExtension.create(MachineMenu::new));
-
     private ProductionMachines() {
     }
 
@@ -115,7 +108,8 @@ public final class ProductionMachines {
         BLOCKS.register(modBus);
         ITEMS.register(modBus);
         BLOCK_ENTITIES.register(modBus);
-        MENUS.register(modBus);
+        modBus.addListener(com.fatecomputers.fcw.production.machine.console.MachineConsoleNet::register);
+        NeoForge.EVENT_BUS.addListener(ProductionMachines::onRightClickBlock);
         PARTICLES.register(modBus);
         modBus.addListener(ProductionMachines::registerCapabilities);
         NeoForge.EVENT_BUS.addListener((RegisterCommandsEvent e) -> MachineCommands.register(e.getDispatcher()));
@@ -123,6 +117,17 @@ public final class ProductionMachines {
             com.fatecomputers.fcw.production.machine.compat.ae2.Ae2Compat.init(modBus);
         }
         ModItems.TAB_ORDER.addAll(TAB_ITEMS);
+    }
+
+    /**
+     * Sneaking with something in the other hand, vanilla would skip the block and use the item; the cells
+     * of a machine still get the click (sneak + empty main hand takes everything from a zone).
+     */
+    private static void onRightClickBlock(net.neoforged.neoforge.event.entity.player.PlayerInteractEvent.RightClickBlock event) {
+        if (event.getEntity().isShiftKeyDown() && event.getEntity().getMainHandItem().isEmpty()
+                && event.getLevel().getBlockState(event.getPos()).getBlock() instanceof MachineCellBlock) {
+            event.setUseBlock(net.neoforged.neoforge.common.util.TriState.TRUE);
+        }
     }
 
     private static BlockBehaviour.Properties cellProperties() {

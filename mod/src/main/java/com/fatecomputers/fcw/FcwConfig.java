@@ -168,6 +168,7 @@ public final class FcwConfig {
         public final ModConfigSpec.ConfigValue<String> nativeLibraryPath;
         public final ModConfigSpec.BooleanValue audioEnabled;
         public final ModConfigSpec.DoubleValue audioVolume;
+        public final ModConfigSpec.BooleanValue machineHints;
 
         Client(ModConfigSpec.Builder b) {
             b.comment("Live monitor screens").push("screens");
@@ -188,6 +189,12 @@ public final class FcwConfig {
             b.comment("Sound from computers through linked speakers").push("audio");
             audioEnabled = b.define("enabled", true);
             audioVolume = b.defineInRange("volume", 1.0, 0.0, 2.0);
+            b.pop();
+
+            b.comment("Production machines").push("machines");
+            machineHints = b.comment("Show a line above the hotbar when aiming at a loading point of a machine:",
+                            "what it is, what lies there and what a right click does.")
+                    .define("hints", true);
             b.pop();
         }
     }
