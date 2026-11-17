@@ -45,6 +45,8 @@ struct Inner {
     /// Есть ли незафиксированные изменения тайлов (помечены как seq + 1).
     pending: bool,
     cursor: Cursor,
+    /// Время фиксации изменения `seq` (Unix, мкс).
+    seq_time_us: u64,
 }
 
 impl Inner {
@@ -63,6 +65,7 @@ impl Inner {
         self.tile_ver = vec![self.seq; n];
         self.cache = vec![None; n];
         self.pending = false;
+        self.seq_time_us = crate::unix_us();
     }
 
     fn tile_rect(&self, idx: usize) -> (u32, u32, u32, u32) {
@@ -123,6 +126,7 @@ impl GfxScreen {
                 epoch: 0,
                 pending: false,
                 cursor: Cursor::default(),
+                seq_time_us: 0,
             }),
             notify,
         }
@@ -206,6 +210,7 @@ impl GfxScreen {
             }
             g.pending = false;
             g.seq += 1;
+            g.seq_time_us = crate::unix_us();
             g.seq
         };
         self.notify.send_replace(seq);
@@ -230,7 +235,7 @@ impl GfxScreen {
     pub fn collect(&self, cur: &mut SubCursor, keyframe: bool) -> Option<spb::FrameUpdate> {
         let mut rects: Vec<Option<Arc<spb::Rect>>> = Vec::new();
         let mut to_encode: Vec<TileJob> = Vec::new();
-        let (seq, epoch, width, height, key);
+        let (seq, epoch, width, height, key, capture_unix_us);
         {
             let g = self.inner.lock();
             key = keyframe || !cur.started || cur.epoch != g.epoch;
@@ -238,6 +243,7 @@ impl GfxScreen {
                 return None;
             }
             seq = g.seq;
+            capture_unix_us = g.seq_time_us;
             epoch = g.epoch;
             width = g.width;
             height = g.height;
@@ -282,7 +288,7 @@ impl GfxScreen {
         cur.seq = seq;
         cur.epoch = epoch;
         cur.started = true;
-        Some(spb::FrameUpdate { seq, width, height, keyframe: key, rects })
+        Some(spb::FrameUpdate { seq, width, height, keyframe: key, rects, capture_unix_us })
     }
 }
 
