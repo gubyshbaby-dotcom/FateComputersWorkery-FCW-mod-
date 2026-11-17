@@ -168,8 +168,10 @@ def automation():
     def beam(x0, y0, x1, y1): s.d.line([(x0, y0), (x1, y1)], fill=W, width=8); s.d.line([(x0, y0), (x1, y1)], fill=P, width=2)
     beam(x, y2 + 16, x + 64, y2 + 16); s.cap(x, y2 + 40, 'прямой')
     s.d.arc([x + 80, y2 - 48, x + 80 + 128, y2 + 80], 90, 180, fill=W, width=8); s.d.arc([x + 83, y2 - 45, x + 80 + 125, y2 + 77], 90, 180, fill=P, width=2); s.cap(x + 84, y2 + 40, 'поворот R2\n(2×2 клетки)')
-    beam(x + 160, y2 + 48, x + 256, y2 + 48); s.d.line([(x + 176, y2 + 48), (x + 240, y2 + 16), (x + 256, y2 + 16)], fill=W, width=8); s.d.line([(x + 176, y2 + 48), (x + 240, y2 + 16), (x + 256, y2 + 16)], fill=P, width=2)
-    s.r(x + 170, y2 + 42, 12, 12, K); s.r(x + 174, y2 + 46, 4, 4, OKC); s.cap(x + 160, y2 + 62, 'стрелка 3×2: перо\nдвижется, огонь пути')
+    tx, ty = x + 208, y2 + 28
+    beam(tx - 44, ty, tx - 18, ty); beam(tx + 18, ty, tx + 44, ty); beam(tx, ty - 44, tx, ty - 18)
+    s.d.ellipse([tx - 16, ty - 16, tx + 16, ty + 16], fill=K, outline=AL); beam(tx - 13, ty, tx + 13, ty)
+    s.r(tx + 8, ty + 8, 4, 4, OKC); s.cap(x + 160, y2 + 62, 'поворотный круг 1×1:\nотрезок балки на круге,\nшаг 90°, огонь пути')
     # arms: three sizes, side view
     def arm(x, yb, base_h, l1, l2, name, hold=True):
         s.r(x, yb - 6, 28, 6, K); s.r(x, yb - 2, 28, 2, P); s.r(x + 6, yb - 6 - base_h, 16, base_h, W, K); s.r(x + 9, yb - base_h - 2, 10, 3, GL)

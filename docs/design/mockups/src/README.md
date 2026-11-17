@@ -5,6 +5,7 @@
 | скрипт | что делает |
 |---|---|
 | `terminal.py` | консоль машины 80×25 (`terminal_litho.png`, `terminal_furnace_fault.png`) и монтаж подсказки при наведении (`hint_overlay.png`) |
+| `tui.py` | консольные программы (`tui_*.png`): `fcw top`, `fcw litho` (80×25 в трёх состояниях, вкладка «Партия», 160×48), `fcw furnace`, `fcw puller`, `fcw saw`, `fcw line`, `fcw yield`. Рисует в сетку ячеек шрифтом мода с подменами из `font.rs` (`cyrillic_i()`, `synth_blocks()`) |
 | `concepts.py` | схемы энергоблоков и автоматики для ТЗ художнику (`concept_energy.png`, `concept_automation.png`) |
 | `factory_plan.py` | планы и разрезы демо-завода (`factory_floor1.png`, `factory_floor2.png`, `factory_roof.png`, `factory_sections.png`) |
 
@@ -12,6 +13,7 @@
 
 ```
 python3 terminal.py
+python3 tui.py
 python3 concepts.py
 python3 factory_plan.py
 ```
