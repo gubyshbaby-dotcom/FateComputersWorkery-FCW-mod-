@@ -171,6 +171,18 @@
     {
       "id": "chiller_unit",
       "stack": 16
+    },
+    {
+      "id": "proto_chip_controller",
+      "stack": 64
+    },
+    {
+      "id": "proto_chip_memory",
+      "stack": 64
+    },
+    {
+      "id": "proto_cpu_pga",
+      "stack": 64
     }
   ]
 }

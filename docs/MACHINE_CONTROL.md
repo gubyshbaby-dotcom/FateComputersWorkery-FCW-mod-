@@ -132,8 +132,8 @@ public static List<Link> links(ServerLevel level, BlockPos computerPos);    // �
   ответа) и дальше раз в секунду спрашивает `log --since <seq>`.
 - Код выхода `fcw machine` = `exit` ответа; при `exit` ≠ 0 текст идёт в stderr. С `--json` в stdout
   печатается `json` ответа (если он есть), иначе текст.
-- Зарезервировано для работы C (программы): `machine_watch` / `machine_unwatch` (подписка) и
-  `machine_frame` (снимок состояния машины, несколько раз в секунду).
+- Подписка `machine_watch` / `machine_unwatch` → `machine_frame`, служба `apc_beat` и `op` = `yield`
+  описаны в `docs/CONTRACT.md` §7 («Машины: APC, отчёт и подписка на снимки»).
 
 ## Питание компьютеров
 

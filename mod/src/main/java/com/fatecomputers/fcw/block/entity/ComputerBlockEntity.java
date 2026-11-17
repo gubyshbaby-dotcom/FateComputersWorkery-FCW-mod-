@@ -1006,6 +1006,13 @@ public class ComputerBlockEntity extends BlockEntity implements MenuProvider {
                         }
                     }
                 }
+                case "apc_beat" -> {
+                    if (level instanceof ServerLevel sl) {
+                        machineBridge.onApcBeat(sl, o);
+                    }
+                }
+                case "machine_watch" -> machineBridge.onWatch(o);
+                case "machine_unwatch" -> machineBridge.onUnwatch();
                 case "redstone_set" -> {
                     String side = o.has("side") ? o.get("side").getAsString() : "";
                     int idx = Arrays.asList(SIDES).indexOf(side);
@@ -1119,6 +1126,14 @@ public class ComputerBlockEntity extends BlockEntity implements MenuProvider {
         }
         if (agentUpdate != null) {
             agentUpdate.tick();
+        }
+        if (level instanceof ServerLevel sl) {
+            // APC и снимки машин для программ гостя
+            boolean guest = isMachineOn() && agentConnected;
+            if (!guest) {
+                machineBridge.onGuestGone();
+            }
+            machineBridge.tick(sl, worldPosition, agentActor(), inventory.getStackInSlot(ComputerInventory.SLOT_CPU), guest, this::sendAgent);
         }
         if (!powerRequired()) {
             if (pausedByPower) {

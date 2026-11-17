@@ -277,6 +277,24 @@ box("precision_stage", GRANITE, lambda i: (i.rect(8, 9, 23, 20, IRON), i.disc(15
 motor("turbo_pump", lambda i: [i.line(7, y, 20, y, IRON) for y in (11, 14, 17, 20)])
 box("chiller_unit", WHITE, lambda i: ([i.line(8, y, 23, y, (120, 180, 255)) for y in range(9, 21, 2)], i.rect(5, 23, 26, 24, VIOLET, False)))
 
+def proto(name, c, pins):
+    i = Icon()
+    i.rect(8, 8, 23, 23, DARK)
+    for k in range(pins):
+        for (x0, y0, x1, y1) in ((10 + k * 4, 5, 11 + k * 4, 7), (10 + k * 4, 24, 11 + k * 4, 26), (5, 10 + k * 4, 7, 11 + k * 4), (24, 10 + k * 4, 26, 11 + k * 4)):
+            i.rect(x0, y0, x1, y1, c, False)
+    i.rect(11, 11, 20, 20, sh(c, 0.7))
+    i.line(13, 18, 13, 13, WHITE)
+    i.line(13, 13, 17, 13, WHITE)
+    i.line(17, 13, 17, 15, WHITE)
+    i.line(13, 15, 17, 15, WHITE)
+    i.save(name)
+
+
+proto("proto_chip_controller", COPPER, 4)
+proto("proto_chip_memory", (120, 180, 255), 4)
+proto("proto_cpu_pga", GOLD, 4)
+
 G = {
     "arc_furnace": [(11, 20, 21, 20), (11, 20, 11, 14), (21, 20, 21, 14), (14, 8, 14, 16), (18, 8, 18, 16)],
     "crystal_puller": [(16, 6, 16, 18), (12, 18, 20, 18), (12, 18, 12, 24), (20, 18, 20, 24), (12, 24, 20, 24)],

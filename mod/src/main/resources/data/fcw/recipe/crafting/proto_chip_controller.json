@@ -4,7 +4,7 @@
     "item": "fcw:cpu_qfp"
   },
   "result": {
-    "id": "fcw:chip_controller",
+    "id": "fcw:proto_chip_controller",
     "count": 1
   }
 }

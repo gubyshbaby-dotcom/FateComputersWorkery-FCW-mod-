@@ -12,6 +12,9 @@ import com.fatecomputers.fcw.production.machine.construction.ConstructionPlan;
 import com.fatecomputers.fcw.production.machine.construction.ConstructionSite;
 import com.fatecomputers.fcw.production.machine.MachineSpec.Section;
 import com.fatecomputers.fcw.production.machine.MachineSpec.Zone;
+import com.fatecomputers.fcw.production.quality.MachineQuality;
+import com.fatecomputers.fcw.production.quality.Quality;
+import com.fatecomputers.fcw.production.quality.WaferMap;
 import com.fatecomputers.fcw.production.recipe.ChanceResult;
 import com.fatecomputers.fcw.production.recipe.MachineRecipe;
 import com.fatecomputers.fcw.production.recipe.MachineRecipes;
@@ -43,7 +46,7 @@ import java.util.Locale;
  */
 public final class MachineShell {
     /** Имена команд, для автодополнения на пульте. */
-    public static final List<String> COMMANDS = List.of("status", "start", "stop", "recipe", "log", "name", "bom", "stage", "cancel", "help", "exit");
+    public static final List<String> COMMANDS = List.of("status", "start", "stop", "recipe", "log", "name", "bom", "stage", "cancel", "yield", "help", "exit");
     private static final DateTimeFormatter CLOCK = DateTimeFormatter.ofPattern("HH:mm:ss").withZone(ZoneId.systemDefault());
 
     private MachineShell() {
@@ -115,6 +118,7 @@ public final class MachineShell {
             case "recipe" -> recipe(machine, t, json, args);
             case "log" -> log(machine, t, json, args);
             case "name" -> name(machine, t, args, actor);
+            case "yield" -> shiftReport(machine, t, json);
             case "bom" -> bom(machine, t, lang, json);
             case "stage" -> stage(machine, t, lang);
             case "cancel" -> cancel(machine, t, actor);
@@ -312,6 +316,7 @@ public final class MachineShell {
         lines.add(Line.plain(label(t, "label.power") + (required
                 ? fe(energy) + "/" + fe(MachineControllerBlockEntity.ENERGY_CAPACITY) + " FE  " + t.tr("income", m.energyIncome())
                 : t.tr("builtin"))));
+        qualityLines(m, t, lines);
 
         JsonObject o = null;
         if (json) {
@@ -342,6 +347,121 @@ public final class MachineShell {
             o.addProperty("power_required", required);
             o.add("load", load);
             o.add("out", out);
+            // the rest of a machine frame (docs/design/CONSOLE_APPS.md): programs read status --json and machine_frame alike
+            o.addProperty("kind", m.def().name);
+            o.addProperty("reason", code.equals("fault") ? fault.name().toLowerCase(Locale.ROOT) : "");
+            o.addProperty("phase", String.valueOf(m.workPhase() == null ? "" : m.workPhase()));
+            o.addProperty("log_seq", m.log().lastSeq());
+            MachineQuality q = m.quality();
+            o.addProperty("defects", Quality.enabled());
+            o.add("apc", q.apcJson());
+            if (q.isScanner()) {
+                o.add("litho", q.lithoJson());
+            } else {
+                JsonObject env = new JsonObject();
+                env.addProperty("water", q.hasWater());
+                env.addProperty("power_pauses", q.pauses(0));
+                o.add("env", env);
+            }
+            o.add("shift", q.today().json());
+        }
+        return new Rich(0, lines, o);
+    }
+
+    /** The lines of "status" about defects: the last wafer, the surroundings, APC. */
+    private static void qualityLines(MachineControllerBlockEntity m, ShellLang t, List<Line> lines) {
+        MachineQuality q = m.quality();
+        if (!Quality.enabled()) {
+            return;
+        }
+        String yes = t.tr("q.yes"), no = t.tr("q.no");
+        if (q.isScanner()) {
+            MachineQuality.Wafer last = q.lastWafer();
+            MachineQuality.Shift day = q.today();
+            if (last != null) {
+                String causes = MachineQuality.causesText(last.map());
+                lines.add(Line.plain(label(t, "label.yield") + t.tr("q.last", last.yieldClass().name(), last.good(), WaferMap.FIELDS)
+                        + (causes.isEmpty() ? "" : " (" + causes + ")")
+                        + (day.wafers > 0 ? "; " + t.tr("q.shift", day.wafers, Math.round(100.0 * day.goodFields / (day.wafers * WaferMap.FIELDS))) : "")));
+            }
+            if (!q.currentMap().isEmpty()) {
+                lines.add(Line.plain(label(t, "label.map") + q.currentMap()));
+            }
+            lines.add(Line.plain(label(t, "label.env") + (q.iso() == 0 ? t.tr("q.open") : "ISO " + q.iso())
+                    + " · " + t.tr("q.coolant") + ": " + (q.hasWater() ? yes : no)
+                    + " · " + t.tr("q.vibration") + ": " + (q.vibration() ? yes : no)));
+        } else if (m.def().name.equals("crystal_puller") || m.def().name.equals("wafering_cell")) {
+            lines.add(Line.plain(label(t, "label.env") + t.tr("q.water") + ": " + (q.hasWater() ? yes : no)
+                    + " · " + t.tr("q.pauses") + ": " + q.pauses(0)));
+        }
+        if (q.apcNeed() > 0) {
+            List<MachineQuality.ApcReport> reports = q.apcReports();
+            if (reports.isEmpty()) {
+                lines.add(Line.plain(label(t, "label.apc") + t.tr("q.apc.none")));
+            }
+            for (MachineQuality.ApcReport r : reports) {
+                lines.add(Line.plain(label(t, "label.apc") + r.host() + " " + cu(r.cu()) + "/" + cu(r.max()) + " CU"
+                        + (r.service() ? "" : ", " + t.tr("q.apc.no_service"))));
+            }
+        }
+    }
+
+    private static String cu(double v) {
+        return v == Math.rint(v) ? String.valueOf((long) v) : String.format(Locale.ROOT, "%.1f", v);
+    }
+
+    /** The shift report of one machine: wafers, yield, causes, downtime; for "fcw yield". */
+    private static Rich shiftReport(MachineControllerBlockEntity m, ShellLang t, boolean json) {
+        MachineQuality q = m.quality();
+        List<Line> lines = new ArrayList<>();
+        for (int k = 0; k < 2; k++) {
+            MachineQuality.Shift d = k == 0 ? q.today() : q.yesterday();
+            if (k == 1 && d.wafers == 0 && d.products == 0) {
+                continue;
+            }
+            String head = t.tr(k == 0 ? "q.today" : "q.yesterday");
+            if (q.isScanner()) {
+                StringBuilder classes = new StringBuilder(), causes = new StringBuilder();
+                for (Quality.YieldClass y : Quality.YieldClass.values()) {
+                    if (d.classes[y.ordinal()] > 0) {
+                        classes.append(' ').append(y.name()).append(' ').append(d.classes[y.ordinal()]);
+                    }
+                }
+                for (int i = 0; i < d.causes.length; i++) {
+                    if (d.causes[i] > 0) {
+                        causes.append(' ').append(WaferMap.CAUSES.charAt(i)).append(' ').append(d.causes[i]);
+                    }
+                }
+                lines.add(Line.plain(head + "  " + t.tr("q.wafers", d.wafers) + "  "
+                        + t.tr("q.good", d.wafers == 0 ? 0 : Math.round(100.0 * d.goodFields / (d.wafers * WaferMap.FIELDS)))
+                        + (classes.isEmpty() ? "" : " " + classes) + (causes.isEmpty() ? "" : "   " + t.tr("q.causes") + causes)));
+            } else {
+                lines.add(Line.plain(head + "  " + t.tr("q.products", d.products)));
+            }
+            int down = d.downtime[0] + d.downtime[1] + d.downtime[2];
+            if (down > 0) {
+                lines.add(Line.plain("  " + t.tr("q.downtime") + ": " + t.tr("reason.no_power") + " " + d.downtime[0] / 20 + " s, "
+                        + t.tr("reason.output_full", "out") + " " + d.downtime[1] / 20 + " s, " + t.tr("reason.no_catalyst") + " " + d.downtime[2] / 20 + " s"));
+            }
+        }
+        if (q.isScanner()) {
+            List<MachineQuality.Wafer> all = q.history();
+            for (MachineQuality.Wafer w : all.subList(Math.max(0, all.size() - 6), all.size())) {
+                String causes = MachineQuality.causesText(w.map());
+                lines.add(Line.plain("  " + CLOCK.format(Instant.ofEpochMilli(w.time())) + "  " + w.recipe() + "  " + w.yieldClass().name() + "  "
+                        + w.good() + "/" + WaferMap.FIELDS + (causes.isEmpty() ? "" : "  " + causes)));
+            }
+        }
+        JsonObject o = null;
+        if (json) {
+            o = new JsonObject();
+            o.addProperty("name", name(m));
+            o.addProperty("kind", m.def().name);
+            o.add("today", q.today().json());
+            o.add("yesterday", q.yesterday().json());
+            if (q.isScanner()) {
+                o.add("litho", q.lithoJson());
+            }
         }
         return new Rich(0, lines, o);
     }
@@ -730,7 +850,7 @@ public final class MachineShell {
 
     private static Rich help(ShellLang t) {
         List<Line> lines = new ArrayList<>();
-        for (String c : List.of("status", "start", "stop", "recipe", "log", "name", "bom", "stage", "cancel", "help", "exit")) {
+        for (String c : List.of("status", "start", "stop", "recipe", "log", "name", "bom", "stage", "cancel", "yield", "help", "exit")) {
             lines.add(Line.plain(t.tr("help." + c)));
         }
         return new Rich(0, lines, null);

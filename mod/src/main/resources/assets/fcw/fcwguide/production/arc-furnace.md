@@ -3,7 +3,7 @@ navigation:
   title: "Arc Furnace"
   parent: production/index.md
   position: 10
-  icon: fcw:arc_furnace_kit
+  icon: fcw:arc_furnace_blueprint
 item_ids:
   - fcw:arc_furnace_kit
   - fcw:metallurgical_silicon
@@ -18,8 +18,8 @@ Melts the charge with an electric arc. Makes metallurgical silicon, steel and po
 | | |
 |---|---|
 | Size | 8 x 6 x 5 (width, height, depth), 164 cells |
-| Placement | kit, right-click the ground |
-| Slots | 4 inputs, 4 outputs |
+| Building | blueprint and components: [Building Machines](construction.md) |
+| Stack places | 4 inputs, 4 outputs |
 | Draw | 256 to 384 FE/t while working |
 
 ## Front view
@@ -44,12 +44,18 @@ Melts the charge with an electric arc. Makes metallurgical silicon, steel and po
 
 Sides are named as the operator sees them, standing in front of the panel. Loading and starting: [Operating a machine](operation.md).
 
+## Loading
+
+The charge goes into the opening under the hood: the doors open by themselves. To take the charge back: sneak + right-click with an empty hand. Ingots are taken from the tray at the ladle.
+
 ## Recipes
 
 <MachineRecipes type="fcw:arc_furnace" />
 
 The polysilicon recipe takes any silicon from the `c:silicon` tag, including silicon of other mods.
 
-## Kit
+## Blueprint
 
-<RecipeFor id="fcw:arc_furnace_kit" />
+<RecipeFor id="fcw:arc_furnace_blueprint" />
+
+The bill and the recipes of the components: [Machine Components](components.md).

@@ -13,15 +13,29 @@ item_ids:
 
 # Building the scanner
 
-The scanner is assembled from 301 blocks of 23 kinds in a box of 13 x 6 x 5. The player lays out a blank by the plan, then a right-click on the controller turns it into the machine.
+The scanner is assembled from 301 blocks of 23 kinds in a box of 13 x 6 x 5. There are two ways; the blocks are the same in both.
 
-## Steps
+## Way 1: blueprint
+
+1. Place a build site with the blueprint of the scanner: [Building Machines](construction.md).
+2. Deliver the building blocks to the pallet. The `bom` command on the pallet shows the bill by stages.
+3. The machine assembles itself, stage by stage. The blocks need not be placed or turned.
+4. The last stage is followed by commissioning, and then the breaker is unlocked.
+
+## Way 2: blocks by hand
 
 1. Pick a site of 13 x 5 and the operator side: the long side that holds the controller.
 2. Lay out six layers bottom to top by the scenes below. Hover a block to see its name.
 3. Ports, FOUP load ports, item hatches, the power cabinet and the controller must face outwards.
 4. Right-click the controller. If a block is wrong or faces the wrong way, the chat names the cell and the block needed, and the spot is marked with red dust.
-5. When everything is right, the blank becomes the machine. Switch the main breaker on: it is on the power cabinet at the back.
+5. When everything is right, the blank becomes the machine and commissioning starts: 10 minutes on the `engineer` level. Its progress is on the readout of the panel and in the `status` command.
+6. After commissioning the main breaker is unlocked: it is on the power cabinet at the back.
+
+This way has no build stages: the player has done their work.
+
+## Teardown
+
+The scanner is taken apart with the wrench, like the other machines. The building blocks come back.
 
 Operators can use `/fcw machine blank`: it lays out a finished blank in front of the player.
 

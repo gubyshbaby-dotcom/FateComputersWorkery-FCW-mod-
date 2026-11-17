@@ -11,16 +11,16 @@
       "item": "fcw:steel_plate"
     },
     "K": {
-      "item": "fcw:cpu_pga"
+      "tag": "fcw:build/cpu_pga"
     },
     "M": {
-      "item": "fcw:chip_memory"
+      "tag": "fcw:build/chip_memory"
     },
     "B": {
       "item": "fcw:motherboard"
     },
     "C": {
-      "item": "fcw:chip_controller"
+      "tag": "fcw:build/chip_controller"
     }
   },
   "result": {

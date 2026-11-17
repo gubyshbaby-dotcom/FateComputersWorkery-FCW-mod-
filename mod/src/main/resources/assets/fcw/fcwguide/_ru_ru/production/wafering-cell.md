@@ -3,7 +3,7 @@ navigation:
   title: "Резка и полировка"
   parent: production/index.md
   position: 30
-  icon: fcw:wafering_cell_kit
+  icon: fcw:wafering_cell_blueprint
 item_ids:
   - fcw:wafering_cell_kit
   - fcw:silicon_wafer
@@ -16,8 +16,8 @@ item_ids:
 | | |
 |---|---|
 | Размер | 8 x 3 x 3 (ширина, высота, глубина), 52 клетки |
-| Установка | комплект, ПКМ по земле |
-| Слоты | 4 входа, 4 выхода |
+| Постройка | проект и компоненты: [Постройка машин](construction.md) |
+| Места для стопок | 4 входа, 4 выхода |
 | Расход | 256 FE/т во время работы |
 
 ## Вид спереди
@@ -42,10 +42,16 @@ item_ids:
 
 Стороны названы так, как их видит оператор, стоящий перед пультом. Как загружать и запускать: [Управление машинами](operation.md).
 
+## Загрузка
+
+Слиток кладут на подачу, пластины забирают из кассеты. Вода в порту чистой воды и работа без остановок по питанию дают полировку класса A: [Брак](defects.md).
+
 ## Рецепты
 
 <MachineRecipes type="fcw:wafering" />
 
-## Комплект
+## Проект
 
-<RecipeFor id="fcw:wafering_cell_kit" />
+<RecipeFor id="fcw:wafering_cell_blueprint" />
+
+Ведомость и рецепты компонентов: [Компоненты машин](components.md).

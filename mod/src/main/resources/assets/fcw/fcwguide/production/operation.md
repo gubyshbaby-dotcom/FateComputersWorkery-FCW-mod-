@@ -1,45 +1,72 @@
 ---
 navigation:
-  title: "Operating a machine"
+  title: "Operating Machines"
   parent: production/index.md
   position: 5
   icon: minecraft:lever
 ---
 
-# Operating a machine
+# Operating Machines
 
-This page describes the current version. The way machines are loaded and started is being reworked and will change.
+Machines have no slot windows. Items are put into the machine by hand, and the text console of the operator panel runs the commands. How to build a machine: [Building Machines](construction.md).
 
-## Placing and removing
+## Loading by hand
 
-- The arc furnace, crystal puller, wafering cell and electronics line are placed with a kit: right-click the ground. The whole machine appears, its panel towards the player. If there is not enough room, the blocks in the way are marked with red dust.
-- The EUV scanner is built from its building blocks: [Building the scanner](euv-building.md).
-- Removal: break any cell of the machine while sneaking. The kit and the contents of the slots drop. The scanner turns back into its building blocks.
+Every machine has places for loading and unloading: a hatch, a dock, a tray, a cassette. Aim at one: a line above the hotbar says what the place is, what lies in it and what a right-click will do. A white outline means the item in your hand fits here.
+
+| Action | Result |
+|---|---|
+| Right-click with an item | put the stack from your hand |
+| Right-click with an empty hand | take one stack |
+| Sneak + right-click with an empty hand | take everything |
+| Right-click a fluid port with a bucket | fill or drain the fluid |
+
+A place takes only what the recipes of its section use; the reticle port takes only reticles. A refusal makes a dull click, and the reason stays on the same line for two seconds. Doors and trays open by themselves. The client setting `machines.hints` turns the hint line off.
 
 ## Running
 
-1. Switch the main breaker on (right-click).
-2. Put items into the input slots: through the panel window (right-click the panel) or through an input port.
-3. The recipe starts by itself once the inputs are sufficient and the output slots have room.
-4. Take the result from the panel window or from an output port.
+1. Turn on the main breaker (right-click).
+2. Load the inputs: by hand or through the ports.
+3. The recipe starts by itself once everything it needs is loaded and the output has room.
+4. Take the result from the unloading place or from the port.
 
-When several recipes fit, the machine takes the one with more different inputs, then the one with more items. Put in exactly what the wanted result needs.
+If several recipes match, the machine takes the one with more different inputs. The `recipe` command on the panel picks one.
 
-## States
+## Operator panel
+
+Right-clicking the panel with an empty hand opens a console of 80 x 25. The server runs the commands; `exit` or Esc closes the console.
+
+| Command | Action |
+|---|---|
+| `status` | state, recipe and its progress, load, output, power, yield |
+| `start`, `stop`, `stop now` | switch on; stop after the cycle; stop at once |
+| `recipe`, `recipe name`, `recipe auto` | list the recipes, pin one, give the choice back to the machine |
+| `log`, `log 20` | journal: the last events |
+| `name`, `name new-name` | show or change the name of the machine |
+| `yield` | shift report: [Defects](defects.md) |
+| `bom`, `stage`, `cancel` | on a build site: [Building Machines](construction.md) |
+| `help` | the list of commands |
+
+A machine has a name such as `euv-1` or `eaf-2`, unique in the world, and a journal of 64 events. The same commands work from a computer: [Commands](../reference/commands.md).
+
+## Lamp and readout
+
+The panel carries a two-line readout and a signal lamp. The readout shows the state and the progress of the recipe. The lamp blinks red when the machine stands because of a fault. The power input has a lamp of its own.
 
 | State | Cause |
 |---|---|
 | Off | the breaker is off |
-| Idle | no matching recipe in the input slots |
-| Working | a recipe is running |
+| Idle | what the recipe needs is not loaded |
+| Running | a recipe is in progress |
 | No power | `requirePower` is on and the buffer is short of FE |
-| Output full | the result does not fit into the output slots |
+| Output full | the result does not fit into the output |
+| No reticle | the scanner needs a reticle in the reticle port |
 
 ## Ports
 
-- Item ports work as inventories: hoppers and pipes of other mods connect to them. An input port fills the input slots, an output port empties the output slots.
-- The power port takes FE: [Energy](../energy/index.md).
-- Fluid ports accept fluids, but the recipes of this version do not need them.
-- Doors and drawers open with a right-click; while working, the machine opens and closes them itself.
+- Item ports work as inventories: hoppers and pipes of other mods connect to them. A loading port fills the inputs, an unloading port hands out the result.
+- The power port accepts FE: [Energy](../energy/index.md).
+- Fluid ports accept fluids. Water in the cooling affects quality: [Defects](defects.md).
+- The data port and any cell of the machine accept a data cable from a computer.
 
-The speed of all recipes is set by `production.speedMultiplier`.
+The `production.speedMultiplier` setting changes the speed of all recipes.
