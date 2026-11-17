@@ -60,6 +60,9 @@ enum Cmd {
         kbd: String,
         #[arg(long)]
         reinstall: bool,
+        /// Имя в сети (<имя>.mc); пусто — pc-<8 символов vm_id>
+        #[arg(long, default_value = "")]
+        hostname: String,
     },
     Start {
         #[arg(long)]
@@ -328,9 +331,11 @@ fn state_name(s: i32) -> &'static str {
 
 fn print_vm(v: &pb::VmInfo) {
     println!(
-        "{} state={} image={}@{}{} cpus={} mem={} gpu={} uptime={}s agent={} controller={:?} screens=[{}]{}",
+        "{} state={} host={} ip={} image={}@{}{} cpus={} mem={} gpu={} uptime={}s agent={} controller={:?} screens=[{}]{}",
         v.vm_id,
         state_name(v.state),
+        v.hostname,
+        if v.ip_address.is_empty() { "-" } else { &v.ip_address },
         v.image_id,
         if v.image_version.is_empty() { "-" } else { &v.image_version },
         if v.image_update_available { " (update available)" } else { "" },
@@ -508,6 +513,10 @@ async fn run(cli: Cli) -> Result<()> {
         Cmd::Hello => {
             let h = c.hello().await?;
             println!(
+                "network {} internet {} subnet {} zone .{}",
+                h.network_enabled, h.internet_allowed, h.network_subnet, h.dns_zone
+            );
+            println!(
                 "daemon {} protocol {} quic_port {} cert {} accel {} max_vms {} cpus {} mem {}MB",
                 h.daemon_version,
                 h.protocol_version,
@@ -537,7 +546,22 @@ async fn run(cli: Cli) -> Result<()> {
                 }
             }
         }
-        Cmd::Create { vm, image, cpus, memory, gpu, sound, network, disk_gb, width, height, lang, kbd, reinstall } => {
+        Cmd::Create {
+            vm,
+            image,
+            cpus,
+            memory,
+            gpu,
+            sound,
+            network,
+            disk_gb,
+            width,
+            height,
+            lang,
+            kbd,
+            reinstall,
+            hostname,
+        } => {
             let r = c
                 .ok(K::CreateVm(pb::CreateVm {
                     vm_id: vm,
@@ -553,6 +577,7 @@ async fn run(cli: Cli) -> Result<()> {
                     reinstall,
                     display_width: width,
                     display_height: height,
+                    hostname,
                 }))
                 .await?;
             if let Some(response::Kind::Vm(v)) = r.kind {

@@ -165,13 +165,7 @@ pub struct NetPort {
 
 /// Открывает порт машины: на Unix — сокет `sock_path`, на Windows — TCP
 /// 127.0.0.1 со случайным портом (принимается только первое подключение).
-pub async fn open_port(
-    net: &NetEnv,
-    sock_path: &Path,
-    vm_id: &str,
-    hostname: &str,
-    mac: [u8; 6],
-) -> Result<NetPort> {
+pub async fn open_port(net: &NetEnv, sock_path: &Path, vm_id: &str, hostname: &str, mac: [u8; 6]) -> Result<NetPort> {
     #[cfg(unix)]
     {
         let l = net

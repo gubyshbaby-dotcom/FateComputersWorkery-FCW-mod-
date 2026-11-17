@@ -209,7 +209,11 @@ pub fn build_response(q: &Query<'_>, rcode: u8, aa: bool, answers: &[Answer]) ->
 /// Что делать с запросом.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Decision {
-    Answer { rcode: u8, aa: bool, answers: Vec<Answer> },
+    Answer {
+        rcode: u8,
+        aa: bool,
+        answers: Vec<Answer>,
+    },
     /// Спросить у системы хоста A-записи этого имени.
     Forward(String),
 }
@@ -424,7 +428,10 @@ mod tests {
         update[2] |= 5 << 3;
         assert!(matches!(parse_query(&update).unwrap_err(), ParseError::Error { rcode: NOTIMP, .. }));
         let trunc = build_query(1, "abc.def", TYPE_A, false);
-        assert!(matches!(parse_query(&trunc[..trunc.len() - 3]).unwrap_err(), ParseError::Error { rcode: FORMERR, .. }));
+        assert!(matches!(
+            parse_query(&trunc[..trunc.len() - 3]).unwrap_err(),
+            ParseError::Error { rcode: FORMERR, .. }
+        ));
         let mut ptr = build_query(1, "abc.def", TYPE_A, false);
         ptr[12] = 0xc0;
         assert!(parse_query(&ptr).is_err());

@@ -27,10 +27,10 @@ pub struct Args {
     #[arg(long, default_value = "auto")]
     pub accel: String,
     /// Сеть гостей (свитч fcw-net): on | off
-    #[arg(long, default_value = "on", value_parser = parse_on_off)]
+    #[arg(long, default_value = "on", value_parser = parse_on_off, action = clap::ArgAction::Set)]
     pub network: bool,
     /// Выход гостей в интернет через NAT: on | off
-    #[arg(long, default_value = "on", value_parser = parse_on_off)]
+    #[arg(long, default_value = "on", value_parser = parse_on_off, action = clap::ArgAction::Set)]
     pub internet: bool,
     /// Подсеть машин (шлюз, DHCP и DNS — первый адрес)
     #[arg(long, default_value = "10.42.0.0/16")]
@@ -67,8 +67,21 @@ mod tests {
     #[test]
     fn network_flags() {
         let a = Args::try_parse_from([
-            "fcw-daemon", "--images-dir", "i", "--vms-dir", "v", "--control", "c", "--internet", "off",
-            "--net-allow", "10.1.0.0/16", "--net-allow", "10.2.0.5", "--net-deny", "1.1.1.1",
+            "fcw-daemon",
+            "--images-dir",
+            "i",
+            "--vms-dir",
+            "v",
+            "--control",
+            "c",
+            "--internet",
+            "off",
+            "--net-allow",
+            "10.1.0.0/16",
+            "--net-allow",
+            "10.2.0.5",
+            "--net-deny",
+            "1.1.1.1",
         ])
         .unwrap();
         assert!(a.network);
@@ -76,6 +89,17 @@ mod tests {
         assert_eq!(a.net_allow, vec!["10.1.0.0/16", "10.2.0.5"]);
         assert_eq!(a.net_deny, vec!["1.1.1.1"]);
         assert_eq!(a.net_subnet, "10.42.0.0/16");
-        assert!(Args::try_parse_from(["fcw-daemon", "--images-dir", "i", "--vms-dir", "v", "--control", "c", "--network", "maybe"]).is_err());
+        assert!(Args::try_parse_from([
+            "fcw-daemon",
+            "--images-dir",
+            "i",
+            "--vms-dir",
+            "v",
+            "--control",
+            "c",
+            "--network",
+            "maybe"
+        ])
+        .is_err());
     }
 }

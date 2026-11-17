@@ -66,13 +66,7 @@ pub fn is_private(ip: Ipv4Addr) -> bool {
 }
 
 /// Чистая проверка (без обращения к системе).
-pub fn check(
-    cfg: &FirewallConfig,
-    subnet: Ipv4Net,
-    host_addrs: &[Ipv4Addr],
-    dst: Ipv4Addr,
-    dport: u16,
-) -> Verdict {
+pub fn check(cfg: &FirewallConfig, subnet: Ipv4Net, host_addrs: &[Ipv4Addr], dst: Ipv4Addr, dport: u16) -> Verdict {
     if subnet.contains(&dst)
         || dst.is_unspecified()
         || in_prefix(dst, (0, 8))

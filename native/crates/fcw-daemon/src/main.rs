@@ -137,7 +137,12 @@ async fn run(args: Args, events: broadcast::Sender<pb::Event>) -> Result<()> {
 
     let tz = fcw_daemon::vm::host_timezone();
     tracing::info!("host time zone: {}", tz.as_deref().unwrap_or("unknown"));
-    let env = Arc::new(Env { images_dir: args.images_dir.clone(), qemu, qemu_img, accel, tz });
+    let qemu_version = qemu.as_deref().and_then(fcw_daemon::net::qemu_version);
+    if let Some((a, b, c)) = qemu_version {
+        tracing::info!("qemu version: {a}.{b}.{c}");
+    }
+    let net = fcw_daemon::net::build(&args)?;
+    let env = Arc::new(Env { images_dir: args.images_dir.clone(), qemu, qemu_img, accel, tz, qemu_version, net });
     let d = Daemon::new(env, args.vms_dir.clone(), args.max_vms, quic_port, cert.sha256_hex.clone(), events);
 
     if let Some(dir) = args.control.parent().filter(|p| !p.as_os_str().is_empty()) {

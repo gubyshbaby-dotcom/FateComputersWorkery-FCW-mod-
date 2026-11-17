@@ -111,6 +111,8 @@ async fn machines_stay_on_their_image_version() {
         qemu_img: Some(qemu_img.clone()),
         accel: Accel::Tcg,
         tz: None,
+        qemu_version: None,
+        net: None,
     });
     let d = Daemon::new(env, dir.join("vms"), 8, 1, "00".into(), events);
     let sock = dir.join("control.sock");

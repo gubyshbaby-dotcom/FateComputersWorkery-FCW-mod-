@@ -172,12 +172,12 @@ public class DisplayScreen extends Screen {
         g.drawString(font, caps, width - font.width(caps) - 4, 2, other != null ? 0xFFFF8855 : 0xFFBBBBBB, false);
         if (other != null && status == null) {
             Component msg = Component.translatable("screen.fcw.controlled_by", other);
-            Component hint = Component.translatable(mayControl() ? "screen.fcw.click_to_retake" : "screen.fcw.view_only");
-            int bw = Math.max(font.width(msg), font.width(hint)) + 16;
+            Component retake = Component.translatable(mayControl() ? "screen.fcw.click_to_retake" : "screen.fcw.view_only");
+            int bw = Math.max(font.width(msg), font.width(retake)) + 16;
             int by = height - 40;
             g.fill((width - bw) / 2, by - 4, (width + bw) / 2, by + 22, 0xC0000000);
             g.drawCenteredString(font, msg, width / 2, by, 0xFFFF8855);
-            g.drawCenteredString(font, hint, width / 2, by + 11, 0xFFDDDDDD);
+            g.drawCenteredString(font, retake, width / 2, by + 11, 0xFFDDDDDD);
         }
 
         if (status != null) {

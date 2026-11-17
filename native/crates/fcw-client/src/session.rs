@@ -68,7 +68,11 @@ pub struct Session {
     conn: Mutex<Option<quinn::Connection>>,
     pointer_seq: AtomicU64,
     done: AtomicBool,
+    close_pong: tokio::sync::Notify,
 }
+
+/// Nonce пинга, которым закрытие сессии ждёт обработки ввода демоном.
+const CLOSE_PING: u64 = u64::MAX;
 
 fn msg(kind: client_msg::Kind) -> spb::ClientMsg {
     spb::ClientMsg { kind: Some(kind) }
@@ -100,6 +104,7 @@ impl Session {
             conn: Mutex::new(None),
             pointer_seq: AtomicU64::new(0),
             done: AtomicBool::new(false),
+            close_pong: tokio::sync::Notify::new(),
         });
         let s2 = s.clone();
         let host = host.to_string();
@@ -124,7 +129,7 @@ impl Session {
         self.views.lock().clear();
         if let Some(c) = self.conn.lock().clone() {
             runtime().spawn(async move {
-                tokio::time::sleep(Duration::from_secs(2)).await;
+                tokio::time::sleep(Duration::from_secs(3)).await;
                 c.close(0u32.into(), b"closed");
             });
         }
@@ -378,15 +383,27 @@ impl Session {
             tokio::select! {
                 cmd = rx.recv() => match cmd {
                     None | Some(Cmd::Close) => {
-                        // дописать ввод и дождаться подтверждения, потом закрыть
+                        // Дописать ввод, потом закрыть. Подтверждение QUIC значит
+                        // «получено», но не «обработано»: демон читает потоки ввода
+                        // в своих задачах, и закрытие соединения выбросило бы
+                        // непрочитанное. Поэтому ещё ждём Pong (круг через демон)
+                        // и даём ему немного времени.
                         let flush = async {
+                            let had_input = !inputs.is_empty();
                             for (_, mut s) in inputs.drain() {
                                 let _ = s.finish();
                                 let _ = s.stopped().await;
                             }
+                            if had_input {
+                                let ping = msg(client_msg::Kind::Ping(spb::Ping { nonce: CLOSE_PING }));
+                                if frame::write_async(&mut send, &ping).await.is_ok() {
+                                    self.close_pong.notified().await;
+                                }
+                                tokio::time::sleep(Duration::from_millis(100)).await;
+                            }
                             let _ = send.finish();
                         };
-                        let _ = tokio::time::timeout(Duration::from_secs(1), flush).await;
+                        let _ = tokio::time::timeout(Duration::from_secs(2), flush).await;
                         conn.close(0u32.into(), b"closed");
                         let _ = tokio::time::timeout(Duration::from_millis(500), ep.wait_idle()).await;
                         return Ok(());
@@ -462,7 +479,11 @@ impl Session {
             server_msg::Kind::VmState(s) => {
                 self.push_event(json!({ "type": "vm_state", "vm_id": s.vm_id, "state": s.state }));
             }
-            server_msg::Kind::Pong(_) => {}
+            server_msg::Kind::Pong(p) => {
+                if p.nonce == CLOSE_PING {
+                    self.close_pong.notify_one();
+                }
+            }
             server_msg::Kind::Error(e) => {
                 self.push_event(json!({ "type": "error", "message": e.message, "fatal": false }));
             }

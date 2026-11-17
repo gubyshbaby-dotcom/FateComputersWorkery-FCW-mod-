@@ -845,10 +845,7 @@ impl Vm {
             a.push("-netdev".into());
             a.push(net::netdev_arg(attach, self.env.qemu_version));
             a.push("-device".into());
-            a.push(format!(
-                "virtio-net-pci,netdev=net0,mac={},romfile=",
-                net::mac_string(NetSwitchMac::of(&self.id))
-            ));
+            a.push(format!("virtio-net-pci,netdev=net0,mac={},romfile=", net::mac_string(NetSwitchMac::of(&self.id))));
         }
         a
     }
@@ -1505,7 +1502,14 @@ mod tests {
     #[test]
     fn args_contract() {
         let (vm, img) = test_vm(true, true);
-        let a = vm.qemu_args(&vm.config(), &img, Path::new("/vms/vm1/disk.qcow2"), Some(&NetAttach::Unix("/vms/vm1/net.sock".into()))).join(" ");
+        let a = vm
+            .qemu_args(
+                &vm.config(),
+                &img,
+                Path::new("/vms/vm1/disk.qcow2"),
+                Some(&NetAttach::Unix("/vms/vm1/net.sock".into())),
+            )
+            .join(" ");
         assert!(a.contains("-machine q35"));
         assert!(a.contains("-accel tcg,thread=multi -cpu max"));
         assert!(a.contains("-m 512"));

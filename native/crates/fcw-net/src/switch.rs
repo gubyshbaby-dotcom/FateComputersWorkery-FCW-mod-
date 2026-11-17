@@ -210,7 +210,8 @@ impl NetSwitch {
         }
         let handle = tokio::runtime::Handle::try_current()
             .map_err(|_| io::Error::other("NetSwitch::new: нужен рантайм tokio"))?;
-        let proxy = cfg.upstream_https_proxy.as_deref().filter(|s| !s.trim().is_empty()).map(HttpProxy::parse).transpose()?;
+        let proxy =
+            cfg.upstream_https_proxy.as_deref().filter(|s| !s.trim().is_empty()).map(HttpProxy::parse).transpose()?;
         let zone = cfg
             .dns_zone
             .trim_matches('.')
@@ -549,9 +550,8 @@ impl NetSwitch {
         let t = &mut *g;
         let ports = &t.ports;
         // Устаревшие выученные адреса забываем; собственные MAC портов — никогда.
-        t.by_mac.retain(|m, (id, seen)| {
-            ports.get(id).is_some_and(|p| p.mac == *m || now.duration_since(*seen) < MAC_AGE)
-        });
+        t.by_mac
+            .retain(|m, (id, seen)| ports.get(id).is_some_and(|p| p.mac == *m || now.duration_since(*seen) < MAC_AGE));
         let mine = t.by_mac.values().filter(|(id, _)| *id == port.id).count();
         match t.by_mac.get(&mac) {
             Some((id, _)) if *id == port.id => {}
@@ -613,8 +613,14 @@ impl NetSwitch {
             wire::ETHERTYPE_ARP => {
                 let Some(a) = wire::parse_arp(eth.payload) else { return };
                 if a.op == wire::ARP_REQUEST && a.tpa == self.gw_ip {
-                    let reply = wire::Arp { op: wire::ARP_REPLY, sha: GATEWAY_MAC, spa: self.gw_ip, tha: a.sha, tpa: a.spa };
-                    port.send(Bytes::from(wire::build_eth(eth.src, GATEWAY_MAC, wire::ETHERTYPE_ARP, &wire::build_arp(&reply))));
+                    let reply =
+                        wire::Arp { op: wire::ARP_REPLY, sha: GATEWAY_MAC, spa: self.gw_ip, tha: a.sha, tpa: a.spa };
+                    port.send(Bytes::from(wire::build_eth(
+                        eth.src,
+                        GATEWAY_MAC,
+                        wire::ETHERTYPE_ARP,
+                        &wire::build_arp(&reply),
+                    )));
                 }
             }
             wire::ETHERTYPE_IPV4 => {
@@ -680,7 +686,10 @@ impl NetSwitch {
         };
         let Some(reply) = dhcp::respond(&req, &lease) else { return };
         tracing::debug!(vm = %port.vm_id, "fcw-net: DHCP {} -> {}", req.msg_type, reply.msg_type);
-        if reply.msg_type == dhcp::ACK && req.msg_type != dhcp::INFORM && !port.c.ip_configured.swap(true, Ordering::Relaxed) {
+        if reply.msg_type == dhcp::ACK
+            && req.msg_type != dhcp::INFORM
+            && !port.c.ip_configured.swap(true, Ordering::Relaxed)
+        {
             tracing::info!(vm = %port.vm_id, ip = %port.ip, "fcw-net: адрес выдан по DHCP");
         }
         let udp = wire::build_udp(self.gw_ip, dhcp::SERVER_PORT, reply.dst_ip, dhcp::CLIENT_PORT, &reply.payload);
@@ -714,8 +723,14 @@ impl NetSwitch {
                 return;
             }
         };
-        let decision =
-            dns::decide(&q, &self.zone, self.cfg.subnet, self.gw_ip, |l| self.machine_ip(l), |ip| self.machine_name(ip));
+        let decision = dns::decide(
+            &q,
+            &self.zone,
+            self.cfg.subnet,
+            self.gw_ip,
+            |l| self.machine_ip(l),
+            |ip| self.machine_name(ip),
+        );
         match decision {
             Decision::Answer { rcode, aa, answers } => {
                 self.reply_udp(port, dns::PORT, src, sport, &dns::build_response(&q, rcode, aa, &answers));
@@ -818,7 +833,11 @@ impl NetSwitch {
             wire::PROTO_TCP => {
                 let Some(t) = wire::parse_tcp(ip) else { return };
                 if t.is_syn_only() || !self.cfg.allow_internet {
-                    let v = if self.cfg.allow_internet { self.fw.check(ip.dst, t.dport) } else { Verdict::Deny("no-internet") };
+                    let v = if self.cfg.allow_internet {
+                        self.fw.check(ip.dst, t.dport)
+                    } else {
+                        Verdict::Deny("no-internet")
+                    };
                     if let Verdict::Deny(why) = v {
                         if t.is_syn_only() {
                             Counters::inc(&port.c.fw_blocked);

@@ -104,6 +104,10 @@ fn dispatch(d: &Arc<Daemon>, tx: &Tx, id: u64, kind: request::Kind) {
                     max_vms: d.max_vms,
                     host_cpus: std::thread::available_parallelism().map(|n| n.get() as u32).unwrap_or(1),
                     host_memory_mb: Daemon::host_memory_mb(),
+                    network_enabled: d.env.net.is_some(),
+                    internet_allowed: d.env.net.as_ref().map(|n| n.internet).unwrap_or(false),
+                    network_subnet: d.env.net.as_ref().map(|n| n.subnet.clone()).unwrap_or_default(),
+                    dns_zone: d.env.net.as_ref().map(|n| n.zone.clone()).unwrap_or_default(),
                 }))),
             );
         }
@@ -170,6 +174,19 @@ fn dispatch(d: &Arc<Daemon>, tx: &Tx, id: u64, kind: request::Kind) {
             vm.start(&g).await?;
             Ok(Some(response::Kind::Vm(vm.info())))
         }),
+        K::StopVm(r) if r.force => {
+            // принудительная остановка не ждёт очереди: идущая мягкая остановка
+            // (или запуск) завершится сама, когда QEMU умрёт
+            let vm = match d.vm_or_err(&r.vm_id) {
+                Ok(vm) => vm,
+                Err(e) => return respond(tx, id, Err(e)),
+            };
+            let tx = tx.clone();
+            tokio::spawn(async move {
+                let res = vm.kill_now().await.map(|_| Some(response::Kind::Vm(vm.info())));
+                respond(&tx, id, res);
+            });
+        }
         K::StopVm(r) => {
             let timeout = Duration::from_millis(if r.timeout_ms == 0 { 30_000 } else { r.timeout_ms as u64 });
             let force = r.force;
@@ -186,14 +203,26 @@ fn dispatch(d: &Arc<Daemon>, tx: &Tx, id: u64, kind: request::Kind) {
             vm.resume(&g).await?;
             Ok(Some(response::Kind::Vm(vm.info())))
         }),
-        K::DeleteVm(r) => vm_op(d, tx, id, &r.vm_id, |d, vm, g| async move {
-            vm.stop(&g, true, Duration::from_secs(5)).await?;
-            d.revoke(&vm.id, "");
-            d.vms.lock().remove(&vm.id);
-            vm.remove_files()?;
-            Ok(None)
-        }),
+        K::DeleteVm(r) => {
+            // сначала убить QEMU (без очереди), потом удалить в порядке очереди
+            if let Some(vm) = d.vm(&r.vm_id) {
+                tokio::spawn(async move {
+                    let _ = vm.kill_now().await;
+                });
+            }
+            delete_vm(d, tx, id, &r.vm_id)
+        }
     }
+}
+
+fn delete_vm(d: &Arc<Daemon>, tx: &Tx, id: u64, vm_id: &str) {
+    vm_op(d, tx, id, vm_id, |d, vm, g| async move {
+        vm.stop(&g, true, Duration::from_secs(5)).await?;
+        d.revoke(&vm.id, "");
+        d.vms.lock().remove(&vm.id);
+        vm.remove_files()?;
+        Ok(None)
+    })
 }
 
 fn vm_op<F, Fut>(d: &Arc<Daemon>, tx: &Tx, id: u64, vm_id: &str, f: F)

@@ -213,7 +213,13 @@ fn build(req: &Message, l: &Lease<'_>, msg_type: u8) -> Reply {
 
 /// Собрать запрос клиента (для тестов).
 #[cfg(test)]
-pub fn build_request(xid: u32, chaddr: Mac, msg_type: u8, requested: Option<Ipv4Addr>, server: Option<Ipv4Addr>) -> Vec<u8> {
+pub fn build_request(
+    xid: u32,
+    chaddr: Mac,
+    msg_type: u8,
+    requested: Option<Ipv4Addr>,
+    server: Option<Ipv4Addr>,
+) -> Vec<u8> {
     let mut v = vec![0u8; 236];
     v[0] = 1;
     v[1] = 1;

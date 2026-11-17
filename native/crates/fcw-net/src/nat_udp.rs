@@ -81,15 +81,7 @@ impl UdpNat {
         let gen = self.next_gen.fetch_add(1, Ordering::Relaxed);
         let last = Arc::new(AtomicU64::new(now_ms(epoch())));
         let idle = if dst.port() == 53 { IDLE_DNS } else { IDLE };
-        let task = tokio::spawn(flow_task(
-            sw.weak_self(),
-            port.clone(),
-            key,
-            gen,
-            sock,
-            last.clone(),
-            idle,
-        ));
+        let task = tokio::spawn(flow_task(sw.weak_self(), port.clone(), key, gen, sock, last.clone(), idle));
         Counters::inc(&port.c.udp_active);
         Counters::inc(&port.c.udp_total);
         flows.insert(key, Flow { send, last, gen, c: port.c.clone(), task });

@@ -11,6 +11,7 @@ import com.fatecomputers.fcw.registry.ModItems;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
@@ -41,13 +42,16 @@ public class ComputerScreen extends AbstractContainerScreen<ComputerMenu> {
     private static final int LIST_Y = 28;
     private static final int LIST_W = 180;
     private static final int ROW_H = 11;
-    private static final int ROWS = 5;
-    private static final int STATUS_Y = 108;
-    private static final int BUTTONS_Y = 88;
+    private static final int ROWS = 4;
+    private static final int STATUS_Y = 96;
+    private static final int BUTTONS_Y = 76;
+    private static final java.util.regex.Pattern BUILD_ID = java.util.regex.Pattern.compile("(\\d{4})(\\d{2})(\\d{2})(\\d{2})(\\d{2})\\d{2}-.*");
 
     private Button powerButton;
     private Button reinstallButton;
     private Button refreshButton;
+    private Button updateButton;
+    private boolean confirmUpdate;
     private Button confirmButton;
     private Button cancelButton;
     private int scroll;
@@ -77,10 +81,14 @@ public class ComputerScreen extends AbstractContainerScreen<ComputerMenu> {
         inventoryLabelY = -1000; // no "Inventory" caption, the space is used by the status
         powerButton = addRenderableWidget(Button.builder(Component.translatable("gui.fcw.power_on"), b -> onPower())
                 .bounds(leftPos + 8, topPos + 96, 78, 20).build());
-        reinstallButton = addRenderableWidget(Button.builder(Component.translatable("gui.fcw.reinstall"), b -> onReinstall())
+        reinstallButton = addRenderableWidget(Button.builder(Component.translatable("gui.fcw.reinstall"), b -> onReinstall(false))
                 .bounds(leftPos + LIST_X, topPos + BUTTONS_Y, 88, 16).build());
-        refreshButton = addRenderableWidget(Button.builder(Component.translatable("gui.fcw.refresh"), b -> send(ComputerActionPayload.REFRESH_IMAGES, ""))
-                .bounds(leftPos + LIST_X + 92, topPos + BUTTONS_Y, 88, 16).build());
+        updateButton = addRenderableWidget(Button.builder(Component.translatable("gui.fcw.update_os"), b -> onReinstall(true))
+                .bounds(leftPos + LIST_X + 92, topPos + BUTTONS_Y, 88, 16)
+                .tooltip(Tooltip.create(Component.translatable("gui.fcw.update_os.tooltip"))).build());
+        refreshButton = addRenderableWidget(Button.builder(Component.literal("↻"), b -> send(ComputerActionPayload.REFRESH_IMAGES, ""))
+                .bounds(leftPos + LIST_X + LIST_W - 13, topPos + LIST_Y - 13, 13, 12)
+                .tooltip(Tooltip.create(Component.translatable("gui.fcw.refresh"))).build());
         confirmButton = addRenderableWidget(Button.builder(Component.translatable("gui.fcw.reinstall.confirm"), b -> {
                     if (confirmImage != null) {
                         send(ComputerActionPayload.REINSTALL, confirmImage);
@@ -113,10 +121,15 @@ public class ComputerScreen extends AbstractContainerScreen<ComputerMenu> {
         }
     }
 
-    private void onReinstall() {
+    private void onReinstall(boolean update) {
         ComputerStatusPayload s = status();
-        if (s != null && !s.imageId().isEmpty()) {
-            confirmImage = s.imageId();
+        if (s == null) {
+            return;
+        }
+        String id = update ? s.installedImage() : s.imageId();
+        if (!id.isEmpty()) {
+            confirmImage = id;
+            confirmUpdate = update;
         }
     }
 
@@ -133,6 +146,7 @@ public class ComputerScreen extends AbstractContainerScreen<ComputerMenu> {
         cancelButton.visible = confirming;
         reinstallButton.visible = !confirming;
         refreshButton.visible = !confirming;
+        updateButton.visible = !confirming && s != null && s.imageUpdateAvailable() && !s.installedImage().isEmpty();
         if (s == null) {
             powerButton.active = false;
             reinstallButton.active = false;
@@ -155,6 +169,8 @@ public class ComputerScreen extends AbstractContainerScreen<ComputerMenu> {
         }
         ComputerStatusPayload.ImageEntry img = image(s, s.imageId());
         reinstallButton.active = !on && !s.busy() && img != null && img.installed() && s.daemonStatus() == 2;
+        ComputerStatusPayload.ImageEntry installed = image(s, s.installedImage());
+        updateButton.active = !on && !s.busy() && installed != null && installed.installed() && s.daemonStatus() == 2;
         refreshButton.active = s.daemonStatus() == 2;
     }
 
@@ -227,7 +243,7 @@ public class ComputerScreen extends AbstractContainerScreen<ComputerMenu> {
         // OS list panel
         bevel(g, x + LIST_X - 1, y + LIST_Y - 1, LIST_W + 2, ROWS * ROW_H + 3, PANEL, BORDER_DARK, BORDER_LIGHT);
         // status panel
-        g.fill(x + LIST_X - 1, y + STATUS_Y - 3, x + LIST_X + LIST_W + 1, y + STATUS_Y + 37, 0xFF25272B);
+        g.fill(x + LIST_X - 1, y + STATUS_Y - 3, x + LIST_X + LIST_W + 1, y + STATUS_Y + 48, 0xFF25272B);
         // slots
         for (Slot slot : menu.slots) {
             bevel(g, x + slot.x - 1, y + slot.y - 1, 18, 18, 0xFF3A3C42, BORDER_DARK, BORDER_LIGHT);
@@ -342,11 +358,9 @@ public class ComputerScreen extends AbstractContainerScreen<ComputerMenu> {
                 g.fill(LIST_X, ry, LIST_X + LIST_W, ry + ROW_H, 0xFF33363C);
             }
             String marker = e.id().equals(s.installedImage()) ? "● " : "  ";
-            String label = marker + imageName(e) + (e.version().isEmpty() ? "" : " " + e.version());
+            String label = marker + imageName(e);
             int color = e.installed() ? TEXT : TEXT_DIM;
-            Component right = e.installed()
-                    ? Component.translatable("gui.fcw.images.min_memory", e.minMemoryMb())
-                    : Component.translatable("gui.fcw.images.not_downloaded");
+            Component right = e.installed() ? memoryShort(e.minMemoryMb()) : Component.translatable("gui.fcw.images.not_downloaded");
             int rw = font.width(right);
             g.drawString(font, font.plainSubstrByWidth(label, LIST_W - rw - 10), LIST_X + 2, ry + 2, color, false);
             g.drawString(font, right, LIST_X + LIST_W - rw - 3, ry + 2, e.installed() ? TEXT_DIM : 0xFFC08040, false);
@@ -357,6 +371,23 @@ public class ComputerScreen extends AbstractContainerScreen<ComputerMenu> {
             int ty = LIST_Y + 1 + (barH - thumb) * scroll / Math.max(1, images.size() - ROWS);
             g.fill(LIST_X + LIST_W - 2, ty, LIST_X + LIST_W, ty + thumb, BORDER_LIGHT);
         }
+    }
+
+    /** "1 ГБ+" / "512 МБ+": minimum memory of an image, short enough for a list row. */
+    private static Component memoryShort(int mb) {
+        if (mb >= 1024 && mb % 1024 == 0) {
+            return Component.translatable("gui.fcw.images.min_gb", mb / 1024);
+        }
+        return Component.translatable("gui.fcw.images.min_mb", mb);
+    }
+
+    /** Build id "20261117094318-6e42f49e" -> "2026-11-17 09:43"; anything else as is (shortened). */
+    static String formatBuild(String v) {
+        java.util.regex.Matcher m = BUILD_ID.matcher(v);
+        if (m.matches()) {
+            return m.group(1) + "-" + m.group(2) + "-" + m.group(3) + " " + m.group(4) + ":" + m.group(5);
+        }
+        return v.length() > 20 ? v.substring(0, 20) + "…" : v;
     }
 
     private static String uptime(long ms) {
@@ -384,34 +415,57 @@ public class ComputerScreen extends AbstractContainerScreen<ComputerMenu> {
 
     private void renderStatus(GuiGraphics g, ComputerStatusPayload s) {
         List<FormattedCharSequence> lines = new ArrayList<>();
+        int width = LIST_W - 4;
         MutableComponent state = Component.translatable("gui.fcw.state", stateText(s));
         if (s.uptimeMs() > 0) {
             state.append(Component.literal(" · " + uptime(s.uptimeMs())).withStyle(ChatFormatting.GRAY));
         }
         lines.add(state.getVisualOrderText());
-        if (!s.agentInfo().isEmpty()) {
-            lines.add(Component.translatable("gui.fcw.guest", s.agentInfo()).withStyle(ChatFormatting.GRAY).getVisualOrderText());
-        }
-        if (!s.controller().isEmpty()) {
-            lines.add(Component.translatable("gui.fcw.controller", s.controller()).withStyle(ChatFormatting.GRAY).getVisualOrderText());
-        }
+        // problems first: they explain why nothing happens
         if (s.daemonStatus() != 2) {
-            lines.addAll(font.split(Component.translatable("gui.fcw.error.daemon", s.daemonMessage()).withStyle(ChatFormatting.RED), LIST_W - 4));
+            lines.addAll(font.split(Component.translatable("gui.fcw.error.daemon", s.daemonMessage()).withStyle(ChatFormatting.RED), width));
         } else if (!s.error().getString().isEmpty()) {
-            lines.addAll(font.split(s.error().copy().withStyle(ChatFormatting.RED), LIST_W - 4));
+            lines.addAll(font.split(s.error().copy().withStyle(ChatFormatting.RED), width));
         } else if (!isOn(s) && !s.busy()) {
             Component problem = startProblem(s);
             if (problem != null) {
-                lines.addAll(font.split(problem.copy().withStyle(ChatFormatting.YELLOW), LIST_W - 4));
+                lines.addAll(font.split(problem.copy().withStyle(ChatFormatting.YELLOW), width));
             } else if (!s.gpu()) {
-                lines.addAll(font.split(Component.translatable("gui.fcw.hint.text_only").withStyle(ChatFormatting.GRAY), LIST_W - 4));
+                lines.addAll(font.split(Component.translatable("gui.fcw.hint.text_only").withStyle(ChatFormatting.GRAY), width));
             }
         } else if (isOn(s) && s.monitors() == 0) {
-            lines.addAll(font.split(Component.translatable("gui.fcw.hint.no_monitor").withStyle(ChatFormatting.GRAY), LIST_W - 4));
+            lines.addAll(font.split(Component.translatable("gui.fcw.hint.no_monitor").withStyle(ChatFormatting.GRAY), width));
+        }
+        if (s.imageUpdateAvailable() && !s.installedImage().isEmpty()) {
+            lines.add(Component.translatable("gui.fcw.update_available").withStyle(ChatFormatting.GOLD).getVisualOrderText());
+        }
+        // installed system and its build
+        if (!s.installedImage().isEmpty()) {
+            ComputerStatusPayload.ImageEntry img = image(s, s.installedImage());
+            String name = img == null ? s.installedImage() : imageName(img);
+            MutableComponent os = Component.translatable("gui.fcw.os_line", name);
+            if (!s.imageVersion().isEmpty()) {
+                os.append(Component.literal(" · " + formatBuild(s.imageVersion())));
+            }
+            lines.add(os.withStyle(ChatFormatting.GRAY).getVisualOrderText());
+        }
+        // network name and address
+        Component net;
+        if (!s.network()) {
+            net = Component.translatable("gui.fcw.net.off");
+        } else {
+            String host = s.hostname() + (s.dnsZone().isEmpty() ? "" : "." + s.dnsZone());
+            net = s.ipAddress().isEmpty()
+                    ? Component.translatable("gui.fcw.net.no_ip", host)
+                    : Component.translatable("gui.fcw.net.ip", host, s.ipAddress());
+        }
+        lines.add(net.copy().withStyle(ChatFormatting.GRAY).getVisualOrderText());
+        if (!s.controller().isEmpty()) {
+            lines.add(Component.translatable("gui.fcw.controller", s.controller()).withStyle(ChatFormatting.GRAY).getVisualOrderText());
         }
         int y = STATUS_Y;
         for (FormattedCharSequence line : lines) {
-            if (y > STATUS_Y + 28) {
+            if (y > STATUS_Y + 40) {
                 break;
             }
             g.drawString(font, line, LIST_X + 1, y, TEXT, false);
@@ -423,7 +477,8 @@ public class ComputerScreen extends AbstractContainerScreen<ComputerMenu> {
         ComputerStatusPayload.ImageEntry img = image(s, confirmImage);
         String name = img == null ? confirmImage : imageName(img);
         int y = LIST_Y + 3;
-        for (FormattedCharSequence line : font.split(Component.translatable("gui.fcw.reinstall.warning", name)
+        String key = confirmUpdate ? "gui.fcw.update_os.warning" : "gui.fcw.reinstall.warning";
+        for (FormattedCharSequence line : font.split(Component.translatable(key, name)
                 .withStyle(ChatFormatting.GOLD), LIST_W - 8)) {
             if (y > LIST_Y + ROWS * ROW_H - 8) {
                 break;
@@ -461,6 +516,34 @@ public class ComputerScreen extends AbstractContainerScreen<ComputerMenu> {
                 g.renderComponentTooltip(font, List.of(
                         Component.translatable("device.fcw." + keys[i]),
                         Component.translatable("gui.fcw.device_hint." + keys[i]).withStyle(ChatFormatting.GRAY)), mouseX, mouseY);
+            }
+        }
+        // details of an OS image in the list
+        ComputerStatusPayload st = status();
+        if (st != null && confirmImage == null && mx >= LIST_X && mx < LIST_X + LIST_W
+                && my >= LIST_Y + 1 && my < LIST_Y + 1 + ROWS * ROW_H) {
+            int idx = (my - LIST_Y - 1) / ROW_H + scroll;
+            if (idx >= 0 && idx < st.images().size()) {
+                ComputerStatusPayload.ImageEntry e = st.images().get(idx);
+                List<Component> tip = new ArrayList<>();
+                tip.add(Component.literal(imageName(e)));
+                if (!e.version().isEmpty()) {
+                    tip.add(Component.translatable("gui.fcw.image.version", e.version()).withStyle(ChatFormatting.GRAY));
+                }
+                if (!e.imageVersion().isEmpty()) {
+                    tip.add(Component.translatable("gui.fcw.image.build", formatBuild(e.imageVersion())).withStyle(ChatFormatting.GRAY));
+                }
+                if (!e.desktop().isEmpty()) {
+                    tip.add(Component.translatable("gui.fcw.image.desktop", e.desktop()).withStyle(ChatFormatting.GRAY));
+                }
+                tip.add(Component.translatable("gui.fcw.image.memory", e.minMemoryMb(), e.recommendedMemoryMb()).withStyle(ChatFormatting.GRAY));
+                if (e.id().equals(st.installedImage())) {
+                    tip.add(Component.translatable("gui.fcw.image.installed_here").withStyle(ChatFormatting.AQUA));
+                }
+                if (!e.installed()) {
+                    tip.add(Component.translatable("gui.fcw.error.image_not_installed", imageName(e), e.id()).withStyle(ChatFormatting.YELLOW));
+                }
+                g.renderComponentTooltip(font, tip, mouseX, mouseY);
             }
         }
         // why the power button is disabled

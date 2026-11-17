@@ -25,7 +25,15 @@ fn tmpdir(name: &str) -> PathBuf {
 
 fn daemon(dir: &Path, port: u16, sha: &str) -> Arc<Daemon> {
     let (events, _) = broadcast::channel(256);
-    let env = Arc::new(Env { images_dir: dir.join("images"), qemu: None, qemu_img: None, accel: Accel::Tcg, tz: None });
+    let env = Arc::new(Env {
+        images_dir: dir.join("images"),
+        qemu: None,
+        qemu_img: None,
+        accel: Accel::Tcg,
+        tz: None,
+        qemu_version: None,
+        net: None,
+    });
     Daemon::new(env, dir.join("vms"), 4, port, sha.to_string(), events)
 }
 

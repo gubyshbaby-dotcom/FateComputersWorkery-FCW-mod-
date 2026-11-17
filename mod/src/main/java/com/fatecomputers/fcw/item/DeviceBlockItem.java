@@ -27,6 +27,7 @@ public class DeviceBlockItem extends BlockItem {
         if (kind == null) {
             tooltip.add(Component.translatable("tooltip.fcw.computer").withStyle(ChatFormatting.GRAY));
             tooltip.add(Component.translatable("tooltip.fcw.computer.link").withStyle(ChatFormatting.DARK_GRAY));
+            tooltip.add(Component.translatable("tooltip.fcw.computer.name").withStyle(ChatFormatting.DARK_GRAY));
             tooltip.add(Component.translatable("tooltip.fcw.computer.break_warning").withStyle(ChatFormatting.RED));
         } else {
             tooltip.add(Component.translatable("tooltip.fcw." + kind.id()).withStyle(ChatFormatting.GRAY));

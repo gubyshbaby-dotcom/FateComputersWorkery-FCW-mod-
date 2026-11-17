@@ -11,6 +11,11 @@ on:
 permissions:
   contents: write
 
+# новая сборка той же ветки отменяет предыдущую
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     runs-on: ubuntu-latest

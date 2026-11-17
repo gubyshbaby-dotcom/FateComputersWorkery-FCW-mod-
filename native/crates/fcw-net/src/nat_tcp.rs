@@ -51,14 +51,29 @@ pub(crate) enum Msg {
 
 /// События задач хоста и свитча.
 pub(crate) enum Ev {
-    Connected { id: u64, stream: TcpStream },
-    ConnectFailed { id: u64, err: std::io::Error },
-    Data { id: u64, data: Bytes },
-    Eof { id: u64 },
-    HostError { id: u64 },
+    Connected {
+        id: u64,
+        stream: TcpStream,
+    },
+    ConnectFailed {
+        id: u64,
+        err: std::io::Error,
+    },
+    Data {
+        id: u64,
+        data: Bytes,
+    },
+    Eof {
+        id: u64,
+    },
+    HostError {
+        id: u64,
+    },
     /// Задача записи отправила кусок хосту: можно читать из сокета дальше.
     Drained,
-    PortClosed { port: PortId },
+    PortClosed {
+        port: PortId,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
@@ -77,10 +92,17 @@ struct Pending {
 
 enum Phase {
     /// Через прокси: ждём ClientHello гостя, чтобы узнать имя.
-    Sniffing { deadline: Instant },
+    Sniffing {
+        deadline: Instant,
+    },
     /// Через прокси: соединяемся; данные гостя копятся в сокете.
-    Connecting { task: JoinHandle<()> },
-    Open { reader: JoinHandle<()>, writer: JoinHandle<()> },
+    Connecting {
+        task: JoinHandle<()>,
+    },
+    Open {
+        reader: JoinHandle<()>,
+        writer: JoinHandle<()>,
+    },
 }
 
 struct Conn {
@@ -184,7 +206,12 @@ fn spawn_connect(
         // свежий ответ резолвера хоста тем же файрволом; не прошло — CONNECT по IP.
         let host = match host {
             Some(h) => {
-                let ok = match tokio::time::timeout(Duration::from_secs(5), tokio::net::lookup_host((h.as_str(), dst.port()))).await {
+                let ok = match tokio::time::timeout(
+                    Duration::from_secs(5),
+                    tokio::net::lookup_host((h.as_str(), dst.port())),
+                )
+                .await
+                {
                     Ok(Ok(addrs)) => {
                         let v4: Vec<Ipv4Addr> = addrs
                             .filter_map(|a| match a {
