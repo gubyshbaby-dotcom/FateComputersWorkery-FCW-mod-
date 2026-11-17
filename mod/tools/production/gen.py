@@ -230,6 +230,10 @@ C = [
     ("peripherals", "subwoofer", 1, ["PPP", "WNW", "PRP"],
      {"P": "#minecraft:planks", "W": "#minecraft:wool", "N": "minecraft:note_block", "R": R}),
     ("peripherals", "soundbar", 1, ["WWW", "NRN"], {"W": "#minecraft:wool", "N": "minecraft:note_block", "R": R}),
+    # --- data network
+    ("network", "data_cable", 8, ["WWW", "CRC", "WWW"], {"W": "#minecraft:wool", "C": "minecraft:copper_ingot", "R": R}),
+    ("network", "router", 1, [" A ", "KDK", "IBI"],
+     {"A": "minecraft:lightning_rod", "K": "fcw:data_cable", "D": "fcw:cpu_dip", "I": I, "B": "fcw:pcb_blank"}),
     # --- photomasks
     ("reticles", "reticle_controller", 1, ["SGS", "GXG", "SQS"],
      {"S": STEEL, "G": "minecraft:glass_pane", "Q": "minecraft:quartz", "X": "fcw:cpu_dip"}),
@@ -285,7 +289,7 @@ C = [
 ]
 # items registered by the machines agent: recipes are skipped until those items exist
 DEFERRED = ("euv_", "_kit")
-CATEGORY = {"parts": "misc", "computers": "misc", "peripherals": "misc", "reticles": "misc", "kits": "misc", "euv": "building"}
+CATEGORY = {"parts": "misc", "computers": "misc", "peripherals": "misc", "network": "misc", "reticles": "misc", "kits": "misc", "euv": "building"}
 for (sec, res, count, pattern, key) in C:
     r = {}
     if res.startswith(DEFERRED[0]) or res.endswith(DEFERRED[1]):
@@ -435,10 +439,13 @@ A("")
 A("## Крафт на верстаке")
 A("")
 SEC_RU = {"parts": "Детали без машин", "computers": "Компьютеры", "peripherals": "Мониторы, ввод и звук",
+          "network": "Сеть данных",
           "reticles": "Фотошаблоны", "kits": "Комплекты машин", "euv": "Блоки литографа EUV"}
 SEC_NOTE = {
     "parts": "Материнская плата на верстаке обходится дороже, чем на линии электроники, зато доступна сразу.",
     "computers": "Все корпуса работают одинаково, отличается только вид. Простые из железа, современные из стали.",
+    "network": "Кабель данных соединяет компьютер с машинами; роутер добавляет в сеть машины в радиусе 32 блоков "
+               "без кабеля. Управление: `fcw machine` в компьютере.",
     "reticles": "Образец в центре определяет, что будет на пластине. Прочность: 64 экспозиции.",
     "kits": "Комплект ставит машину целиком (ПКМ по земле). Дуговая печь собирается из ванильных материалов, "
             "каждая следующая машина требует сталь и продукт предыдущей.",
