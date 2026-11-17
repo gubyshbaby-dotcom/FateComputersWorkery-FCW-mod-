@@ -362,8 +362,11 @@ impl Conn {
             bail!("unknown screen {}", s.screen_id);
         }
         let mut screen_cfg = self.d.env.screen;
-        if screen_cfg.local_unlimited && self.conn.remote_address().ip().is_loopback() {
-            // игрок на этом же хосте: канал не ограничен, картинка без потерь
+        // Игрок на этом же хосте: канал не ограничен, картинка без потерь.
+        // Нужны оба признака: клиент сам подключался к loopback, и пакеты
+        // пришли с loopback. Через frp, NAT-петлю или прокси удалённые игроки
+        // тоже приходят с 127.0.0.1, но подключались они к внешнему адресу.
+        if screen_cfg.local_unlimited && s.same_host && self.conn.remote_address().ip().is_loopback() {
             screen_cfg.max_bytes_per_sec = 0;
             screen_cfg.lossy = false;
             screen_cfg.max_fps = screen_cfg.max_fps.max(60);

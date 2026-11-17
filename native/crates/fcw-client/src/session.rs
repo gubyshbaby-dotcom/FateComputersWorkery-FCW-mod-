@@ -69,6 +69,14 @@ pub struct Session {
     pointer_seq: AtomicU64,
     done: AtomicBool,
     close_pong: tokio::sync::Notify,
+    /// Адрес демона — loopback: игрок на этом же компьютере.
+    same_host: bool,
+}
+
+/// `127.0.0.1`, `::1`, `localhost`: демон на этом же компьютере.
+fn host_is_loopback(host: &str) -> bool {
+    let h = host.trim().trim_start_matches('[').trim_end_matches(']');
+    h.eq_ignore_ascii_case("localhost") || h.parse::<std::net::IpAddr>().map(|ip| ip.is_loopback()).unwrap_or(false)
 }
 
 /// Nonce пинга, которым закрытие сессии ждёт обработки ввода демоном.
@@ -105,6 +113,7 @@ impl Session {
             pointer_seq: AtomicU64::new(0),
             done: AtomicBool::new(false),
             close_pong: tokio::sync::Notify::new(),
+            same_host: host_is_loopback(host),
         });
         let s2 = s.clone();
         let host = host.to_string();
@@ -205,6 +214,7 @@ impl Session {
             audio: true,
             accept_lossy: true,
             frame_acks: true,
+            same_host: self.same_host,
         }));
         view
     }
@@ -553,6 +563,21 @@ impl Session {
                     frames,
                 }));
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod same_host_tests {
+    use super::host_is_loopback;
+
+    #[test]
+    fn loopback_hosts() {
+        for h in ["127.0.0.1", "127.1.2.3", "::1", "[::1]", "localhost", "LocalHost"] {
+            assert!(host_is_loopback(h), "{h}");
+        }
+        for h in ["193.233.248.245", "10.0.0.1", "example.com", "", "fe80::1"] {
+            assert!(!host_is_loopback(h), "{h}");
         }
     }
 }
