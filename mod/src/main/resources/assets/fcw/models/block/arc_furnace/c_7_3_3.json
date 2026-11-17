@@ -1,0 +1,1 @@
+{"credit":"PC mod: EUV scanner (generated)","parent":"minecraft:block/block","render_type":"minecraft:cutout","ambientocclusion":false,"texture_size":[1024,1024],"textures":{"particle":"fcw:block/arc_furnace/particle","main":"fcw:block/arc_furnace/main"},"elements":[{"name":"filter","from":[0,0,0],"to":[14,16,16],"faces":{"east":{"uv":[6.1875,3,6.6875,3.5],"texture":"#main"}}}]}

@@ -52,6 +52,9 @@ public final class FcwConfig {
         public final ModConfigSpec.BooleanValue ownerOnlyControl;
         public final ModConfigSpec.IntValue tokenTtlSeconds;
 
+        public final ModConfigSpec.BooleanValue productionRequirePower;
+        public final ModConfigSpec.DoubleValue productionSpeedMultiplier;
+
         Server(ModConfigSpec.Builder b) {
             b.comment("VM daemon (native fcw-daemon process started by the server)").push("daemon");
             daemonEnabled = b.comment("Use the VM daemon (start it, or connect to it in remote mode).")
@@ -144,6 +147,14 @@ public final class FcwConfig {
                     .define("ownerOnlyControl", false);
             tokenTtlSeconds = b.comment("Lifetime of screen/input tokens handed to clients.")
                     .defineInRange("tokenTtlSeconds", 120, 10, 3600);
+            b.pop();
+
+            b.comment("Production machines (arc furnace, crystal puller, wafering cell, EUV scanner, chip line)").push("production");
+            productionRequirePower = b.comment("true = machines work only on FE fed into their power port.",
+                            "false = a built-in transformer powers them, so the chain can be played without energy mods.")
+                    .define("requirePower", false);
+            productionSpeedMultiplier = b.comment("Speed of all machine recipes: 2.0 = twice as fast, 0.5 = twice as slow.")
+                    .defineInRange("speedMultiplier", 1.0, 0.01, 100.0);
             b.pop();
         }
     }
