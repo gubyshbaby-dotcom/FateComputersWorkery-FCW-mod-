@@ -12,6 +12,7 @@ ARCH_PACKAGES=(
   labwc swaybg lxqt-panel lxqt-menu-data lxqt-themes alacritty pcmanfm-qt
   qt6-wayland breeze-icons ttf-dejavu mesa xdg-utils
   pipewire wireplumber pipewire-pulse
+  mpv
 )
 
 distro_unpack_base() {

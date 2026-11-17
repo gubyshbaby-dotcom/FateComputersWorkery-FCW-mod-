@@ -17,6 +17,7 @@ FEDORA_PACKAGES=(
   qt6-qtwayland breeze-icon-theme dejavu-sans-fonts dejavu-sans-mono-fonts
   mesa-dri-drivers mesa-libEGL mesa-libGL xdg-utils
   pipewire wireplumber pipewire-pulseaudio
+  mpv
 )
 
 distro_unpack_base() {  # $1 = oci.tar.xz, $2 = корень
@@ -52,6 +53,14 @@ distro_install_packages() {
   # обычная «личность» Fedora вместо контейнерной (os-release, пресеты служб)
   dnf_in_root install --allowerasing fedora-release fedora-release-identity-basic
   dnf_in_root install "${FEDORA_PACKAGES[@]}"
+  # кино: в Fedora ffmpeg без H.264/HEVC; декодеры даёт libavcodec-freeworld из RPM Fusion.
+  # Не вышло (репозиторий ещё не готов для релиза) — остаётся ffmpeg-free, образ собирается.
+  if dnf_in_root install "https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-$FEDORA_RELEASE.noarch.rpm" \
+      && dnf_in_root install libavcodec-freeworld; then
+    :
+  else
+    echo "внимание: RPM Fusion недоступен, mpv без H.264/HEVC" >&2
+  fi
 }
 
 distro_remove_other_terminals() {

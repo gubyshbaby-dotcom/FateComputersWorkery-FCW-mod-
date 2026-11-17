@@ -18,6 +18,7 @@ UBUNTU_PACKAGES=(
   qt6-wayland breeze-icon-theme fonts-dejavu-core
   libgl1-mesa-dri libegl1 libegl-mesa0 libgl1 xdg-utils
   pipewire wireplumber pipewire-pulse
+  mpv
 )
 
 distro_unpack_base() {
