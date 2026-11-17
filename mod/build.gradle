@@ -57,6 +57,9 @@ neoForge {
             sourceSet(sourceSets.main)
         }
     }
+
+    // Unit tests see Minecraft and NeoForge classes (compile and run), but do not start the game.
+    addModdingDependenciesTo(sourceSets.test)
 }
 
 // Let the dev server console read commands (./gradlew runServer).
@@ -107,6 +110,14 @@ dependencies {
     if (project.hasProperty('fcw.withAe2')) {
         runtimeOnly "org.appliedenergistics:appliedenergistics2:${ae2_version}"
     }
+
+    // Unit tests of the parts that need no running game (agent update protocol, request limits).
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.10.2'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher:1.10.2'
+}
+
+test {
+    useJUnitPlatform()
 }
 
 // ---------------------------------------------------------------- natives
