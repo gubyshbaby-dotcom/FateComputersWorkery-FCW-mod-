@@ -1,0 +1,22 @@
+{
+  "type": "fcw:lithography",
+  "inputs": [
+    {
+      "ingredient": {
+        "item": "fcw:silicon_wafer"
+      },
+      "count": 1
+    }
+  ],
+  "catalyst": {
+    "item": "fcw:reticle_cpu"
+  },
+  "results": [
+    {
+      "id": "fcw:wafer_cpu",
+      "count": 1
+    }
+  ],
+  "ticks": 1200,
+  "energy_per_tick": 2048
+}

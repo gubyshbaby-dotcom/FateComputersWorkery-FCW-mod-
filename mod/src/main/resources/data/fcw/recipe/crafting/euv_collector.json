@@ -1,0 +1,33 @@
+{
+  "neoforge:conditions": [
+    {
+      "type": "neoforge:item_exists",
+      "item": "fcw:euv_collector"
+    }
+  ],
+  "type": "minecraft:crafting_shaped",
+  "category": "building",
+  "pattern": [
+    "MMM",
+    "MDM",
+    "SCS"
+  ],
+  "key": {
+    "M": {
+      "item": "fcw:euv_mirror"
+    },
+    "D": {
+      "item": "minecraft:diamond"
+    },
+    "S": {
+      "tag": "c:ingots/steel"
+    },
+    "C": {
+      "item": "fcw:euv_casing"
+    }
+  },
+  "result": {
+    "id": "fcw:euv_collector",
+    "count": 1
+  }
+}

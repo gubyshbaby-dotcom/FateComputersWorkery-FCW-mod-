@@ -1,0 +1,27 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "pattern": [
+    "SGS",
+    "GXG",
+    "SQS"
+  ],
+  "key": {
+    "S": {
+      "tag": "c:ingots/steel"
+    },
+    "G": {
+      "item": "minecraft:glass_pane"
+    },
+    "Q": {
+      "item": "minecraft:quartz"
+    },
+    "X": {
+      "item": "fcw:cpu_dip"
+    }
+  },
+  "result": {
+    "id": "fcw:reticle_controller",
+    "count": 1
+  }
+}

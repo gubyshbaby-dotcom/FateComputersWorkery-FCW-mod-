@@ -1,0 +1,31 @@
+{
+  "type": "fcw:chip_packaging",
+  "inputs": [
+    {
+      "ingredient": {
+        "item": "fcw:wafer_cpu"
+      },
+      "count": 1
+    },
+    {
+      "ingredient": {
+        "item": "minecraft:gold_ingot"
+      },
+      "count": 2
+    },
+    {
+      "ingredient": {
+        "tag": "c:ingots/steel"
+      },
+      "count": 2
+    }
+  ],
+  "results": [
+    {
+      "id": "fcw:cpu_lga",
+      "count": 2
+    }
+  ],
+  "ticks": 800,
+  "energy_per_tick": 384
+}

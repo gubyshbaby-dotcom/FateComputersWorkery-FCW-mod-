@@ -1,0 +1,9 @@
+{
+  "replace": false,
+  "values": [
+    "fcw:wafer_controller",
+    "fcw:wafer_memory",
+    "fcw:wafer_gpu",
+    "fcw:wafer_cpu"
+  ]
+}

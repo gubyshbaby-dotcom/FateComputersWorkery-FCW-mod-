@@ -30,6 +30,8 @@ public final class FcwMod {
         version = container.getModInfo().getVersion().toString();
         ModBlocks.BLOCKS.register(modBus);
         ModItems.ITEMS.register(modBus);
+        com.fatecomputers.fcw.production.item.ProductionItems.register(modBus);
+        com.fatecomputers.fcw.production.recipe.FcwRecipes.register(modBus);
         ModBlockEntities.BLOCK_ENTITIES.register(modBus);
         ModMenus.MENUS.register(modBus);
         ModCreativeTabs.TABS.register(modBus);

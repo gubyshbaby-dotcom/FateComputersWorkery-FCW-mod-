@@ -1,0 +1,11 @@
+{
+  "replace": false,
+  "values": [
+    "fcw:cpu_dip",
+    "fcw:cpu_qfp",
+    "fcw:cpu_pga",
+    "fcw:cpu_lga",
+    "fcw:cpu_multicore",
+    "fcw:cpu_server"
+  ]
+}

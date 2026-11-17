@@ -1,0 +1,99 @@
+{
+  "parent": "minecraft:recipes/root",
+  "criteria": {
+    "has_redstone": {
+      "trigger": "minecraft:inventory_changed",
+      "conditions": {
+        "items": [
+          {
+            "items": "minecraft:redstone"
+          }
+        ]
+      }
+    },
+    "has_iron_ingot": {
+      "trigger": "minecraft:inventory_changed",
+      "conditions": {
+        "items": [
+          {
+            "items": "minecraft:iron_ingot"
+          }
+        ]
+      }
+    },
+    "has_quartz": {
+      "trigger": "minecraft:inventory_changed",
+      "conditions": {
+        "items": [
+          {
+            "items": "minecraft:quartz"
+          }
+        ]
+      }
+    }
+  },
+  "requirements": [
+    [
+      "has_redstone",
+      "has_iron_ingot",
+      "has_quartz"
+    ]
+  ],
+  "rewards": {
+    "recipes": [
+      "fcw:crafting/pcb_blank",
+      "fcw:crafting/cpu_dip",
+      "fcw:crafting/cpu_qfp",
+      "fcw:crafting/ram_dip",
+      "fcw:crafting/ram_simm",
+      "fcw:crafting/motherboard",
+      "fcw:crafting/system_unit",
+      "fcw:crafting/case_desktop",
+      "fcw:crafting/case_tower_retro",
+      "fcw:crafting/case_tower",
+      "fcw:crafting/case_gaming",
+      "fcw:crafting/case_cube",
+      "fcw:crafting/case_server",
+      "fcw:crafting/crt_monitor",
+      "fcw:crafting/monitor",
+      "fcw:crafting/keyboard",
+      "fcw:crafting/mouse",
+      "fcw:crafting/speaker_desktop",
+      "fcw:crafting/speaker_bookshelf",
+      "fcw:crafting/speaker_tower",
+      "fcw:crafting/subwoofer",
+      "fcw:crafting/soundbar",
+      "fcw:crafting/reticle_controller",
+      "fcw:crafting/reticle_memory",
+      "fcw:crafting/reticle_gpu",
+      "fcw:crafting/reticle_cpu",
+      "fcw:crafting/arc_furnace_kit",
+      "fcw:crafting/crystal_puller_kit",
+      "fcw:crafting/wafering_cell_kit",
+      "fcw:crafting/chip_line_kit",
+      "fcw:crafting/euv_casing",
+      "fcw:crafting/euv_casing_glass",
+      "fcw:crafting/euv_casing_vent",
+      "fcw:crafting/euv_frame",
+      "fcw:crafting/euv_vacuum_chamber",
+      "fcw:crafting/euv_mirror",
+      "fcw:crafting/euv_collector",
+      "fcw:crafting/euv_droplet_generator",
+      "fcw:crafting/euv_laser_amplifier",
+      "fcw:crafting/euv_chiller",
+      "fcw:crafting/euv_wafer_stage",
+      "fcw:crafting/euv_reticle_stage",
+      "fcw:crafting/euv_wafer_handler",
+      "fcw:crafting/euv_load_port",
+      "fcw:crafting/euv_vacuum_pump",
+      "fcw:crafting/euv_power_unit",
+      "fcw:crafting/euv_controller",
+      "fcw:crafting/euv_port_energy",
+      "fcw:crafting/euv_port_coolant",
+      "fcw:crafting/euv_port_gas",
+      "fcw:crafting/euv_port_exhaust",
+      "fcw:crafting/euv_port_data",
+      "fcw:crafting/euv_port_item"
+    ]
+  }
+}

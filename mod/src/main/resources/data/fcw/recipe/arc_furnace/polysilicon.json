@@ -1,0 +1,25 @@
+{
+  "type": "fcw:arc_furnace",
+  "inputs": [
+    {
+      "ingredient": {
+        "tag": "c:silicon"
+      },
+      "count": 2
+    },
+    {
+      "ingredient": {
+        "item": "minecraft:redstone"
+      },
+      "count": 1
+    }
+  ],
+  "results": [
+    {
+      "id": "fcw:polysilicon",
+      "count": 1
+    }
+  ],
+  "ticks": 600,
+  "energy_per_tick": 384
+}

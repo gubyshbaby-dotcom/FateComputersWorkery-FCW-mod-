@@ -1,0 +1,36 @@
+{
+  "neoforge:conditions": [
+    {
+      "type": "neoforge:item_exists",
+      "item": "fcw:euv_controller"
+    }
+  ],
+  "type": "minecraft:crafting_shaped",
+  "category": "building",
+  "pattern": [
+    "SMS",
+    "QCQ",
+    "SBS"
+  ],
+  "key": {
+    "S": {
+      "tag": "c:ingots/steel"
+    },
+    "M": {
+      "item": "fcw:crt_monitor"
+    },
+    "Q": {
+      "item": "fcw:cpu_qfp"
+    },
+    "C": {
+      "item": "fcw:euv_casing"
+    },
+    "B": {
+      "item": "fcw:motherboard"
+    }
+  },
+  "result": {
+    "id": "fcw:euv_controller",
+    "count": 1
+  }
+}

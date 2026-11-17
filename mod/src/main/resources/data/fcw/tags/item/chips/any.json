@@ -1,0 +1,9 @@
+{
+  "replace": false,
+  "values": [
+    "#fcw:chips/micron",
+    "#fcw:chips/duv",
+    "#fcw:chips/immersion",
+    "#fcw:chips/euv"
+  ]
+}

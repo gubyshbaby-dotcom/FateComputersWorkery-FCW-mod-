@@ -1,0 +1,25 @@
+{
+  "type": "fcw:pcb_assembly",
+  "inputs": [
+    {
+      "ingredient": {
+        "item": "fcw:pcb_blank"
+      },
+      "count": 1
+    },
+    {
+      "ingredient": {
+        "item": "fcw:chip_controller"
+      },
+      "count": 4
+    }
+  ],
+  "results": [
+    {
+      "id": "fcw:motherboard",
+      "count": 1
+    }
+  ],
+  "ticks": 400,
+  "energy_per_tick": 256
+}
