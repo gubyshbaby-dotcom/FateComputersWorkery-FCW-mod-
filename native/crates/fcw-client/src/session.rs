@@ -5,7 +5,7 @@
 
 use crate::audio::AudioSink;
 use crate::tls;
-use crate::view::{decode_rects, CursorImage, View, KIND_GRAPHICAL, KIND_TEXT};
+use crate::view::{decode_rects, CursorImage, VideoDecoder, View, KIND_GRAPHICAL, KIND_TEXT};
 use anyhow::{anyhow, bail, Context, Result};
 use fcw_proto::frame;
 use fcw_proto::stream as spb;
@@ -71,6 +71,8 @@ pub struct Session {
     close_pong: tokio::sync::Notify,
     /// Адрес демона — loopback: игрок на этом же компьютере.
     same_host: bool,
+    /// Просить видеорежим (RECT_H264) в новых подписках.
+    accept_video: AtomicBool,
 }
 
 /// `127.0.0.1`, `::1`, `localhost`: демон на этом же компьютере.
@@ -114,12 +116,18 @@ impl Session {
             done: AtomicBool::new(false),
             close_pong: tokio::sync::Notify::new(),
             same_host: host_is_loopback(host),
+            accept_video: AtomicBool::new(true),
         });
         let s2 = s.clone();
         let host = host.to_string();
         let pin = cert_sha256_hex.to_string();
         runtime().spawn(async move { s2.run(host, port, pin, rx).await });
         s
+    }
+
+    /// Выключает видеорежим для следующих подписок (замеры «как было»).
+    pub fn set_accept_video(&self, on: bool) {
+        self.accept_video.store(on, Ordering::Relaxed);
     }
 
     pub fn state(&self) -> i32 {
@@ -215,6 +223,7 @@ impl Session {
             accept_lossy: true,
             frame_acks: true,
             same_host: self.same_host,
+            accept_h264: VideoDecoder::SUPPORTED && self.accept_video.load(Ordering::Relaxed),
         }));
         view
     }
@@ -539,6 +548,8 @@ impl Session {
         let key = (hdr.vm_id.clone(), hdr.screen_id.clone());
         let text = self.screen_kind(&hdr.vm_id, &hdr.screen_id) == KIND_TEXT;
         let mut frames = 0u64;
+        let mut video = VideoDecoder::default();
+        let mut key_asked: Option<std::time::Instant> = None;
         loop {
             let view = self.views.lock().get(&key).cloned();
             let Some(view) = view else {
@@ -550,11 +561,25 @@ impl Session {
                 view.apply_text(&u);
             } else {
                 let Some(mut u) = frame::read_async::<_, spb::FrameUpdate>(&mut recv).await? else { return Ok(()) };
-                let jpeg = u.rects.iter().filter(|r| r.encoding == spb::RectEncoding::RectJpeg as i32).count() as u64;
-                view.record_frame(u.encoded_len(), u.capture_unix_us, jpeg, u.rects.len() as u64 - jpeg);
+                let count = |e: spb::RectEncoding| u.rects.iter().filter(|r| r.encoding == e as i32).count() as u64;
+                let (jpeg, h264) = (count(spb::RectEncoding::RectJpeg), count(spb::RectEncoding::RectH264));
+                let (bytes, other) = (u.encoded_len(), u.rects.len() as u64 - jpeg - h264);
                 let rects = std::mem::take(&mut u.rects);
-                let decoded = decode_rects(rects);
+                let started = std::time::Instant::now();
+                let decoded = decode_rects(rects, &mut video);
                 view.apply_frame(&u, decoded);
+                view.record_frame(bytes, u.capture_unix_us, jpeg, other, h264);
+                if h264 > 0 && u.encode_delay_us > 0 {
+                    // видео отстаёт от звука на кодирование и декодирование:
+                    // звук этой машины задерживаем на столько же
+                    let lag = u.encode_delay_us + started.elapsed().as_micros() as u64;
+                    self.audio.lock().entry(hdr.vm_id.clone()).or_default().set_video_lag(lag);
+                }
+                if video.take_need_key() && key_asked.is_none_or(|t| t.elapsed() >= Duration::from_secs(1)) {
+                    // кадр видео не декодировался (нет ключевого): просим новый
+                    key_asked = Some(std::time::Instant::now());
+                    self.request_keyframe(&hdr.vm_id, &hdr.screen_id);
+                }
                 // подтверждение: демон не держит в пути больше, чем доставляет канал
                 frames += 1;
                 self.send_msg(client_msg::Kind::FrameAck(spb::FrameAck {

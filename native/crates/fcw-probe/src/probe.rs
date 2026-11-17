@@ -201,6 +201,9 @@ enum Cmd {
         /// Задержка имитатора в одну сторону, мс
         #[arg(long, default_value_t = 40)]
         delay_ms: u64,
+        /// Не просить видеорежим (H.264): как клиент прежней версии
+        #[arg(long)]
+        no_video: bool,
     },
     /// Записать звук машины (Opus по QUIC -> PCM) в WAV
     Audio {
@@ -799,7 +802,7 @@ async fn run(cli: Cli) -> Result<()> {
             tokio::time::sleep(Duration::from_millis(200)).await;
             q.close().await;
         }
-        Cmd::Watch { vm, screen, seconds, fps, shape_mbps, delay_ms } => {
+        Cmd::Watch { vm, screen, seconds, fps, shape_mbps, delay_ms, no_video } => {
             let mut port = None;
             let mut host = quic_host.clone();
             let mut shaper_stats = None;
@@ -823,6 +826,7 @@ async fn run(cli: Cli) -> Result<()> {
                 println!("shaper: {shape_mbps} Mbit/s, {delay_ms} ms one way -> {upstream}");
             }
             let q = Quic::open_at(&mut c, &host, port, &vm, pb::Permission::PermView as u32, timeout).await?;
+            q.s.set_accept_video(!no_video);
             let v = q.s.open_view(&vm, &screen, fps);
             let (mut all_lat, mut frames, mut bytes, mut jpeg) = (Vec::new(), 0u64, 0u64, 0u64);
             let start = Instant::now();
@@ -834,11 +838,12 @@ async fn run(cli: Cli) -> Result<()> {
                     st.latency_us.get(((st.latency_us.len() as f64 - 1.0) * q).round() as usize).map(|v| v / 1000)
                 };
                 println!(
-                    "{sec:3}s fps {:3} {:6.1} Mbit/s latency p50 {:>5} p95 {:>5} ms jpeg/lossless {}/{}",
+                    "{sec:3}s fps {:3} {:6.1} Mbit/s latency p50 {:>5} p95 {:>5} ms video/jpeg/lossless {}/{}/{}",
                     st.frames,
                     st.bytes as f64 * 8.0 / 1e6,
                     p(0.5).map(|v| v.to_string()).unwrap_or("-".into()),
                     p(0.95).map(|v| v.to_string()).unwrap_or("-".into()),
+                    st.video_rects,
                     st.jpeg_rects,
                     st.lossless_rects
                 );

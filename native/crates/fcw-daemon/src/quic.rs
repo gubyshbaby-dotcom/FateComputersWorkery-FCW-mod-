@@ -9,6 +9,7 @@ use crate::cert::ServerCert;
 use crate::daemon::Daemon;
 use crate::gfx;
 use crate::text;
+use crate::video;
 use crate::vm::{Controller, ScreenConfig, Vm, VmNotice, SCREEN_GFX, SCREEN_TTY};
 use crate::{pb, spb, AbortOnDrop};
 use anyhow::{anyhow, bail, Context, Result};
@@ -362,6 +363,7 @@ impl Conn {
             bail!("unknown screen {}", s.screen_id);
         }
         let mut screen_cfg = self.d.env.screen;
+        let mut local = false;
         // Игрок на этом же хосте: канал не ограничен, картинка без потерь.
         // Нужны оба признака: клиент сам подключался к loopback, и пакеты
         // пришли с loopback. Через frp, NAT-петлю или прокси удалённые игроки
@@ -370,6 +372,7 @@ impl Conn {
             screen_cfg.max_bytes_per_sec = 0;
             screen_cfg.lossy = false;
             screen_cfg.max_fps = screen_cfg.max_fps.max(60);
+            local = true;
         }
         let fps = if s.max_fps == 0 { 30 } else { s.max_fps }.clamp(1, screen_cfg.max_fps.max(1));
         let key = (s.vm_id.clone(), s.screen_id.clone());
@@ -385,6 +388,8 @@ impl Conn {
             fps,
             accept_lossy: s.accept_lossy && screen_cfg.lossy,
             frame_acks: s.frame_acks && screen_cfg.frame_acks,
+            video: s.accept_h264 && screen_cfg.video.enabled,
+            local,
             cfg: screen_cfg,
         };
         let task = tokio::spawn(async move {
@@ -515,6 +520,10 @@ struct StreamOpts {
     fps: u32,
     accept_lossy: bool,
     frame_acks: bool,
+    /// Клиент принимает RECT_H264, и видеорежим включён.
+    video: bool,
+    /// Игрок на этом же хосте: ступень `--video-local-mbps`.
+    local: bool,
     cfg: ScreenConfig,
 }
 
@@ -568,6 +577,39 @@ const TARGET_QUEUE: Duration = Duration::from_millis(80);
 const RATE_BURST: Duration = Duration::from_millis(100);
 /// Сколько держать режим «канал не успевает» после последней задержки.
 const CONGESTED_HOLD: Duration = Duration::from_millis(1500);
+/// Кадр, меняющий такую долю экрана, шлётся с JPEG для «пёстрых» тайлов сразу
+/// (если у зрителя есть бюджет битрейта), см. [`gfx::EncodePolicy::bulk_fraction`].
+const BULK_LOSSY_FRACTION: f32 = 0.2;
+/// Доля бюджета зрителя под видео (остальное — тайлы вне области, звук, запас).
+const VIDEO_BUDGET_SHARE: f64 = 0.7;
+/// Кадры видео, прождавшие отправки дольше, сбрасываются: зритель ждёт
+/// новый ключевой кадр.
+const VIDEO_MAX_WAIT: Duration = Duration::from_millis(300);
+/// Столько сбросов за [`VIDEO_STRIKE_WINDOW`] — зритель уходит на ступень ниже.
+const VIDEO_STRIKES: usize = 2;
+const VIDEO_STRIKE_WINDOW: Duration = Duration::from_secs(10);
+/// Через столько после понижения пробуем вернуть ступень; с каждым
+/// понижением срок удваивается (до [`VIDEO_BACKOFF_MAX`]).
+const VIDEO_BACKOFF: Duration = Duration::from_secs(20);
+const VIDEO_BACKOFF_MAX: Duration = Duration::from_secs(300);
+/// Столько сбросов частоты (см. [`VideoState::shed`]) за то же окно — тоже
+/// повод уйти на ступень ниже: лучше все кадры похуже, чем четверть получше.
+const VIDEO_SHEDS: usize = 8;
+/// Повтор подписки на видео, если кодировщика не досталось.
+const VIDEO_RETRY: Duration = Duration::from_secs(2);
+
+/// Видеорежим подписчика: подписка на ступень и кадры, ждущие отправки.
+struct VideoState {
+    sub: video::VideoSub,
+    /// Область, тайлы которой этому подписчику не шлются.
+    region: gfx::VideoRegion,
+    queue: VecDeque<(Instant, Arc<video::VideoFrame>)>,
+    /// Ждём ключевой кадр: остальные отбрасываем.
+    need_key: bool,
+    /// Очередь росла, и кадры верхних временных слоёв пришлось выбросить:
+    /// до следующего базового кадра идут только базовые.
+    shed: bool,
+}
 
 /// Отправка графического экрана одному подписчику.
 ///
@@ -577,6 +619,14 @@ const CONGESTED_HOLD: Duration = Duration::from_millis(1500);
 /// буфере экрана, а не встают в очередь. Если канал не успевает или тайл
 /// меняется очень часто, «пёстрые» тайлы идут JPEG и позже досылаются без
 /// потерь.
+///
+/// Видеорежим: пока на экране есть видеообласть ([`gfx::GfxScreen::video_region`])
+/// и клиент умеет H.264, тайлы области не шлются, вместо них идут кадры общей
+/// для зрителей ступени ([`video::VideoHub`]). Кадры видео в очереди склеить
+/// нельзя, поэтому при заторе сначала выбрасываются кадры верхних временных
+/// слоёв (падает частота), потом очередь сбрасывается до ключевого кадра, а
+/// если это повторяется, зритель переходит на ступень ниже. Когда видео кончилось, тайлы области досылаются
+/// без потерь тем же путём, что и после JPEG.
 struct GfxSender {
     conn: quinn::Connection,
     opts: StreamOpts,
@@ -594,13 +644,32 @@ struct GfxSender {
     congested_until: Instant,
     /// Тайлы, отправленные с потерями: индекс -> версия.
     lossy: HashMap<usize, u64>,
+    video: Option<VideoState>,
+    video_retry: Instant,
+    /// Потолок ступени видео сейчас, кбит/с (бюджет, пониженный после заторов).
+    video_cap: u32,
+    /// Зрителю положена ступень игрока этого хоста.
+    video_local: bool,
+    video_restore_at: Option<Instant>,
+    video_backoff: Duration,
+    /// Недавние сбросы очереди видео и сбросы частоты.
+    strikes: VecDeque<Instant>,
+    sheds: VecDeque<Instant>,
+}
+
+/// Следующий кадр видео подписчика (без подписки — ждёт вечно).
+async fn next_video(v: &mut Option<VideoState>) -> Result<Arc<video::VideoFrame>, broadcast::error::RecvError> {
+    match v {
+        Some(v) => v.sub.rx.recv().await,
+        None => std::future::pending().await,
+    }
 }
 
 impl GfxSender {
     fn new(conn: quinn::Connection, opts: StreamOpts) -> Self {
         let now = Instant::now();
         let interval = Duration::from_micros(1_000_000 / opts.fps as u64);
-        GfxSender {
+        let mut s = GfxSender {
             conn,
             opts,
             interval,
@@ -613,11 +682,29 @@ impl GfxSender {
             last_frame: 0,
             congested_until: now,
             lossy: HashMap::new(),
-        }
+            video: None,
+            video_retry: now,
+            video_cap: 0,
+            video_local: opts.local,
+            video_restore_at: None,
+            video_backoff: VIDEO_BACKOFF,
+            strikes: VecDeque::new(),
+            sheds: VecDeque::new(),
+        };
+        s.video_cap = s.video_budget_kbps();
+        s
     }
 
     fn rate(&self) -> Option<f64> {
         (self.opts.cfg.max_bytes_per_sec > 0).then_some(self.opts.cfg.max_bytes_per_sec as f64)
+    }
+
+    /// Битрейт, который бюджет зрителя оставляет под видео, кбит/с.
+    fn video_budget_kbps(&self) -> u32 {
+        match self.rate() {
+            Some(r) => (r * 8.0 / 1000.0 * VIDEO_BUDGET_SHARE) as u32,
+            None => u32::MAX,
+        }
     }
 
     /// Сколько байт кадров можно держать неподтверждёнными: то, что канал
@@ -657,6 +744,164 @@ impl GfxSender {
         (rate_ok, credit_ok)
     }
 
+    // ------------------------------------------------------------ видео
+
+    /// Тайлы области нужно дослать тайлами (видео для них кончилось).
+    fn mark_region(&mut self, gfx: &gfx::GfxScreen, r: &gfx::VideoRegion) {
+        for (i, ver) in gfx.region_tiles(r) {
+            self.lossy.insert(i, ver);
+        }
+    }
+
+    /// Тайлы области теперь идут видео: досылать их не нужно.
+    fn unmark_region(&mut self, gfx: &gfx::GfxScreen, r: &gfx::VideoRegion) {
+        for (i, _) in gfx.region_tiles(r) {
+            self.lossy.remove(&i);
+        }
+    }
+
+    fn drop_video(&mut self, gfx: &gfx::GfxScreen) {
+        if let Some(v) = self.video.take() {
+            self.mark_region(gfx, &v.region);
+        }
+    }
+
+    /// Приводит подписку на видео в соответствие с видеообластью экрана.
+    fn sync_video(&mut self, vm: &Vm, now: Instant) {
+        if !self.opts.video {
+            return;
+        }
+        let gfx = &vm.gfx;
+        let region = gfx.video_region();
+        if self.video.as_ref().is_some_and(|v| v.sub.is_dead()) {
+            self.drop_video(gfx);
+            self.video_retry = now + VIDEO_RETRY;
+        }
+        let Some(region) = region else {
+            self.drop_video(gfx);
+            return;
+        };
+        // после понижения ступени: пора попробовать вернуть прежнюю
+        if self.video_restore_at.is_some_and(|t| now >= t) && now >= self.congested_until {
+            self.video_restore_at = None;
+            self.video_cap = self.video_budget_kbps();
+            self.video_local = self.opts.local;
+            let cfg = self.opts.cfg.video;
+            let want = if self.video_local { Some(cfg.local_kbps) } else { cfg.tier_for(self.video_cap) };
+            if self.video.as_ref().is_some_and(|v| Some(v.sub.kbps) != want) {
+                self.drop_video(gfx);
+            }
+        }
+        match self.video.as_ref().map(|v| v.region) {
+            Some(old) if old != region => {
+                // область сменилась: кодировщик начнёт новый поток с ключевого кадра
+                self.mark_region(gfx, &old);
+                self.unmark_region(gfx, &region);
+                if let Some(v) = self.video.as_mut() {
+                    v.region = region;
+                }
+            }
+            Some(_) => {}
+            None if now >= self.video_retry => match vm.video.subscribe(self.video_cap, self.video_local) {
+                Some(sub) => {
+                    self.unmark_region(gfx, &region);
+                    self.video = Some(VideoState { sub, region, queue: VecDeque::new(), need_key: true, shed: false });
+                }
+                None => self.video_retry = now + VIDEO_RETRY,
+            },
+            None => {}
+        }
+    }
+
+    /// Пришёл кадр от кодировщика (или рассылка отстала).
+    fn on_video(&mut self, r: Result<Arc<video::VideoFrame>, broadcast::error::RecvError>, gfx: &gfx::GfxScreen) {
+        let now = Instant::now();
+        // дальнему зрителю — только нижние временные слои
+        let lod = self.opts.cfg.video.max_tid_for(self.opts.fps);
+        let Some(v) = self.video.as_mut() else { return };
+        match r {
+            Ok(f) => {
+                if f.tid > lod {
+                    return;
+                }
+                if f.key {
+                    v.need_key = false;
+                    v.shed = false;
+                } else if v.need_key {
+                    return;
+                }
+                if v.shed {
+                    // верхние слои ссылаются на выброшенные кадры; с базового
+                    // кадра цепочка снова целая
+                    if f.tid != 0 {
+                        return;
+                    }
+                    v.shed = false;
+                }
+                v.queue.push_back((now, f));
+            }
+            Err(broadcast::error::RecvError::Lagged(_)) => {
+                v.queue.clear();
+                v.need_key = true;
+                v.sub.request_idr();
+            }
+            Err(broadcast::error::RecvError::Closed) => {
+                self.drop_video(gfx);
+                self.video_retry = now + VIDEO_RETRY;
+            }
+        }
+    }
+
+    /// Клиент попросил ключевой кадр.
+    fn video_resync(&mut self) {
+        if let Some(v) = self.video.as_mut() {
+            v.queue.clear();
+            v.need_key = true;
+            v.sub.request_idr();
+        }
+    }
+
+    /// Кадры видео ждут, а канал (или бюджет) не пускает.
+    fn video_backlog(&mut self, gfx: &gfx::GfxScreen, now: Instant) {
+        let Some(v) = self.video.as_mut() else { return };
+        let recent = |q: &mut VecDeque<Instant>| {
+            q.push_back(now);
+            while q.front().is_some_and(|t| now - *t > VIDEO_STRIKE_WINDOW) {
+                q.pop_front();
+            }
+            q.len()
+        };
+        let mut lower = false;
+        if v.queue.len() >= 3 && v.queue.iter().any(|(_, f)| f.tid != 0) {
+            // сначала жертвуем частотой: базовые кадры от остальных не зависят
+            v.queue.retain(|(_, f)| f.tid == 0);
+            v.shed = true;
+            lower = recent(&mut self.sheds) >= VIDEO_SHEDS;
+        }
+        if v.queue.front().is_some_and(|(t, _)| now - *t > VIDEO_MAX_WAIT) {
+            // и базовые не уходят: сброс до ключевого кадра
+            v.queue.clear();
+            v.need_key = true;
+            v.sub.request_idr();
+            lower |= recent(&mut self.strikes) >= VIDEO_STRIKES;
+        }
+        if !lower {
+            return;
+        }
+        // канал не тянет эту ступень: на ступень ниже, а с младшей — на тайлы
+        let kbps = v.sub.kbps;
+        self.strikes.clear();
+        self.sheds.clear();
+        self.video_local = false;
+        match self.opts.cfg.video.tier_below(kbps) {
+            Some(lower) => self.video_cap = lower,
+            None => self.video_retry = now + self.video_backoff,
+        }
+        self.drop_video(gfx);
+        self.video_restore_at = Some(now + self.video_backoff);
+        self.video_backoff = (self.video_backoff * 2).min(VIDEO_BACKOFF_MAX);
+    }
+
     async fn run(
         mut self,
         send: &mut quinn::SendStream,
@@ -671,38 +916,84 @@ impl GfxSender {
         loop {
             rx.borrow_and_update();
             let now = Instant::now();
+            self.sync_video(vm, now);
             let changes = want_key || gfx.has_changes(&cur);
             let fps_ok = now >= self.last_send + self.interval;
             let (rate_ok, credit_ok) = self.can_send(now);
-            if changes && fps_ok && !(rate_ok && credit_ok) {
+            let mut have_video = self.video.as_ref().is_some_and(|v| !v.queue.is_empty());
+            if (changes && fps_ok && !(rate_ok && credit_ok)) || (have_video && !credit_ok) {
                 // есть что слать, но канал (или бюджет) не пускает: склеиваем
                 self.congested_until = now + CONGESTED_HOLD;
             }
+            if have_video && !credit_ok {
+                self.video_backlog(gfx, now);
+                have_video = false;
+            }
+            // Видео бюджета не ждёт: ступень выбрана так, что в бюджет укладывается,
+            // а «долг» за большой кадр тайлов задержит только тайлы.
+            let tiles_due = rate_ok && fps_ok && (changes || !self.lossy.is_empty());
             let mut sent = false;
-            if fps_ok && rate_ok && credit_ok && (changes || !self.lossy.is_empty()) {
+            if credit_ok && (tiles_due || have_video) {
                 let congested = now < self.congested_until;
-                let policy = gfx::EncodePolicy { lossy_ok: self.opts.accept_lossy, congested };
-                // уточнение без потерь — только когда канал свободен
-                let refine: Vec<(usize, u64)> =
-                    if congested { Vec::new() } else { self.lossy.iter().map(|(i, v)| (*i, *v)).take(512).collect() };
-                let budget = match self.rate() {
-                    Some(r) => ((r * self.interval.as_secs_f64()) as usize).max(32 * 1024),
-                    None => 512 * 1024,
-                };
-                if let Some(c) = gfx.collect(&mut cur, want_key, policy, &refine, budget) {
-                    if c.update.keyframe {
-                        self.lossy.clear();
-                    }
-                    want_key = false;
-                    for (i, ver, lossy) in &c.tiles {
-                        if *lossy {
-                            self.lossy.insert(*i, *ver);
-                        } else {
-                            self.lossy.remove(i);
+                let mut update: Option<spb::FrameUpdate> = None;
+                if tiles_due {
+                    let policy = gfx::EncodePolicy {
+                        lossy_ok: self.opts.accept_lossy,
+                        congested,
+                        skip: self.video.as_ref().map(|v| v.region),
+                        bulk_fraction: if self.rate().is_some() { BULK_LOSSY_FRACTION } else { 0.0 },
+                    };
+                    // уточнение без потерь — только когда канал свободен
+                    let refine: Vec<(usize, u64)> = if congested {
+                        Vec::new()
+                    } else {
+                        self.lossy.iter().map(|(i, v)| (*i, *v)).take(512).collect()
+                    };
+                    let budget = match self.rate() {
+                        Some(r) => ((r * self.interval.as_secs_f64()) as usize).max(32 * 1024),
+                        None => 512 * 1024,
+                    };
+                    if let Some(c) = gfx.collect(&mut cur, want_key, policy, &refine, budget) {
+                        if c.update.keyframe {
+                            // тайлы видеообласти в ключевой кадр не входят и остаются за видео
+                            self.lossy.clear();
                         }
+                        want_key = false;
+                        for (i, ver, lossy) in &c.tiles {
+                            if *lossy {
+                                self.lossy.insert(*i, *ver);
+                            } else {
+                                self.lossy.remove(i);
+                            }
+                        }
+                        update = Some(c.update);
                     }
-                    let bytes = c.update.encoded_len() + 4;
-                    frame::write_async(send, &c.update).await?;
+                }
+                if let Some(v) = self.video.as_mut().filter(|v| !v.queue.is_empty()) {
+                    let u = update.get_or_insert_with(|| {
+                        let (width, height) = gfx.size();
+                        spb::FrameUpdate { seq: cur.seq, width, height, ..Default::default() }
+                    });
+                    for (_, f) in v.queue.drain(..) {
+                        u.seq = u.seq.max(f.seq);
+                        u.capture_unix_us = f.capture_unix_us;
+                        u.encode_delay_us = crate::unix_us().saturating_sub(f.capture_unix_us).max(1);
+                        u.rects.push(spb::Rect {
+                            x: f.region.x,
+                            y: f.region.y,
+                            w: f.region.w,
+                            h: f.region.h,
+                            encoding: spb::RectEncoding::RectH264 as i32,
+                            data: f.data.clone(),
+                            video_stream: f.stream,
+                            video_key: f.key,
+                            ..Default::default()
+                        });
+                    }
+                }
+                if let Some(u) = update {
+                    let bytes = u.encoded_len() + 4;
+                    frame::write_async(send, &u).await?;
                     let now = Instant::now();
                     self.last_send = now;
                     if let Some(r) = self.rate() {
@@ -742,11 +1033,22 @@ impl GfxSender {
                 // подстраховка от потерянного подтверждения
                 at(now + Duration::from_secs(1));
             }
+            if let Some(v) = &self.video {
+                // видео могло стихнуть без единого изменения экрана
+                at(now + Duration::from_millis(250));
+                if let Some((t, _)) = v.queue.front() {
+                    at(*t + VIDEO_MAX_WAIT);
+                }
+            }
             let sleep = tokio::time::sleep_until(wake.unwrap_or(now + Duration::from_secs(3600)).max(now));
             tokio::select! {
                 r = rx.changed() => r?,
-                _ = keyframe.notified() => want_key = true,
+                _ = keyframe.notified() => {
+                    want_key = true;
+                    self.video_resync();
+                }
                 Some(n) = acks.recv() => self.on_ack(n),
+                f = next_video(&mut self.video) => self.on_video(f, gfx),
                 _ = sleep, if wake.is_some() => {
                     // подтверждения не приходят больше секунды: не стоим вечно
                     if let Some(&(_, _, t)) = self.inflight.front() {

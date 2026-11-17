@@ -11,6 +11,8 @@ pub mod cert;
 pub mod control;
 pub mod daemon;
 pub mod gfx;
+#[cfg(feature = "video")]
+pub mod h264;
 pub mod images;
 pub mod keymap;
 pub mod localsock;
@@ -22,6 +24,7 @@ pub mod quic;
 pub mod rfb;
 pub mod text;
 pub mod tokens;
+pub mod video;
 pub mod vm;
 
 pub use fcw_proto::control as pb;
