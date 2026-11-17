@@ -1,0 +1,332 @@
+{
+ "chassis_mk2": {
+  "x": 0,
+  "y": 0,
+  "w": 48,
+  "h": 48,
+  "slice": 4
+ },
+ "chassis_dark": {
+  "x": 48,
+  "y": 0,
+  "w": 48,
+  "h": 48,
+  "slice": 4
+ },
+ "glass": {
+  "x": 96,
+  "y": 0,
+  "w": 32,
+  "h": 32,
+  "slice": 12
+ },
+ "tray": {
+  "x": 128,
+  "y": 0,
+  "w": 24,
+  "h": 24,
+  "slice": 2
+ },
+ "slot_in": {
+  "x": 0,
+  "y": 48,
+  "w": 18,
+  "h": 18
+ },
+ "slot_out": {
+  "x": 18,
+  "y": 48,
+  "w": 18,
+  "h": 18
+ },
+ "slot_mask": {
+  "x": 36,
+  "y": 48,
+  "w": 18,
+  "h": 18
+ },
+ "slot_fuel": {
+  "x": 54,
+  "y": 48,
+  "w": 18,
+  "h": 18
+ },
+ "slot_cell": {
+  "x": 72,
+  "y": 48,
+  "w": 18,
+  "h": 18
+ },
+ "slot_filter": {
+  "x": 90,
+  "y": 48,
+  "w": 18,
+  "h": 18
+ },
+ "slot_off": {
+  "x": 108,
+  "y": 48,
+  "w": 18,
+  "h": 18
+ },
+ "button_start": {
+  "x": 0,
+  "y": 66,
+  "w": 16,
+  "h": 16,
+  "slice": 2
+ },
+ "button_start_pressed": {
+  "x": 16,
+  "y": 66,
+  "w": 16,
+  "h": 16,
+  "slice": 2
+ },
+ "button_stop": {
+  "x": 32,
+  "y": 66,
+  "w": 16,
+  "h": 16,
+  "slice": 2
+ },
+ "button_stop_pressed": {
+  "x": 48,
+  "y": 66,
+  "w": 16,
+  "h": 16,
+  "slice": 2
+ },
+ "button_ghost": {
+  "x": 64,
+  "y": 66,
+  "w": 16,
+  "h": 16,
+  "slice": 2
+ },
+ "button_ghost_pressed": {
+  "x": 80,
+  "y": 66,
+  "w": 16,
+  "h": 16,
+  "slice": 2
+ },
+ "button_warn": {
+  "x": 96,
+  "y": 66,
+  "w": 16,
+  "h": 16,
+  "slice": 2
+ },
+ "button_warn_pressed": {
+  "x": 112,
+  "y": 66,
+  "w": 16,
+  "h": 16,
+  "slice": 2
+ },
+ "pill": {
+  "x": 0,
+  "y": 84,
+  "w": 16,
+  "h": 11,
+  "slice": 3
+ },
+ "led_off": {
+  "x": 0,
+  "y": 96,
+  "w": 4,
+  "h": 4
+ },
+ "led_ok": {
+  "x": 4,
+  "y": 96,
+  "w": 4,
+  "h": 4
+ },
+ "led_run": {
+  "x": 8,
+  "y": 96,
+  "w": 4,
+  "h": 4
+ },
+ "led_err": {
+  "x": 12,
+  "y": 96,
+  "w": 4,
+  "h": 4
+ },
+ "led_warn": {
+  "x": 16,
+  "y": 96,
+  "w": 4,
+  "h": 4
+ },
+ "led_idle": {
+  "x": 20,
+  "y": 96,
+  "w": 4,
+  "h": 4
+ },
+ "led_data": {
+  "x": 24,
+  "y": 96,
+  "w": 4,
+  "h": 4
+ },
+ "arrow_empty": {
+  "x": 0,
+  "y": 104,
+  "w": 40,
+  "h": 9
+ },
+ "arrow_run": {
+  "x": 40,
+  "y": 104,
+  "w": 40,
+  "h": 9
+ },
+ "arrow_err": {
+  "x": 80,
+  "y": 104,
+  "w": 40,
+  "h": 9
+ },
+ "arrow_warn": {
+  "x": 120,
+  "y": 104,
+  "w": 40,
+  "h": 9
+ },
+ "field_pending": {
+  "x": 0,
+  "y": 114,
+  "w": 5,
+  "h": 5
+ },
+ "field_done": {
+  "x": 5,
+  "y": 114,
+  "w": 5,
+  "h": 5
+ },
+ "field_current": {
+  "x": 10,
+  "y": 114,
+  "w": 5,
+  "h": 5
+ },
+ "field_bad": {
+  "x": 15,
+  "y": 114,
+  "w": 5,
+  "h": 5
+ },
+ "line_off": {
+  "x": 0,
+  "y": 120,
+  "w": 4,
+  "h": 2
+ },
+ "line_idle": {
+  "x": 4,
+  "y": 120,
+  "w": 4,
+  "h": 2
+ },
+ "line_run": {
+  "x": 8,
+  "y": 120,
+  "w": 4,
+  "h": 2
+ },
+ "line_err": {
+  "x": 12,
+  "y": 120,
+  "w": 4,
+  "h": 2
+ },
+ "line_warn": {
+  "x": 16,
+  "y": 120,
+  "w": 4,
+  "h": 2
+ },
+ "icon_off": {
+  "x": 0,
+  "y": 124,
+  "w": 9,
+  "h": 9,
+  "placeholder": true
+ },
+ "icon_idle": {
+  "x": 9,
+  "y": 124,
+  "w": 9,
+  "h": 9,
+  "placeholder": true
+ },
+ "icon_run": {
+  "x": 18,
+  "y": 124,
+  "w": 9,
+  "h": 9,
+  "placeholder": true
+ },
+ "icon_error": {
+  "x": 27,
+  "y": 124,
+  "w": 9,
+  "h": 9,
+  "placeholder": true
+ },
+ "icon_no_power": {
+  "x": 36,
+  "y": 124,
+  "w": 9,
+  "h": 9,
+  "placeholder": true
+ },
+ "icon_no_mask": {
+  "x": 45,
+  "y": 124,
+  "w": 9,
+  "h": 9,
+  "placeholder": true
+ },
+ "icon_output_full": {
+  "x": 54,
+  "y": 124,
+  "w": 9,
+  "h": 9,
+  "placeholder": true
+ },
+ "ghost_mask": {
+  "x": 0,
+  "y": 136,
+  "w": 16,
+  "h": 16,
+  "placeholder": true
+ },
+ "ghost_wafer": {
+  "x": 16,
+  "y": 136,
+  "w": 16,
+  "h": 16,
+  "placeholder": true
+ },
+ "ghost_coal": {
+  "x": 32,
+  "y": 136,
+  "w": 16,
+  "h": 16,
+  "placeholder": true
+ },
+ "ghost_cell": {
+  "x": 48,
+  "y": 136,
+  "w": 16,
+  "h": 16,
+  "placeholder": true
+ }
+}
