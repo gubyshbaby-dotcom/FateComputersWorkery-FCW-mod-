@@ -451,6 +451,7 @@ dependencies = [
  "libc",
  "opus",
  "parking_lot",
+ "png",
  "quinn",
  "rand 0.8.8",
  "rcgen",

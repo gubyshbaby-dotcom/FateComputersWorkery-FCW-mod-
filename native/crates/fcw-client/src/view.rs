@@ -264,10 +264,41 @@ pub fn decode_rects(rects: Vec<spb::Rect>) -> Vec<Decoded> {
                 }
             }
             spb::RectEncoding::RectCopy => out.push(Decoded::Copy(r)),
+            spb::RectEncoding::RectJpeg => {
+                if let Some(px) = decode_jpeg(&r.data, r.w, r.h) {
+                    out.push(Decoded::Pixels(r, px));
+                }
+            }
             _ => {}
         }
     }
     out
+}
+
+/// JPEG (RGB или серый) -> RGBA размера w*h.
+fn decode_jpeg(data: &[u8], w: u32, h: u32) -> Option<Vec<u8>> {
+    let mut d = jpeg_decoder::Decoder::new(data);
+    let px = d.decode().ok()?;
+    let info = d.info()?;
+    if info.width as u32 != w || info.height as u32 != h {
+        return None;
+    }
+    let n = (w * h) as usize;
+    let mut out = Vec::with_capacity(n * 4);
+    match info.pixel_format {
+        jpeg_decoder::PixelFormat::RGB24 if px.len() == n * 3 => {
+            for p in px.as_chunks::<3>().0 {
+                out.extend_from_slice(&[p[0], p[1], p[2], 255]);
+            }
+        }
+        jpeg_decoder::PixelFormat::L8 if px.len() == n => {
+            for &v in &px {
+                out.extend_from_slice(&[v, v, v, 255]);
+            }
+        }
+        _ => return None,
+    }
+    Some(out)
 }
 
 pub struct View {
@@ -596,7 +627,8 @@ mod tests {
     #[test]
     fn frame_and_dirty() {
         let v = View::new("vm", "gfx0", 30, KIND_GRAPHICAL);
-        let key = spb::FrameUpdate { seq: 1, width: 200, height: 100, keyframe: true, rects: vec![] };
+        let key =
+            spb::FrameUpdate { seq: 1, width: 200, height: 100, keyframe: true, rects: vec![], capture_unix_us: 0 };
         v.apply_frame(&key, decode_rects(vec![solid(0, 0, 200, 100, [1, 2, 3, 255])]));
         let mut buf = vec![0u8; 200 * 100 * 4];
         let mut rects = vec![0i32; 64];
@@ -615,7 +647,8 @@ mod tests {
             src_x: 0,
             src_y: 0,
         };
-        let u = spb::FrameUpdate { seq: 2, width: 200, height: 100, keyframe: false, rects: vec![r] };
+        let u =
+            spb::FrameUpdate { seq: 2, width: 200, height: 100, keyframe: false, rects: vec![r], capture_unix_us: 0 };
         v.apply_frame(&u, decode_rects(u.rects.clone()));
         assert_eq!(v.copy_dirty(&mut buf, &mut rects), 1);
         assert_eq!(&rects[0..4], &[64, 0, 64, 64]);
@@ -630,6 +663,7 @@ mod tests {
             height: 100,
             keyframe: false,
             rects: vec![solid(0, 0, 10, 10, [0; 4]), solid(140, 70, 10, 10, [0; 4])],
+            capture_unix_us: 0,
         };
         v.apply_frame(&u2, decode_rects(u2.rects.clone()));
         let mut one = vec![0i32; 4];
@@ -639,7 +673,8 @@ mod tests {
     #[test]
     fn dirty_rects_merge_vertically() {
         let v = View::new("vm", "gfx0", 30, KIND_GRAPHICAL);
-        let key = spb::FrameUpdate { seq: 1, width: 256, height: 256, keyframe: true, rects: vec![] };
+        let key =
+            spb::FrameUpdate { seq: 1, width: 256, height: 256, keyframe: true, rects: vec![], capture_unix_us: 0 };
         v.apply_frame(&key, vec![]);
         let mut buf = vec![0u8; 256 * 256 * 4];
         let mut rects = vec![0i32; 64];
@@ -650,6 +685,7 @@ mod tests {
             height: 256,
             keyframe: false,
             rects: vec![solid(64, 0, 128, 128, [5; 4])],
+            capture_unix_us: 0,
         };
         v.apply_frame(&u, decode_rects(u.rects.clone()));
         assert_eq!(v.copy_dirty(&mut buf, &mut rects), 1);
@@ -659,7 +695,8 @@ mod tests {
     #[test]
     fn cursor_overlay() {
         let v = View::new("vm", "gfx0", 30, KIND_GRAPHICAL);
-        let key = spb::FrameUpdate { seq: 1, width: 128, height: 128, keyframe: true, rects: vec![] };
+        let key =
+            spb::FrameUpdate { seq: 1, width: 128, height: 128, keyframe: true, rects: vec![], capture_unix_us: 0 };
         v.apply_frame(&key, decode_rects(vec![solid(0, 0, 128, 128, [0, 0, 0, 255])]));
         v.set_cursor_shape(Some(CursorImage { w: 2, h: 2, hot_x: 0, hot_y: 0, rgba: [255u8; 16].to_vec() }));
         v.set_cursor_pos(10, 10);

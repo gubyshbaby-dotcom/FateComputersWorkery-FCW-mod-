@@ -203,6 +203,8 @@ impl Session {
             screen_id: screen_id.to_string(),
             max_fps,
             audio: true,
+            accept_lossy: true,
+            frame_acks: true,
         }));
         view
     }
@@ -526,6 +528,7 @@ impl Session {
         }
         let key = (hdr.vm_id.clone(), hdr.screen_id.clone());
         let text = self.screen_kind(&hdr.vm_id, &hdr.screen_id) == KIND_TEXT;
+        let mut frames = 0u64;
         loop {
             let view = self.views.lock().get(&key).cloned();
             let Some(view) = view else {
@@ -537,11 +540,18 @@ impl Session {
                 view.apply_text(&u);
             } else {
                 let Some(mut u) = frame::read_async::<_, spb::FrameUpdate>(&mut recv).await? else { return Ok(()) };
-                let jpeg = u.rects.iter().filter(|r| r.encoding == 4).count() as u64;
+                let jpeg = u.rects.iter().filter(|r| r.encoding == spb::RectEncoding::RectJpeg as i32).count() as u64;
                 view.record_frame(u.encoded_len(), u.capture_unix_us, jpeg, u.rects.len() as u64 - jpeg);
                 let rects = std::mem::take(&mut u.rects);
                 let decoded = decode_rects(rects);
                 view.apply_frame(&u, decoded);
+                // подтверждение: демон не держит в пути больше, чем доставляет канал
+                frames += 1;
+                self.send_msg(client_msg::Kind::FrameAck(spb::FrameAck {
+                    vm_id: hdr.vm_id.clone(),
+                    screen_id: hdr.screen_id.clone(),
+                    frames,
+                }));
             }
         }
     }

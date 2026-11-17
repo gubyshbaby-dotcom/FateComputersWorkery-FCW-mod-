@@ -184,6 +184,24 @@ enum Cmd {
         #[arg(long, default_value_t = 0)]
         wheel: i32,
     },
+    /// Замер потока экрана: fps, Мбит/с, задержка (по секундам), при желании
+    /// через имитатор медленного канала
+    Watch {
+        #[arg(long)]
+        vm: String,
+        #[arg(long, default_value = "gfx0")]
+        screen: String,
+        #[arg(long, default_value_t = 20)]
+        seconds: u64,
+        #[arg(long, default_value_t = 60)]
+        fps: u32,
+        /// Ограничить канал до N Мбит/с (0 — без имитатора)
+        #[arg(long, default_value_t = 0.0)]
+        shape_mbps: f64,
+        /// Задержка имитатора в одну сторону, мс
+        #[arg(long, default_value_t = 40)]
+        delay_ms: u64,
+    },
     /// Записать звук машины (Opus по QUIC -> PCM) в WAV
     Audio {
         #[arg(long)]
@@ -407,9 +425,21 @@ struct Quic {
 
 impl Quic {
     async fn open(c: &mut Control, host: &str, vm: &str, perms: u32, timeout: Duration) -> Result<Quic> {
+        Self::open_at(c, host, None, vm, perms, timeout).await
+    }
+
+    /// `port` — подключаться не к QUIC-порту демона, а сюда (имитатор канала).
+    async fn open_at(
+        c: &mut Control,
+        host: &str,
+        port: Option<u16>,
+        vm: &str,
+        perms: u32,
+        timeout: Duration,
+    ) -> Result<Quic> {
         let h = c.hello().await?;
         let token = c.token(vm, perms).await?;
-        let s = Session::connect(host, h.quic_port as u16, &h.cert_sha256);
+        let s = Session::connect(host, port.unwrap_or(h.quic_port as u16), &h.cert_sha256);
         let deadline = Instant::now() + timeout;
         while s.state() == fcw_client::session::STATE_CONNECTING {
             if Instant::now() > deadline {
@@ -767,6 +797,73 @@ async fn run(cli: Cli) -> Result<()> {
                 q.s.send_wheel(&vm, 0, wheel, x, y);
             }
             tokio::time::sleep(Duration::from_millis(200)).await;
+            q.close().await;
+        }
+        Cmd::Watch { vm, screen, seconds, fps, shape_mbps, delay_ms } => {
+            let mut port = None;
+            let mut host = quic_host.clone();
+            let mut shaper_stats = None;
+            if shape_mbps > 0.0 {
+                let h = c.hello().await?;
+                let upstream = tokio::net::lookup_host((quic_host.as_str(), h.quic_port as u16))
+                    .await?
+                    .next()
+                    .ok_or_else(|| anyhow!("cannot resolve {quic_host}"))?;
+                let rate = (shape_mbps * 125_000.0) as u64;
+                let cfg = fcw_client::shaper::ShaperConfig {
+                    rate_down: rate,
+                    rate_up: rate,
+                    delay: Duration::from_millis(delay_ms),
+                    max_queue: Duration::from_secs(10),
+                };
+                let (addr, st) = fcw_client::shaper::start(upstream, cfg).await?;
+                port = Some(addr.port());
+                host = "127.0.0.1".into();
+                shaper_stats = Some(st);
+                println!("shaper: {shape_mbps} Mbit/s, {delay_ms} ms one way -> {upstream}");
+            }
+            let q = Quic::open_at(&mut c, &host, port, &vm, pb::Permission::PermView as u32, timeout).await?;
+            let v = q.s.open_view(&vm, &screen, fps);
+            let (mut all_lat, mut frames, mut bytes, mut jpeg) = (Vec::new(), 0u64, 0u64, 0u64);
+            let start = Instant::now();
+            for sec in 1..=seconds {
+                tokio::time::sleep_until((start + Duration::from_secs(sec)).into()).await;
+                let mut st = v.take_stats();
+                st.latency_us.sort_unstable();
+                let p = |q: f64| {
+                    st.latency_us.get(((st.latency_us.len() as f64 - 1.0) * q).round() as usize).map(|v| v / 1000)
+                };
+                println!(
+                    "{sec:3}s fps {:3} {:6.1} Mbit/s latency p50 {:>5} p95 {:>5} ms jpeg/lossless {}/{}",
+                    st.frames,
+                    st.bytes as f64 * 8.0 / 1e6,
+                    p(0.5).map(|v| v.to_string()).unwrap_or("-".into()),
+                    p(0.95).map(|v| v.to_string()).unwrap_or("-".into()),
+                    st.jpeg_rects,
+                    st.lossless_rects
+                );
+                frames += st.frames;
+                bytes += st.bytes;
+                jpeg += st.jpeg_rects;
+                all_lat.extend(st.latency_us);
+            }
+            all_lat.sort_unstable();
+            let p = |q: f64| all_lat.get(((all_lat.len() as f64 - 1.0) * q).round() as usize).map(|v| v / 1000);
+            println!(
+                "total: {:.1} fps, {:.1} Mbit/s, latency p50 {:?} p95 {:?} max {:?} ms, jpeg rects {jpeg}{}",
+                frames as f64 / seconds as f64,
+                bytes as f64 * 8.0 / 1e6 / seconds as f64,
+                p(0.5),
+                p(0.95),
+                all_lat.last().map(|v| v / 1000),
+                shaper_stats
+                    .map(|s| format!(
+                        ", wire {:.1} Mbit/s, max queue {} ms",
+                        s.down_bytes.load(std::sync::atomic::Ordering::Relaxed) as f64 * 8.0 / 1e6 / seconds as f64,
+                        s.max_queue_us.load(std::sync::atomic::Ordering::Relaxed) / 1000
+                    ))
+                    .unwrap_or_default()
+            );
             q.close().await;
         }
         Cmd::Audio { vm, seconds, out } => {

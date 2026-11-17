@@ -95,8 +95,13 @@ async fn force_stop_interrupts_soft_stop() {
     std::fs::write(&fake, FAKE_QEMU).unwrap();
     std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
 
-    let env =
-        Arc::new(Env { images_dir: dir.join("images"), qemu: QemuLocator::fixed(Some(fake)), tz: None, net: None });
+    let env = Arc::new(Env {
+        images_dir: dir.join("images"),
+        qemu: QemuLocator::fixed(Some(fake)),
+        tz: None,
+        net: None,
+        screen: Default::default(),
+    });
     let d = Daemon::new(env, dir.join("vms"), 8, 1, "00".into(), broadcast::channel(64).0);
     let sock = dir.join("control.sock");
     tokio::spawn(control::serve(d.clone(), LocalListener::bind(&sock).unwrap()));

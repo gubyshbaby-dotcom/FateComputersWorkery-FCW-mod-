@@ -105,8 +105,13 @@ async fn machines_stay_on_their_image_version() {
     write_image(&images.join("alp"), "build-A", &qemu_img);
 
     let (events, _) = broadcast::channel(256);
-    let env =
-        Arc::new(Env { images_dir: images.clone(), qemu: QemuLocator::fixed(Some(fake_qemu)), tz: None, net: None });
+    let env = Arc::new(Env {
+        images_dir: images.clone(),
+        qemu: QemuLocator::fixed(Some(fake_qemu)),
+        tz: None,
+        net: None,
+        screen: Default::default(),
+    });
     let d = Daemon::new(env, dir.join("vms"), 8, 1, "00".into(), events);
     let sock = dir.join("control.sock");
     tokio::spawn(control::serve(d.clone(), LocalListener::bind(&sock).unwrap()));

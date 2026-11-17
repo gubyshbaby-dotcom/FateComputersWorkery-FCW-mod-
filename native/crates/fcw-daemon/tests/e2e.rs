@@ -7,7 +7,7 @@ use fcw_client::Session;
 use fcw_daemon::daemon::Daemon;
 use fcw_daemon::localsock::LocalListener;
 use fcw_daemon::qemu::QemuLocator;
-use fcw_daemon::vm::Env;
+use fcw_daemon::vm::{Env, ScreenConfig};
 use fcw_daemon::{cert, control, pb, quic};
 use fcw_proto::control::{envelope, request, response};
 use fcw_proto::frame;
@@ -24,8 +24,13 @@ fn tmpdir(name: &str) -> PathBuf {
 }
 
 fn daemon(dir: &Path, port: u16, sha: &str) -> Arc<Daemon> {
+    daemon_with(dir, port, sha, ScreenConfig::default())
+}
+
+fn daemon_with(dir: &Path, port: u16, sha: &str, screen: ScreenConfig) -> Arc<Daemon> {
     let (events, _) = broadcast::channel(256);
-    let env = Arc::new(Env { images_dir: dir.join("images"), qemu: QemuLocator::fixed(None), tz: None, net: None });
+    let env =
+        Arc::new(Env { images_dir: dir.join("images"), qemu: QemuLocator::fixed(None), tz: None, net: None, screen });
     Daemon::new(env, dir.join("vms"), 4, port, sha.to_string(), events)
 }
 
@@ -247,5 +252,59 @@ async fn control_channel() {
     let r = call(&mut s, 13, request::Kind::Shutdown(pb::Shutdown {})).await;
     assert!(r.ok);
     assert!(*d.shutdown_signal().borrow());
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// Тайл «видео»: много цветов.
+fn plasma(t: f32) -> Vec<u8> {
+    let mut v = Vec::with_capacity(128 * 64 * 4);
+    for y in 0..64 {
+        for x in 0..128 {
+            let (fx, fy) = (x as f32, y as f32);
+            v.extend_from_slice(&[
+                (128.0 + 120.0 * (fx / 7.0 + t).sin()) as u8,
+                (128.0 + 120.0 * (fy / 5.0 + t).sin()) as u8,
+                (128.0 + 120.0 * ((fx + fy) / 9.0 + t).sin()) as u8,
+                0,
+            ]);
+        }
+    }
+    v
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn lossy_tiles_are_refined_to_exact_picture() {
+    let dir = tmpdir("lossy");
+    let c = cert::load_or_create(&dir).unwrap();
+    let ep = quic::make_endpoint("127.0.0.1:0".parse().unwrap(), &c).unwrap();
+    let port = ep.local_addr().unwrap().port();
+    // клиент на 127.0.0.1, но ведём себя как с удалённым игроком
+    let screen = ScreenConfig { local_unlimited: false, ..ScreenConfig::default() };
+    let d = daemon_with(&dir, port, &c.sha256_hex, screen);
+    let (vm, _) = d
+        .vm_for_create(&pb::CreateVm { vm_id: "v".into(), image_id: "i".into(), gpu: true, ..Default::default() })
+        .unwrap();
+    vm.gfx.resize(128, 64);
+    tokio::spawn(quic::serve(d.clone(), ep.clone()));
+    let (tok, _) = d.tokens.lock().issue("v", "u", "P", 1, 60);
+    let s = Session::connect("127.0.0.1", port, &c.sha256_hex);
+    s.attach(&tok);
+    assert_eq!(wait_event(&s, "attach").await["ok"], true);
+    let v = s.open_view("v", "gfx0", 30);
+    wait_for("first frame", 10_000, || v.info().width == 128).await;
+    // «видео»: часто меняющиеся пёстрые тайлы идут JPEG
+    for t in 0..12 {
+        vm.gfx.apply_rgbx(0, 0, 128, 64, &plasma(t as f32 * 0.3));
+        vm.gfx.commit();
+        tokio::time::sleep(Duration::from_millis(40)).await;
+    }
+    wait_for("jpeg tiles", 10_000, || v.info().seq >= 2).await;
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    let st = v.take_stats();
+    assert!(st.jpeg_rects > 0, "hot busy tiles should be sent lossy: {st:?}");
+    assert!(st.latency_us.iter().all(|l| *l < 2_000_000));
+    // видео остановилось: тайлы успокоились и досланы без потерь — картинка точная
+    wait_for("exact picture", 10_000, || vm.gfx.snapshot().2 == v.snapshot().2).await;
+    s.close();
     let _ = std::fs::remove_dir_all(&dir);
 }

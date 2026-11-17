@@ -11,11 +11,13 @@
 //! захвата демоном до прихода к клиенту и время до совпадения картинки клиента
 //! с демоном без потерь после остановки сцены.
 
+#![allow(clippy::too_many_arguments)]
+
 use fcw_client::shaper::{self, ShaperConfig};
 use fcw_client::Session;
 use fcw_daemon::daemon::Daemon;
 use fcw_daemon::qemu::QemuLocator;
-use fcw_daemon::vm::Env;
+use fcw_daemon::vm::{Env, ScreenConfig};
 use fcw_daemon::{cert, pb, quic};
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
@@ -30,7 +32,12 @@ struct Opts {
     rate_mbps: f64,
     delay_ms: u64,
     fps: u32,
-    daemon_args: Vec<String>,
+    /// Бюджет демона на подписчика (`--screen-max-mbps`), None — по умолчанию.
+    max_mbps: Option<f64>,
+    max_fps: Option<u32>,
+    /// Прежнее поведение: окно 16 МиБ, Cubic, без потерь, без подтверждений,
+    /// без бюджета, до 60 fps.
+    legacy: bool,
 }
 
 fn parse() -> Opts {
@@ -40,7 +47,9 @@ fn parse() -> Opts {
         rate_mbps: 0.0,
         delay_ms: 40,
         fps: 60,
-        daemon_args: Vec::new(),
+        max_mbps: None,
+        max_fps: None,
+        legacy: false,
     };
     let mut it = std::env::args().skip(1);
     while let Some(a) = it.next() {
@@ -51,7 +60,10 @@ fn parse() -> Opts {
             "--rate-mbps" => o.rate_mbps = v().parse().unwrap(),
             "--delay-ms" => o.delay_ms = v().parse().unwrap(),
             "--fps" => o.fps = v().parse().unwrap(),
-            other => o.daemon_args.push(other.to_string()),
+            "--max-mbps" => o.max_mbps = Some(v().parse().unwrap()),
+            "--max-fps" => o.max_fps = Some(v().parse().unwrap()),
+            "--legacy" => o.legacy = true,
+            other => panic!("unknown argument {other}"),
         }
     }
     o
@@ -88,7 +100,17 @@ fn plasma(sin: &Sin, buf: &mut [u8], stride: usize, x0: usize, y0: usize, w: usi
 }
 
 /// Текст шрифтом клиента + лёгкое размытие (как сглаженный шрифт браузера).
-fn text_block(buf: &mut [u8], stride: usize, x0: usize, y0: usize, cols: usize, rows: usize, seed: &mut u64, fg: u32, bg: u32) {
+fn text_block(
+    buf: &mut [u8],
+    stride: usize,
+    x0: usize,
+    y0: usize,
+    cols: usize,
+    rows: usize,
+    seed: &mut u64,
+    fg: u32,
+    bg: u32,
+) {
     const ALPHA: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/   ";
     for r in 0..rows {
         for c in 0..cols {
@@ -112,6 +134,21 @@ fn text_block(buf: &mut [u8], stride: usize, x0: usize, y0: usize, cols: usize, 
     }
 }
 
+/// Вертикальное сглаживание 1-2-1 (вместе с горизонтальным — как
+/// сглаженный шрифт браузера, 10-20 оттенков в тайле).
+fn blur_v(buf: &mut [u8], stride: usize, x0: usize, y0: usize, w: usize, h: usize) {
+    let orig: Vec<u8> = buf[y0 * stride..(y0 + h) * stride].to_vec();
+    for y in 1..h - 1 {
+        for x in x0 * 4..(x0 + w) * 4 {
+            let v = (orig[(y - 1) * stride + x] as u32
+                + 2 * orig[y * stride + x] as u32
+                + orig[(y + 1) * stride + x] as u32)
+                / 4;
+            buf[(y0 + y) * stride + x] = v as u8;
+        }
+    }
+}
+
 /// «Веб-страница» высотой `ph`: абзацы текста и картинки.
 fn web_page(sin: &Sin, ph: usize) -> Vec<u8> {
     let mut p = vec![255u8; W * ph * 4];
@@ -124,6 +161,7 @@ fn web_page(sin: &Sin, ph: usize) -> Vec<u8> {
             y += 316;
         } else {
             text_block(&mut p, W * 4, 64, y, 110, 10, &mut seed, 0x202020, 0xffffff);
+            blur_v(&mut p, W * 4, 64, y, 110 * 8, 160);
             y += 176;
         }
         n += 1;
@@ -164,17 +202,90 @@ fn pct(v: &mut [u64], p: f64) -> f64 {
     v[i] as f64 / 1000.0
 }
 
+/// Гистограмма числа цветов в тайлах 64x64 PNG-снимка (для порогов).
+fn count_png(path: &str) {
+    let dec = png::Decoder::new(std::io::BufReader::new(std::fs::File::open(path).unwrap()));
+    let mut r = dec.read_info().unwrap();
+    let mut buf = vec![0; r.output_buffer_size()];
+    let info = r.next_frame(&mut buf).unwrap();
+    let (w, h) = (info.width as usize, info.height as usize);
+    let bpp = info.line_size / w;
+    let mut hist = [0usize; 6];
+    let (mut raw4, mut z4, mut z3) = (0usize, 0usize, 0usize);
+    for ty in (0..h).step_by(64) {
+        for tx in (0..w).step_by(64) {
+            let (tw, th) = (64.min(w - tx), 64.min(h - ty));
+            let mut t = Vec::with_capacity(tw * th * 4);
+            let mut t3 = Vec::with_capacity(tw * th * 3);
+            for y in ty..ty + th {
+                for x in tx..tx + tw {
+                    let o = y * info.line_size + x * bpp;
+                    t.extend_from_slice(&[buf[o], buf[o + 1], buf[o + 2], 255]);
+                    t3.extend_from_slice(&[buf[o], buf[o + 1], buf[o + 2]]);
+                }
+            }
+            let c = fcw_daemon::gfx::count_colors(&t, 1000);
+            let b = match c {
+                1 => 0,
+                2..=4 => 1,
+                5..=16 => 2,
+                17..=64 => 3,
+                65..=200 => 4,
+                _ => 5,
+            };
+            hist[b] += 1;
+            if c > 1 {
+                raw4 += t.len();
+                z4 += zstd::bulk::compress(&t, 1).unwrap().len();
+                z3 += zstd::bulk::compress(&t3, 1).unwrap().len();
+            }
+        }
+    }
+    println!(
+        "{path}: colors per tile 1:{} 2-4:{} 5-16:{} 17-64:{} 65-200:{} >200:{}",
+        hist[0], hist[1], hist[2], hist[3], hist[4], hist[5]
+    );
+    println!(
+        "  non-solid tiles: raw {} KiB, zstd RGBA {} KiB, zstd RGB {} KiB ({:+.1}%)",
+        raw4 / 1024,
+        z4 / 1024,
+        z3 / 1024,
+        (z3 as f64 / z4 as f64 - 1.0) * 100.0
+    );
+}
+
 #[tokio::main(flavor = "multi_thread", worker_threads = 4)]
 async fn main() {
+    if let Some(p) = std::env::args().nth(1).filter(|a| a.ends_with(".png")) {
+        for p in std::env::args().skip(1) {
+            count_png(&p);
+        }
+        let _ = p;
+        return;
+    }
     let o = parse();
     let dir = std::env::temp_dir().join(format!("fcw-bench-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     let c = cert::load_or_create(&dir).unwrap();
-    let ep = quic::make_endpoint("127.0.0.1:0".parse().unwrap(), &c).unwrap();
+    let tuning =
+        if o.legacy { quic::Tuning { send_window: 16 * 1024 * 1024, bbr: false } } else { quic::Tuning::default() };
+    let ep = quic::make_endpoint_tuned("127.0.0.1:0".parse().unwrap(), &c, tuning).unwrap();
     let port = ep.local_addr().unwrap().port();
-    let env = Arc::new(Env { images_dir: dir.join("images"), qemu: QemuLocator::fixed(None), tz: None, net: None });
+    let mut screen = if o.legacy {
+        ScreenConfig { max_bytes_per_sec: 0, max_fps: 60, lossy: false, frame_acks: false, local_unlimited: false }
+    } else {
+        // клиент идёт через 127.0.0.1, но изображает удалённого игрока
+        ScreenConfig { local_unlimited: false, ..ScreenConfig::default() }
+    };
+    if let Some(m) = o.max_mbps {
+        screen.max_bytes_per_sec = (m * 125_000.0) as u64;
+    }
+    if let Some(f) = o.max_fps {
+        screen.max_fps = f;
+    }
+    let env =
+        Arc::new(Env { images_dir: dir.join("images"), qemu: QemuLocator::fixed(None), tz: None, net: None, screen });
     let d = Daemon::new(env, dir.join("vms"), 4, port, c.sha256_hex.clone(), tokio::sync::broadcast::channel(16).0);
-    let _ = &o.daemon_args;
     let (vm, _) = d
         .vm_for_create(&pb::CreateVm { vm_id: "b".into(), image_id: "x".into(), gpu: true, ..Default::default() })
         .unwrap();
@@ -259,9 +370,13 @@ async fn main() {
     let (p50, p95) = (pct(lat, 0.5), pct(lat, 0.95));
     let max = lat.iter().copied().max().unwrap_or(0) as f64 / 1000.0;
     println!(
-        "| {} | {} | {:.0}/{:.0} | {:.1} | {} | {:.0} | {:.0} | {:.0} | {} | {} | {} |",
-        o.scene,
-        if o.rate_mbps > 0.0 { format!("{} Мбит/с, {} мс", o.rate_mbps, o.delay_ms) } else { "без огр.".into() },
+        "| {} | {} | {:.0}/{:.0} | {:.1} | {} | {:.0} | {:.0} | {:.0} | {} | {} | {}/{} |",
+        if o.legacy { format!("{} (было)", o.scene) } else { o.scene.clone() },
+        if o.rate_mbps > 0.0 {
+            format!("{} Мбит/с, {} мс", o.rate_mbps, o.delay_ms)
+        } else {
+            "без огр.".into()
+        },
         st.frames as f64 / elapsed,
         produced as f64 / elapsed,
         mbps,
@@ -271,7 +386,8 @@ async fn main() {
         max,
         converged.map(|c| format!("{c:.1} с")).unwrap_or_else(|| "нет за 30 с".into()),
         max_q.map(|q| format!("{q:.0} мс")).unwrap_or_else(|| "-".into()),
-        format!("{}/{}", st.jpeg_rects + tail.jpeg_rects, st.lossless_rects + tail.lossless_rects),
+        st.jpeg_rects + tail.jpeg_rects,
+        st.lossless_rects + tail.lossless_rects,
     );
     let _ = std::fs::remove_dir_all(&dir);
     std::process::exit(0);

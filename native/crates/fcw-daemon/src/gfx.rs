@@ -22,6 +22,10 @@ const ZSTD_LEVEL: i32 = 1;
 /// Тайл «пёстрый», если в нём больше стольких разных цветов (текст и
 /// интерфейс обычно укладываются, фото и видео — нет).
 pub const BUSY_COLORS: usize = 64;
+/// Порог для тайлов, которые меняются очень часто, когда канал не успевает
+/// (прокрутка сглаженного текста): их тоже можно временно слать JPEG.
+/// Консольный текст и плоский интерфейс (несколько цветов) — всегда без потерь.
+pub const HOT_COLORS: usize = 16;
 /// Тайл «горячий», если он менялся 3 раза за это время (видео, прокрутка).
 pub const HOT_WINDOW_US: u64 = 1_000_000;
 /// Тайл «успокоился», если не менялся столько времени: можно досылать без потерь.
@@ -59,8 +63,8 @@ struct Inner {
     cache: Vec<Option<(u64, Arc<spb::Rect>)>>,
     /// JPEG по версии.
     jpeg: Vec<Option<(u64, Arc<spb::Rect>)>>,
-    /// «Пёстрый» ли тайл этой версии.
-    busy: Vec<Option<(u64, bool)>>,
+    /// Число цветов тайла этой версии (не больше BUSY_COLORS + 1).
+    colors: Vec<Option<(u64, u16)>>,
     /// Номер последнего зафиксированного изменения.
     seq: u64,
     /// Меняется при смене размера/сбросе: подписчикам нужен ключевой кадр.
@@ -90,7 +94,7 @@ impl Inner {
         self.pending_tiles.clear();
         self.cache = vec![None; n];
         self.jpeg = vec![None; n];
-        self.busy = vec![None; n];
+        self.colors = vec![None; n];
         self.pending = false;
         self.seq_time_us = crate::unix_us();
     }
@@ -144,8 +148,8 @@ pub struct Collected {
 enum Job {
     Lossless,
     Jpeg,
-    /// Решить по числу цветов: JPEG для «пёстрого», иначе без потерь.
-    Decide,
+    /// Решить по числу цветов: JPEG, если цветов больше порога.
+    Decide(usize),
 }
 
 struct TileJob {
@@ -195,7 +199,7 @@ impl GfxScreen {
                 pending_tiles: Vec::new(),
                 cache: Vec::new(),
                 jpeg: Vec::new(),
-                busy: Vec::new(),
+                colors: Vec::new(),
                 seq: 0,
                 epoch: 0,
                 pending: false,
@@ -339,18 +343,24 @@ impl GfxScreen {
             width = g.width;
             height = g.height;
             let mut taken = vec![false; g.tile_ver.len()];
-            let mut push = |g: &Inner, parts: &mut Vec<_>, jobs: &mut Vec<TileJob>, i: usize, want_lossy: bool, refine: bool| {
+            // lossy_above: JPEG, если цветов больше; None — только без потерь
+            let push = |g: &Inner,
+                        parts: &mut Vec<_>,
+                        jobs: &mut Vec<TileJob>,
+                        i: usize,
+                        lossy_above: Option<usize>,
+                        refine: bool| {
                 let ver = g.tile_ver[i];
-                let busy = g.busy[i].filter(|(v, _)| *v == ver).map(|(_, b)| b);
-                let job = match (want_lossy, busy) {
-                    (true, Some(true)) => Job::Jpeg,
-                    (true, None) => Job::Decide,
+                let colors = g.colors[i].filter(|(v, _)| *v == ver).map(|(_, c)| c as usize);
+                let job = match (lossy_above, colors) {
+                    (Some(t), Some(c)) if c > t => Job::Jpeg,
+                    (Some(t), None) => Job::Decide(t),
                     _ => Job::Lossless,
                 };
                 let cached = match job {
                     Job::Jpeg => g.jpeg[i].as_ref().filter(|(v, _)| *v == ver).map(|(_, r)| (r.clone(), true)),
                     Job::Lossless => g.cache[i].as_ref().filter(|(v, _)| *v == ver).map(|(_, r)| (r.clone(), false)),
-                    Job::Decide => None,
+                    Job::Decide(_) => None,
                 };
                 match cached {
                     Some((r, lossy)) => parts.push((i, ver, Part::Ready(r, lossy), refine)),
@@ -368,39 +378,51 @@ impl GfxScreen {
                         continue;
                     }
                     taken[i] = true;
-                    let want_lossy = policy.lossy_ok && (policy.congested || g.hot(i, now));
-                    push(&g, &mut parts, &mut jobs, i, want_lossy, false);
+                    let hot = g.hot(i, now);
+                    let lossy_above = match (policy.lossy_ok, hot, policy.congested) {
+                        (false, _, _) | (true, false, false) => None,
+                        (true, true, true) => Some(HOT_COLORS),
+                        (true, true, false) | (true, false, true) => Some(BUSY_COLORS),
+                    };
+                    push(&g, &mut parts, &mut jobs, i, lossy_above, false);
                 }
             }
             if !key && cur.epoch == g.epoch {
                 for &(i, ver) in refine {
                     if i < g.tile_ver.len() && !taken[i] && g.tile_ver[i] == ver && ver <= g.seq && g.settled(i, now) {
                         taken[i] = true;
-                        push(&g, &mut parts, &mut jobs, i, false, true);
+                        push(&g, &mut parts, &mut jobs, i, None, true);
                     }
                 }
             }
         }
         if parts.is_empty() {
-            if delta {
-                // изменились только незафиксированные тайлы
-                cur.seq = seq;
+            if !delta {
+                return None;
             }
-            return None;
+            // изменились только незафиксированные тайлы — или экран пустой (0x0)
+            cur.seq = seq;
+            cur.epoch = epoch;
+            cur.started = true;
+            if !key {
+                return None;
+            }
+            let update = spb::FrameUpdate { seq, width, height, keyframe: true, rects: vec![], capture_unix_us };
+            return Some(Collected { update, tiles: vec![] });
         }
-        let encoded: Vec<(Arc<spb::Rect>, bool, Option<bool>)> = jobs
+        let encoded: Vec<(Arc<spb::Rect>, bool, Option<u16>)> = jobs
             .iter()
             .map(|j| {
                 let (x, y, w, h) = j.rect;
                 match j.job {
                     Job::Lossless => (Arc::new(encode_tile(x, y, w, h, &j.px)), false, None),
-                    Job::Jpeg => (Arc::new(encode_jpeg(x, y, w, h, &j.px)), true, Some(true)),
-                    Job::Decide => {
-                        let busy = count_colors(&j.px, BUSY_COLORS + 1) > BUSY_COLORS;
-                        if busy {
-                            (Arc::new(encode_jpeg(x, y, w, h, &j.px)), true, Some(true))
+                    Job::Jpeg => (Arc::new(encode_jpeg(x, y, w, h, &j.px)), true, None),
+                    Job::Decide(t) => {
+                        let colors = count_colors(&j.px, BUSY_COLORS + 1);
+                        if colors > t {
+                            (Arc::new(encode_jpeg(x, y, w, h, &j.px)), true, Some(colors as u16))
                         } else {
-                            (Arc::new(encode_tile(x, y, w, h, &j.px)), false, Some(false))
+                            (Arc::new(encode_tile(x, y, w, h, &j.px)), false, Some(colors as u16))
                         }
                     }
                 }
@@ -409,13 +431,13 @@ impl GfxScreen {
         if !jobs.is_empty() {
             let mut g = self.inner.lock();
             if g.epoch == epoch {
-                for (j, (r, lossy, busy)) in jobs.iter().zip(&encoded) {
+                for (j, (r, lossy, colors)) in jobs.iter().zip(&encoded) {
                     // незафиксированные тайлы (ver > seq) ещё могут меняться — не кешируем
                     if j.ver > seq || g.tile_ver.get(j.idx) != Some(&j.ver) {
                         continue;
                     }
-                    if let Some(b) = busy {
-                        g.busy[j.idx] = Some((j.ver, *b));
+                    if let Some(c) = colors {
+                        g.colors[j.idx] = Some((j.ver, *c));
                     }
                     if *lossy {
                         g.jpeg[j.idx] = Some((j.ver, r.clone()));
@@ -452,6 +474,12 @@ impl GfxScreen {
             update: spb::FrameUpdate { seq: fseq, width, height, keyframe: key, rects, capture_unix_us: capture },
             tiles,
         })
+    }
+
+    /// Есть ли для подписчика зафиксированные изменения (или нужен ключевой кадр).
+    pub fn has_changes(&self, cur: &SubCursor) -> bool {
+        let g = self.inner.lock();
+        !cur.started || cur.epoch != g.epoch || cur.seq < g.seq
     }
 
     /// Без потерь, как раньше (для тестов и клиентов без JPEG).
@@ -556,6 +584,95 @@ mod tests {
         let k2 = s.collect_lossless(&mut cur, true).unwrap();
         assert!(k2.keyframe);
         assert_eq!(k2.rects.len(), 6);
+    }
+
+    fn plasma(t: f32) -> Vec<u8> {
+        let mut v = Vec::with_capacity(64 * 64 * 4);
+        for y in 0..64 {
+            for x in 0..64 {
+                let (fx, fy) = (x as f32, y as f32);
+                v.extend_from_slice(&[
+                    (128.0 + 120.0 * (fx / 7.0 + t).sin()) as u8,
+                    (128.0 + 120.0 * (fy / 5.0 + t).sin()) as u8,
+                    (128.0 + 120.0 * ((fx + fy) / 9.0 + t).sin()) as u8,
+                    0,
+                ]);
+            }
+        }
+        v
+    }
+
+    fn stripes(t: u8) -> Vec<u8> {
+        (0..64 * 64).flat_map(|i| if (i / 4) % 2 == 0 { [t, 0, 0, 0] } else { [255, 255, 255, 0] }).collect()
+    }
+
+    #[test]
+    fn colors() {
+        assert_eq!(count_colors(&[1, 2, 3, 255].repeat(100), 100), 1);
+        assert_eq!(count_colors(&stripes(9), 100), 2);
+        assert!(count_colors(&plasma(0.0), BUSY_COLORS + 1) > BUSY_COLORS);
+        assert_eq!(count_colors(&plasma(0.0), 10), 10, "stops at the limit");
+    }
+
+    #[test]
+    fn hot_busy_tiles_go_lossy_then_refined() {
+        let s = GfxScreen::new();
+        s.resize(128, 64);
+        let mut cur = SubCursor::default();
+        s.collect_lossless(&mut cur, false).unwrap();
+        let policy = EncodePolicy { lossy_ok: true, congested: false };
+        // оба тайла меняются трижды подряд: «горячие»
+        for t in 0..3 {
+            s.apply_rgbx(0, 0, 64, 64, &plasma(t as f32));
+            s.apply_rgbx(64, 0, 64, 64, &stripes(t));
+            s.commit();
+        }
+        let c = s.collect(&mut cur, false, policy, &[], 0).unwrap();
+        assert!(c.update.capture_unix_us > 0);
+        assert_eq!(c.tiles.len(), 2);
+        let (t0, t1) = (c.tiles[0], c.tiles[1]);
+        assert!(t0.2, "busy hot tile is lossy");
+        assert_eq!(c.update.rects[0].encoding, spb::RectEncoding::RectJpeg as i32);
+        assert!(!t1.2, "two-colour tile stays lossless");
+        assert_eq!(c.update.rects[1].encoding, spb::RectEncoding::RectRgbaZstd as i32);
+        // клиент без JPEG получает тот же тайл без потерь
+        let mut other = SubCursor::default();
+        let k = s.collect(&mut other, false, EncodePolicy::default(), &[], 0).unwrap();
+        assert!(k.update.rects.iter().all(|r| r.encoding != spb::RectEncoding::RectJpeg as i32));
+
+        // уточнение: пока тайл не успокоился — нечего слать
+        let refine = [(t0.0, t0.1)];
+        assert!(s.collect(&mut cur, false, policy, &refine, 1 << 20).is_none());
+        std::thread::sleep(std::time::Duration::from_micros(SETTLE_US + 50_000));
+        let r = s.collect(&mut cur, false, policy, &refine, 1 << 20).unwrap();
+        assert!(!r.update.keyframe);
+        assert_eq!(r.update.capture_unix_us, 0, "refinement is not a new capture");
+        assert_eq!(r.tiles, vec![(t0.0, t0.1, false)]);
+        assert_eq!(r.update.rects[0].encoding, spb::RectEncoding::RectRgbaZstd as i32);
+        // тайл изменился после отправки с потерями — уточнять старую версию нельзя
+        s.apply_rgbx(0, 0, 64, 64, &plasma(9.0));
+        s.commit();
+        assert!(s.collect(&mut cur, false, policy, &[], 0).is_some());
+        assert!(s.collect(&mut cur, false, policy, &refine, 1 << 20).is_none());
+    }
+
+    #[test]
+    fn congestion_makes_busy_tiles_lossy() {
+        let s = GfxScreen::new();
+        s.resize(128, 64);
+        let mut cur = SubCursor::default();
+        s.collect_lossless(&mut cur, false).unwrap();
+        s.apply_rgbx(0, 0, 64, 64, &plasma(1.0));
+        s.apply_rgbx(64, 0, 64, 64, &stripes(1));
+        s.commit();
+        // одно изменение (не «горячее»): без перегрузки — без потерь
+        let mut c2 = cur;
+        let calm = s.collect(&mut c2, false, EncodePolicy { lossy_ok: true, congested: false }, &[], 0).unwrap();
+        assert!(calm.tiles.iter().all(|t| !t.2));
+        let busy = s.collect(&mut cur, false, EncodePolicy { lossy_ok: true, congested: true }, &[], 0).unwrap();
+        assert_eq!(busy.tiles.iter().map(|t| t.2).collect::<Vec<_>>(), vec![true, false]);
+        // JPEG заметно меньше zstd для такой картинки
+        assert!(busy.update.rects[0].data.len() < calm.update.rects[0].data.len());
     }
 
     #[test]

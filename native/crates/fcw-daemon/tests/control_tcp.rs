@@ -19,7 +19,13 @@ const TOKEN: &str = "s3cr3t-token-for-tests";
 fn daemon(name: &str) -> Arc<Daemon> {
     let dir = std::env::temp_dir().join(format!("fcw-tcp-test-{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
-    let env = Arc::new(Env { images_dir: dir.join("images"), qemu: QemuLocator::fixed(None), tz: None, net: None });
+    let env = Arc::new(Env {
+        images_dir: dir.join("images"),
+        qemu: QemuLocator::fixed(None),
+        tz: None,
+        net: None,
+        screen: Default::default(),
+    });
     Daemon::new(env, dir.join("vms"), 4, 1, "00".into(), broadcast::channel(64).0)
 }
 

@@ -9,21 +9,41 @@ use crate::cert::ServerCert;
 use crate::daemon::Daemon;
 use crate::gfx;
 use crate::text;
-use crate::vm::{Controller, Vm, VmNotice, SCREEN_GFX, SCREEN_TTY};
+use crate::vm::{Controller, ScreenConfig, Vm, VmNotice, SCREEN_GFX, SCREEN_TTY};
 use crate::{pb, spb, AbortOnDrop};
 use anyhow::{anyhow, bail, Context, Result};
 use fcw_proto::frame;
 use fcw_proto::Message;
 use parking_lot::Mutex;
 use spb::{client_msg, server_msg};
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{broadcast, mpsc, Notify};
 use tokio::time::Instant;
 
+/// Окно отправки соединения (неподтверждённые + неотправленные данные).
+pub const SEND_WINDOW: u64 = 1024 * 1024;
+
+/// Настройки транспорта QUIC (для замеров можно вернуть прежние).
+#[derive(Clone, Copy, Debug)]
+pub struct Tuning {
+    pub send_window: u64,
+    pub bbr: bool,
+}
+
+impl Default for Tuning {
+    fn default() -> Self {
+        Tuning { send_window: SEND_WINDOW, bbr: true }
+    }
+}
+
 pub fn make_endpoint(bind: SocketAddr, cert: &ServerCert) -> Result<quinn::Endpoint> {
+    make_endpoint_tuned(bind, cert, Tuning::default())
+}
+
+pub fn make_endpoint_tuned(bind: SocketAddr, cert: &ServerCert, tuning: Tuning) -> Result<quinn::Endpoint> {
     let provider = Arc::new(rustls::crypto::ring::default_provider());
     let mut tls = rustls::ServerConfig::builder_with_provider(provider)
         .with_protocol_versions(&[&rustls::version::TLS13])?
@@ -40,8 +60,14 @@ pub fn make_endpoint(bind: SocketAddr, cert: &ServerCert) -> Result<quinn::Endpo
         .keep_alive_interval(Some(Duration::from_secs(5)))
         .max_idle_timeout(Some(Duration::from_secs(30).try_into()?))
         .datagram_receive_buffer_size(Some(256 * 1024))
-        .send_window(16 * 1024 * 1024)
+        // Небольшое окно отправки: кадры не копятся в буфере QUIC на секунды
+        // вперёд (основное ограничение — подтверждения кадров, см. GfxSender).
+        .send_window(tuning.send_window)
         .stream_receive_window((4u32 * 1024 * 1024).into());
+    if tuning.bbr {
+        // BBR не раздувает очередь на канале без потерь (UDP через TCP-туннель frp)
+        transport.congestion_controller_factory(Arc::new(quinn::congestion::BbrConfig::default()));
+    }
     cfg.transport_config(Arc::new(transport));
     let ep = quinn::Endpoint::server(cfg, bind)?;
     Ok(ep)
@@ -79,6 +105,8 @@ type Attached = Arc<Mutex<HashMap<String, Attachment>>>;
 
 struct Sub {
     keyframe: Arc<Notify>,
+    /// Подтверждения кадров (FrameAck.frames) для задачи потока экрана.
+    acks: mpsc::UnboundedSender<u64>,
     _task: AbortOnDrop<()>,
     _audio: Option<crate::vm::AudioSubGuard>,
 }
@@ -213,6 +241,11 @@ impl Conn {
             client_msg::Kind::Unsubscribe(u) => {
                 self.unsubscribe(&u.vm_id, &u.screen_id);
             }
+            client_msg::Kind::FrameAck(a) => {
+                if let Some(s) = self.subs.get(&(a.vm_id, a.screen_id)) {
+                    let _ = s.acks.send(a.frames);
+                }
+            }
             client_msg::Kind::RequestKeyframe(k) => {
                 if let Some(s) = self.subs.get(&(k.vm_id.clone(), k.screen_id.clone())) {
                     s.keyframe.notify_one();
@@ -328,7 +361,14 @@ impl Conn {
         if s.screen_id != SCREEN_GFX && s.screen_id != SCREEN_TTY {
             bail!("unknown screen {}", s.screen_id);
         }
-        let fps = if s.max_fps == 0 { 30 } else { s.max_fps.clamp(1, 60) };
+        let mut screen_cfg = self.d.env.screen;
+        if screen_cfg.local_unlimited && self.conn.remote_address().ip().is_loopback() {
+            // игрок на этом же хосте: канал не ограничен, картинка без потерь
+            screen_cfg.max_bytes_per_sec = 0;
+            screen_cfg.lossy = false;
+            screen_cfg.max_fps = screen_cfg.max_fps.max(60);
+        }
+        let fps = if s.max_fps == 0 { 30 } else { s.max_fps }.clamp(1, screen_cfg.max_fps.max(1));
         let key = (s.vm_id.clone(), s.screen_id.clone());
         self.unsubscribe(&key.0, &key.1);
         let keyframe = Arc::new(Notify::new());
@@ -337,8 +377,15 @@ impl Conn {
         let screen = s.screen_id.clone();
         let kf = keyframe.clone();
         let cid = self.id;
+        let (ack_tx, ack_rx) = mpsc::unbounded_channel();
+        let opts = StreamOpts {
+            fps,
+            accept_lossy: s.accept_lossy && screen_cfg.lossy,
+            frame_acks: s.frame_acks && screen_cfg.frame_acks,
+            cfg: screen_cfg,
+        };
         let task = tokio::spawn(async move {
-            if let Err(e) = screen_stream(conn, vm, screen, fps, kf).await {
+            if let Err(e) = screen_stream(conn, vm, screen, opts, kf, ack_rx).await {
                 tracing::debug!("client #{cid} screen stream: {e:#}");
             }
         });
@@ -348,7 +395,7 @@ impl Conn {
         } else {
             None
         };
-        self.subs.insert(key, Sub { keyframe, _task: AbortOnDrop(task), _audio: audio });
+        self.subs.insert(key, Sub { keyframe, acks: ack_tx, _task: AbortOnDrop(task), _audio: audio });
         Ok(())
     }
 
@@ -459,13 +506,23 @@ async fn notice_task(
     }
 }
 
+/// Параметры подписки на экран.
+#[derive(Clone, Copy, Debug)]
+struct StreamOpts {
+    fps: u32,
+    accept_lossy: bool,
+    frame_acks: bool,
+    cfg: ScreenConfig,
+}
+
 /// Поток экрана: заголовок, затем FrameUpdate/TextUpdate не чаще max_fps.
 async fn screen_stream(
     conn: quinn::Connection,
     vm: Arc<Vm>,
     screen: String,
-    fps: u32,
+    opts: StreamOpts,
     keyframe: Arc<Notify>,
+    acks: mpsc::UnboundedReceiver<u64>,
 ) -> Result<()> {
     let mut send = conn.open_uni().await?;
     let hdr = spb::StreamHeader {
@@ -474,45 +531,228 @@ async fn screen_stream(
         screen_id: screen.clone(),
     };
     frame::write_async(&mut send, &hdr).await?;
-    let interval = Duration::from_micros(1_000_000 / fps as u64);
+    let interval = Duration::from_micros(1_000_000 / opts.fps as u64);
+    if screen == SCREEN_GFX {
+        return GfxSender::new(conn, opts).run(&mut send, &vm, keyframe, acks).await;
+    }
     let mut last = Instant::now() - interval;
     let mut want_key = true;
-    if screen == SCREEN_GFX {
-        let mut rx = vm.gfx.subscribe();
-        let mut cur = gfx::SubCursor::default();
-        loop {
-            rx.borrow_and_update();
-            if let Some(u) = vm.gfx.collect(&mut cur, want_key) {
-                want_key = false;
-                frame::write_async(&mut send, &u).await?;
-                last = Instant::now();
+    let mut rx = vm.tty.subscribe();
+    let mut cur = text::SubCursor::default();
+    loop {
+        rx.borrow_and_update();
+        if let Some(u) = vm.tty.collect(&mut cur, want_key) {
+            want_key = false;
+            frame::write_async(&mut send, &u).await?;
+            last = Instant::now();
+        }
+        tokio::select! {
+            r = rx.changed() => r?,
+            _ = keyframe.notified() => want_key = true,
+        }
+        let next = last + interval;
+        if Instant::now() < next {
+            tokio::time::sleep_until(next).await;
+        }
+    }
+}
+
+/// Сколько данных экрана держать в пути, если скорость канала неизвестна.
+const MIN_CREDIT: usize = 128 * 1024;
+/// Допустимая очередь сверх RTT: кадры в пути не старше этого.
+const TARGET_QUEUE: Duration = Duration::from_millis(80);
+/// Запас бюджета битрейта (кадр можно отправить «в долг» на это время).
+const RATE_BURST: Duration = Duration::from_millis(100);
+/// Сколько держать режим «канал не успевает» после последней задержки.
+const CONGESTED_HOLD: Duration = Duration::from_millis(1500);
+
+/// Отправка графического экрана одному подписчику.
+///
+/// Задержку ограничивают три вещи: частота кадров, бюджет битрейта и (если
+/// клиент шлёт FrameAck) объём неподтверждённых кадров — не больше, чем канал
+/// доставит за RTT + 80 мс. Пока отправить нельзя, изменения склеиваются в
+/// буфере экрана, а не встают в очередь. Если канал не успевает или тайл
+/// меняется очень часто, «пёстрые» тайлы идут JPEG и позже досылаются без
+/// потерь.
+struct GfxSender {
+    conn: quinn::Connection,
+    opts: StreamOpts,
+    interval: Duration,
+    last_send: Instant,
+    /// Бюджет битрейта: момент, когда «долг» будет выплачен.
+    next_free: Instant,
+    inflight: VecDeque<(u64, usize, Instant)>,
+    outstanding: usize,
+    frames_sent: u64,
+    /// Оценки скорости доставки по подтверждённым кадрам: (момент, байт/с).
+    rate_samples: VecDeque<(Instant, f64)>,
+    /// Размер последнего отправленного кадра.
+    last_frame: usize,
+    congested_until: Instant,
+    /// Тайлы, отправленные с потерями: индекс -> версия.
+    lossy: HashMap<usize, u64>,
+}
+
+impl GfxSender {
+    fn new(conn: quinn::Connection, opts: StreamOpts) -> Self {
+        let now = Instant::now();
+        let interval = Duration::from_micros(1_000_000 / opts.fps as u64);
+        GfxSender {
+            conn,
+            opts,
+            interval,
+            last_send: now - interval,
+            next_free: now,
+            inflight: VecDeque::new(),
+            outstanding: 0,
+            frames_sent: 0,
+            rate_samples: VecDeque::new(),
+            last_frame: 0,
+            congested_until: now,
+            lossy: HashMap::new(),
+        }
+    }
+
+    fn rate(&self) -> Option<f64> {
+        (self.opts.cfg.max_bytes_per_sec > 0).then_some(self.opts.cfg.max_bytes_per_sec as f64)
+    }
+
+    /// Сколько байт кадров можно держать неподтверждёнными: то, что канал
+    /// доставит за RTT + TARGET_QUEUE, плюс ещё один кадр (чтобы канал не
+    /// простаивал, пока идёт подтверждение).
+    fn credit(&self) -> usize {
+        let rtt = self.conn.stats().path.min_rtt;
+        let est = self.rate_samples.iter().map(|(_, r)| *r).fold(0.0, f64::max);
+        let c = est * (rtt + TARGET_QUEUE).as_secs_f64() + self.last_frame as f64;
+        (c as usize).max(MIN_CREDIT)
+    }
+
+    fn on_ack(&mut self, frames: u64) {
+        let now = Instant::now();
+        let rtt = self.conn.stats().path.min_rtt;
+        while let Some(&(n, bytes, sent)) = self.inflight.front() {
+            if n >= frames {
+                break;
             }
-            tokio::select! {
-                r = rx.changed() => r?,
-                _ = keyframe.notified() => want_key = true,
-            }
-            let next = last + interval;
-            if Instant::now() < next {
-                tokio::time::sleep_until(next).await;
+            self.inflight.pop_front();
+            self.outstanding = self.outstanding.saturating_sub(bytes);
+            // время передачи кадра ≈ от отправки до подтверждения минус RTT
+            let busy = (now - sent).saturating_sub(rtt);
+            if busy > Duration::from_millis(5) && bytes > 16 * 1024 {
+                self.rate_samples.push_back((now, bytes as f64 / busy.as_secs_f64()));
             }
         }
-    } else {
-        let mut rx = vm.tty.subscribe();
-        let mut cur = text::SubCursor::default();
+        // максимум за последние 2 с (как фильтр максимума в BBR)
+        while self.rate_samples.front().is_some_and(|(t, _)| now - *t > Duration::from_secs(2)) {
+            self.rate_samples.pop_front();
+        }
+    }
+
+    fn can_send(&self, now: Instant) -> (bool, bool) {
+        let rate_ok = self.rate().is_none() || now + RATE_BURST >= self.next_free;
+        let credit_ok = !self.opts.frame_acks || self.inflight.is_empty() || self.outstanding < self.credit();
+        (rate_ok, credit_ok)
+    }
+
+    async fn run(
+        mut self,
+        send: &mut quinn::SendStream,
+        vm: &Arc<Vm>,
+        keyframe: Arc<Notify>,
+        mut acks: mpsc::UnboundedReceiver<u64>,
+    ) -> Result<()> {
+        let gfx = &vm.gfx;
+        let mut rx = gfx.subscribe();
+        let mut cur = gfx::SubCursor::default();
+        let mut want_key = true;
         loop {
             rx.borrow_and_update();
-            if let Some(u) = vm.tty.collect(&mut cur, want_key) {
-                want_key = false;
-                frame::write_async(&mut send, &u).await?;
-                last = Instant::now();
+            let now = Instant::now();
+            let changes = want_key || gfx.has_changes(&cur);
+            let fps_ok = now >= self.last_send + self.interval;
+            let (rate_ok, credit_ok) = self.can_send(now);
+            if changes && fps_ok && !(rate_ok && credit_ok) {
+                // есть что слать, но канал (или бюджет) не пускает: склеиваем
+                self.congested_until = now + CONGESTED_HOLD;
             }
+            let mut sent = false;
+            if fps_ok && rate_ok && credit_ok && (changes || !self.lossy.is_empty()) {
+                let congested = now < self.congested_until;
+                let policy = gfx::EncodePolicy { lossy_ok: self.opts.accept_lossy, congested };
+                // уточнение без потерь — только когда канал свободен
+                let refine: Vec<(usize, u64)> =
+                    if congested { Vec::new() } else { self.lossy.iter().map(|(i, v)| (*i, *v)).take(512).collect() };
+                let budget = match self.rate() {
+                    Some(r) => ((r * self.interval.as_secs_f64()) as usize).max(32 * 1024),
+                    None => 512 * 1024,
+                };
+                if let Some(c) = gfx.collect(&mut cur, want_key, policy, &refine, budget) {
+                    if c.update.keyframe {
+                        self.lossy.clear();
+                    }
+                    want_key = false;
+                    for (i, ver, lossy) in &c.tiles {
+                        if *lossy {
+                            self.lossy.insert(*i, *ver);
+                        } else {
+                            self.lossy.remove(i);
+                        }
+                    }
+                    let bytes = c.update.encoded_len() + 4;
+                    frame::write_async(send, &c.update).await?;
+                    let now = Instant::now();
+                    self.last_send = now;
+                    if let Some(r) = self.rate() {
+                        let start = self.next_free.max(now - RATE_BURST);
+                        self.next_free = start + Duration::from_secs_f64(bytes as f64 / r);
+                    }
+                    if self.opts.frame_acks {
+                        self.inflight.push_back((self.frames_sent, bytes, now));
+                        self.outstanding += bytes;
+                    }
+                    self.last_frame = bytes;
+                    self.frames_sent += 1;
+                    sent = true;
+                }
+            }
+            if sent {
+                continue;
+            }
+            // когда проснуться без внешнего события
+            let now = Instant::now();
+            let mut wake: Option<Instant> = None;
+            let mut at = |t: Instant| wake = Some(wake.map_or(t, |w| w.min(t)));
+            if changes {
+                if !fps_ok {
+                    at(self.last_send + self.interval);
+                }
+                if !rate_ok {
+                    at(self.next_free - RATE_BURST);
+                }
+                // !credit_ok: ждём подтверждения
+            }
+            if !self.lossy.is_empty() {
+                // уточнения: тайлы ещё не успокоились или канал занят — проверить позже
+                at((now + Duration::from_millis(100)).max(self.last_send + self.interval));
+            }
+            if self.opts.frame_acks && !self.inflight.is_empty() {
+                // подстраховка от потерянного подтверждения
+                at(now + Duration::from_secs(1));
+            }
+            let sleep = tokio::time::sleep_until(wake.unwrap_or(now + Duration::from_secs(3600)).max(now));
             tokio::select! {
                 r = rx.changed() => r?,
                 _ = keyframe.notified() => want_key = true,
-            }
-            let next = last + interval;
-            if Instant::now() < next {
-                tokio::time::sleep_until(next).await;
+                Some(n) = acks.recv() => self.on_ack(n),
+                _ = sleep, if wake.is_some() => {
+                    // подтверждения не приходят больше секунды: не стоим вечно
+                    if let Some(&(_, _, t)) = self.inflight.front() {
+                        if Instant::now() - t > Duration::from_secs(3) {
+                            self.inflight.clear();
+                            self.outstanding = 0;
+                        }
+                    }
+                }
             }
         }
     }

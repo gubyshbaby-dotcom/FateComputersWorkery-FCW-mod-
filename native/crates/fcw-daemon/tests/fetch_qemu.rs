@@ -140,7 +140,13 @@ async fn fetch_qemu_installs_and_is_picked_up() {
     let qemu_dir = dir.join("qemu");
     // PATH пустой: системный QEMU не найдётся
     let locator = QemuLocator::new(None, None, qemu_dir.clone(), vec![dir.join("empty")], Some(Accel::Tcg));
-    let env = Arc::new(Env { images_dir: dir.join("images"), qemu: locator, tz: None, net: None });
+    let env = Arc::new(Env {
+        images_dir: dir.join("images"),
+        qemu: locator,
+        tz: None,
+        net: None,
+        screen: Default::default(),
+    });
     let d = Daemon::new(env, dir.join("vms"), 8, 1, "00".into(), broadcast::channel(256).0);
     let sock = dir.join("control.sock");
     tokio::spawn(control::serve(d.clone(), LocalListener::bind(&sock).unwrap()));

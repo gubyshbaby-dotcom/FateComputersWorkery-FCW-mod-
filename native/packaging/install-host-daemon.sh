@@ -161,7 +161,8 @@ ExecStart=/usr/local/bin/fcw-daemon --service \\
     --qemu-dir /var/lib/fcw/qemu \\
     --control-tcp $CONTROL_ADDR \\
     --token-file /etc/fcw/token \\
-    --quic-bind 0.0.0.0:$QUIC_PORT
+    --quic-bind 0.0.0.0:$QUIC_PORT \\
+    --screen-max-mbps 20 --screen-max-fps 30
 WorkingDirectory=/var/lib/fcw
 StateDirectory=fcw
 Restart=on-failure

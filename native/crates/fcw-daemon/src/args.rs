@@ -59,6 +59,16 @@ pub struct Args {
     /// HTTP-прокси для исходящих HTTPS гостей (по умолчанию HTTPS_PROXY; none — без прокси)
     #[arg(long)]
     pub upstream_proxy: Option<String>,
+    /// Бюджет потока экрана на подписчика, Мбит/с (0 — без ограничения).
+    /// При превышении «пёстрые» тайлы идут JPEG и позже досылаются без потерь.
+    #[arg(long, default_value_t = 20.0)]
+    pub screen_max_mbps: f64,
+    /// Предел частоты кадров экрана на подписчика
+    #[arg(long, default_value_t = 30)]
+    pub screen_max_fps: u32,
+    /// Никогда не слать тайлы с потерями (JPEG)
+    #[arg(long)]
+    pub screen_lossless: bool,
     /// Не завершаться при закрытии stdin (для ручного запуска и тестов)
     #[arg(long, hide = true)]
     pub no_stdin_watch: bool,
@@ -117,6 +127,16 @@ mod tests {
 }
 
 impl Args {
+    pub fn screen_config(&self) -> crate::vm::ScreenConfig {
+        crate::vm::ScreenConfig {
+            max_bytes_per_sec: (self.screen_max_mbps.max(0.0) * 125_000.0) as u64,
+            max_fps: self.screen_max_fps.clamp(1, 120),
+            lossy: !self.screen_lossless,
+            frame_acks: true,
+            local_unlimited: true,
+        }
+    }
+
     /// Проверка сочетаний флагов канала управления.
     pub fn validate(&self) -> Result<(), String> {
         if self.control.is_none() && self.control_tcp.is_none() {

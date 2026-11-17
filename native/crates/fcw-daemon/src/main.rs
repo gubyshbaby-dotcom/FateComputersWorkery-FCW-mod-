@@ -124,7 +124,17 @@ async fn run(args: Args, events: broadcast::Sender<pb::Event>) -> Result<()> {
     let tz = fcw_daemon::vm::host_timezone();
     tracing::info!("host time zone: {}", tz.as_deref().unwrap_or("unknown"));
     let net = fcw_daemon::net::build(&args)?;
-    let env = Arc::new(Env { images_dir: args.images_dir.clone(), qemu: locator, tz, net });
+    let screen = args.screen_config();
+    tracing::info!(
+        "screen stream per viewer: {}, up to {} fps",
+        if screen.max_bytes_per_sec == 0 {
+            "no bitrate limit".to_string()
+        } else {
+            format!("{:.1} Mbit/s", screen.max_bytes_per_sec as f64 / 125_000.0)
+        },
+        screen.max_fps
+    );
+    let env = Arc::new(Env { images_dir: args.images_dir.clone(), qemu: locator, tz, net, screen });
     let d = Daemon::new(env, args.vms_dir.clone(), args.max_vms, quic_port, cert.sha256_hex.clone(), events);
 
     // Unix-сокет (локальный мод); в режиме службы необязателен

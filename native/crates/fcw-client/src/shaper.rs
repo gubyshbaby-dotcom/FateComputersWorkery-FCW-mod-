@@ -75,7 +75,8 @@ pub async fn start(upstream: SocketAddr, cfg: ShaperConfig) -> std::io::Result<(
     {
         let (front, client, stats) = (front.clone(), client.clone(), stats.clone());
         tokio::spawn(async move {
-            let mut lane = Lane { rate: cfg.rate_up, delay: cfg.delay, max_queue: cfg.max_queue, next_free: Instant::now() };
+            let mut lane =
+                Lane { rate: cfg.rate_up, delay: cfg.delay, max_queue: cfg.max_queue, next_free: Instant::now() };
             let mut buf = vec![0u8; 65536];
             while let Ok((n, from)) = front.recv_from(&mut buf).await {
                 *client.lock() = Some(from);

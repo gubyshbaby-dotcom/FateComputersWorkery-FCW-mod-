@@ -54,3 +54,4 @@ uds_windows = "1"
 
 [dev-dependencies]
 fcw-client = { workspace = true }
+png = { workspace = true }

@@ -39,6 +39,35 @@ pub struct Env {
     pub tz: Option<String>,
     /// Свитч сети гостей; `None` — сеть выключена (`--network off`).
     pub net: Option<Arc<NetEnv>>,
+    /// Ограничения потока экрана на подписчика.
+    pub screen: ScreenConfig,
+}
+
+/// Ограничения потока экрана на подписчика (`--screen-max-mbps`, `--screen-max-fps`).
+#[derive(Debug, Clone, Copy)]
+pub struct ScreenConfig {
+    /// Бюджет битрейта, байт/с; 0 — без ограничения.
+    pub max_bytes_per_sec: u64,
+    /// Предел частоты кадров (клиент может просить меньше).
+    pub max_fps: u32,
+    /// Разрешено слать тайлы JPEG (с последующим уточнением без потерь).
+    pub lossy: bool,
+    /// Учитывать подтверждения кадров клиентом (ограничение очереди).
+    pub frame_acks: bool,
+    /// Клиент на этом же хосте (loopback): без бюджета и без потерь, до 60 fps.
+    pub local_unlimited: bool,
+}
+
+impl Default for ScreenConfig {
+    fn default() -> Self {
+        ScreenConfig {
+            max_bytes_per_sec: 20 * 125_000,
+            max_fps: 30,
+            lossy: true,
+            frame_acks: true,
+            local_unlimited: true,
+        }
+    }
 }
 
 /// Часовой пояс хоста в формате IANA ("Europe/Moscow") или `None`.
@@ -1499,6 +1528,7 @@ mod tests {
             qemu: QemuLocator::fixed(None),
             tz: Some("Europe/Moscow".into()),
             net: None,
+            screen: ScreenConfig::default(),
         });
         let (ev, _) = broadcast::channel(8);
         let cfg = VmConfig {
