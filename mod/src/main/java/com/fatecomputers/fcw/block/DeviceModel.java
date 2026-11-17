@@ -27,7 +27,9 @@ public enum DeviceModel {
     SPEAKER_BOOKSHELF(box(4.5, 0, 5, 11.5, 10.5, 12)),
     SPEAKER_TOWER(box(3.5, 0, 4, 12.5, 15.5, 13)),
     SUBWOOFER(box(2.5, 0, 2.5, 13.5, 12, 13.5)),
-    SOUNDBAR(box(0.5, 0, 6, 15.5, 3, 9.5));
+    SOUNDBAR(box(0.5, 0, 6, 15.5, 3, 9.5)),
+    // body with feet and ridge, then the fan of three antennas at the back
+    ROUTER(box(3, 0, 5, 13, 2.5, 11), box(1, 2.5, 10, 15, 10, 11));
 
     private final Map<Direction, VoxelShape> shapes = new EnumMap<>(Direction.class);
 

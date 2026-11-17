@@ -15,6 +15,8 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.material.MapColor;
 import net.minecraft.world.level.material.PushReaction;
 import net.neoforged.bus.api.IEventBus;
+import net.neoforged.neoforge.common.NeoForge;
+import net.neoforged.neoforge.event.RegisterCommandsEvent;
 import net.neoforged.neoforge.registries.DeferredBlock;
 import net.neoforged.neoforge.registries.DeferredItem;
 import net.neoforged.neoforge.registries.DeferredRegister;
@@ -63,6 +65,7 @@ public final class DataNetwork {
         ITEMS.register(modBus);
         ModItems.TAB_ORDER.add(DATA_CABLE_ITEM);
         ModItems.TAB_ORDER.add(ROUTER_ITEM);
+        NeoForge.EVENT_BUS.addListener((RegisterCommandsEvent e) -> NetCommands.register(e.getDispatcher()));
     }
 
     /** Узел сети: по нему обход идёт дальше. */

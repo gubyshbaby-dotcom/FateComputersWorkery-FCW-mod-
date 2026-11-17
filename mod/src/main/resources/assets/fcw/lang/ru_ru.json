@@ -65,6 +65,8 @@
   "command.fcw.machine.blank": "Заготовка литографа выложена. ПКМ по контроллеру соберёт машину",
   "command.fcw.machine.placed": "Поставлено: %s",
   "command.fcw.machine.unknown": "Нет такой машины",
+  "command.fcw.net.header": "Сеть данных компьютера %s: машин %s",
+  "command.fcw.net.no_computer": "На %s нет компьютера",
   "command.fcw.on_daemon_host": "на хосте демона",
   "command.fcw.qemu.bundled": "переносимый",
   "command.fcw.qemu.dir": "Каталог переносимого QEMU: %s; автоскачивание: %s",

@@ -1,7 +1,7 @@
-"""Временные модели и текстуры сети данных: кабель данных fcw:data_cable и роутер fcw:router.
+"""Временная модель и текстура кабеля данных fcw:data_cable (и таблицы добычи блоков сети).
 
-Пока художник не сделал настоящие. Стиль мода: белый корпус, чёрные детали, фиолетовый акцент,
-без свечения. Кабель тонкий и тёмный, с фиолетовой полосой — чтобы не путать с силовыми.
+Пока художник не сделал настоящую. Кабель тонкий и тёмный, с фиолетовой полосой — чтобы не путать
+с силовыми; без свечения. У роутера модель готовая (набор 01 художника), здесь её нет.
 
 usage: gen.py <repo root>      (нужен Pillow)
 """
@@ -21,12 +21,6 @@ JACKET_HI = (44, 46, 53, 255)
 JACKET_LO = (20, 21, 25, 255)
 VIOLET = (168, 139, 255, 255)
 VIOLET_LO = (126, 102, 204, 255)
-WHITE = (232, 234, 238, 255)
-WHITE_HI = (246, 247, 249, 255)
-WHITE_LO = (198, 201, 208, 255)
-BLACK = (24, 25, 29, 255)
-BLACK_HI = (48, 50, 57, 255)
-GREY = (120, 124, 134, 255)
 
 
 def write_json(path, obj):
@@ -117,77 +111,6 @@ def cable_models():
     write_json(f"{ASSETS}/blockstates/data_cable.json", {"multipart": parts})
 
 
-# ------------------------------------------------------------------ роутер: текстура 64x64
-def router_texture():
-    img = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
-    # крышка 28x28: белая, по краю кант, сзади вентиляционные прорези
-    rect(img, 0, 0, 28, 28, WHITE)
-    rect(img, 0, 0, 28, 1, WHITE_HI)
-    rect(img, 0, 0, 1, 28, WHITE_HI)
-    rect(img, 0, 27, 28, 28, WHITE_LO)
-    rect(img, 27, 0, 28, 28, WHITE_LO)
-    for i in range(5):
-        rect(img, 8 + i * 3, 19, 9 + i * 3, 25, BLACK)
-    rect(img, 4, 3, 24, 4, WHITE_LO)
-    # передняя стенка 28x16: чёрная панель, фиолетовая метка, три серых индикатора
-    rect(img, 28, 0, 56, 16, WHITE)
-    rect(img, 28, 0, 56, 1, WHITE_HI)
-    rect(img, 28, 15, 56, 16, WHITE_LO)
-    rect(img, 30, 5, 54, 12, BLACK)
-    rect(img, 30, 5, 54, 6, BLACK_HI)
-    rect(img, 32, 7, 36, 10, VIOLET)
-    rect(img, 32, 9, 36, 10, VIOLET_LO)
-    for i in range(3):
-        rect(img, 44 + i * 3, 8, 46 + i * 3, 9, GREY)
-    # боковая и задняя стенки 28x16: белые, тёмный шов у основания
-    rect(img, 28, 16, 56, 32, WHITE)
-    rect(img, 28, 16, 56, 17, WHITE_HI)
-    rect(img, 28, 29, 56, 30, WHITE_LO)
-    rect(img, 28, 30, 56, 32, BLACK)
-    # дно 28x28
-    rect(img, 0, 28, 28, 56, BLACK)
-    rect(img, 2, 30, 26, 54, BLACK_HI)
-    # антенна 2x16 и её торец
-    rect(img, 56, 0, 58, 16, BLACK)
-    rect(img, 56, 0, 57, 16, BLACK_HI)
-    rect(img, 56, 14, 58, 16, GREY)
-    rect(img, 58, 0, 60, 2, BLACK_HI)
-    return img
-
-
-def router_models():
-    tex = {"0": "fcw:block/router", "particle": "fcw:block/router"}
-    side = {"uv": [7, 4, 14, 8], "texture": "#0"}
-    ant = {"uv": [14, 0, 14.5, 4], "texture": "#0"}
-
-    def antenna(x):
-        return {"name": "antenna", "from": [x, 8, 7.5], "to": [x + 1, 16, 8.5],
-                "faces": {"north": ant, "east": ant, "south": ant, "west": ant,
-                          "up": {"uv": [14.5, 0, 15, 0.5], "texture": "#0", "cullface": "up"}}}
-
-    model = {
-        "parent": "minecraft:block/block", "texture_size": [64, 64], "textures": tex,
-        "elements": [
-            {"name": "body", "from": [1, 0, 1], "to": [15, 8, 15],
-             "faces": {
-                 "north": {"uv": [7, 0, 14, 4], "texture": "#0"},
-                 "east": side, "south": side, "west": side,
-                 "up": {"uv": [0, 0, 7, 7], "texture": "#0"},
-                 "down": {"uv": [0, 7, 7, 14], "texture": "#0", "cullface": "down"},
-             }},
-            antenna(2.5), antenna(12.5),
-        ],
-    }
-    write_json(f"{ASSETS}/models/block/router.json", model)
-    write_json(f"{ASSETS}/models/item/router.json", {"parent": "fcw:block/router"})
-    write_json(f"{ASSETS}/blockstates/router.json", {"variants": {
-        "facing=north": {"model": "fcw:block/router"},
-        "facing=east": {"model": "fcw:block/router", "y": 90},
-        "facing=south": {"model": "fcw:block/router", "y": 180},
-        "facing=west": {"model": "fcw:block/router", "y": 270},
-    }})
-
-
 def loot(name):
     write_json(f"{DATA}/loot_table/blocks/{name}.json", {
         "type": "minecraft:block",
@@ -197,8 +120,6 @@ def loot(name):
 
 
 cable_texture().save(f"{ASSETS}/textures/block/data_cable.png")
-router_texture().save(f"{ASSETS}/textures/block/router.png")
 cable_models()
-router_models()
 loot("data_cable")
 loot("router")

@@ -65,6 +65,8 @@
   "command.fcw.machine.blank": "The scanner blank is laid out. Right click its controller to assemble",
   "command.fcw.machine.placed": "Placed: %s",
   "command.fcw.machine.unknown": "No such machine",
+  "command.fcw.net.header": "Data network of computer %s: %s machine(s)",
+  "command.fcw.net.no_computer": "No computer at %s",
   "command.fcw.on_daemon_host": "on the daemon's host",
   "command.fcw.qemu.bundled": "portable",
   "command.fcw.qemu.dir": "Portable QEMU directory: %s; auto download: %s",
