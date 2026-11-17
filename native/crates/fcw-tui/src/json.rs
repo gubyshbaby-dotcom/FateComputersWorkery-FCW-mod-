@@ -1,4 +1,4 @@
-//! Крошечный JSON (разбор и вывод) — чтобы агент обходился без зависимостей.
+//! Крошечный JSON (разбор и вывод) — чтобы агент и программы обходились без зависимостей.
 
 use std::fmt::Write as _;
 
@@ -36,6 +36,32 @@ impl Json {
         match self {
             Json::Bool(b) => Some(*b),
             _ => None,
+        }
+    }
+
+    /// Число по ключу; нет ключа или не число — 0.
+    pub fn num(&self, key: &str) -> f64 {
+        self.get(key).and_then(Json::as_f64).unwrap_or(0.0)
+    }
+    /// Строка по ключу; нет ключа или не строка — пусто.
+    pub fn text(&self, key: &str) -> &str {
+        self.get(key).and_then(Json::as_str).unwrap_or("")
+    }
+    pub fn flag(&self, key: &str) -> bool {
+        self.get(key).and_then(Json::as_bool).unwrap_or(false)
+    }
+    /// Элементы массива по ключу; нет ключа или не массив — пусто.
+    pub fn items(&self, key: &str) -> &[Json] {
+        match self.get(key) {
+            Some(Json::Arr(a)) => a,
+            _ => &[],
+        }
+    }
+    /// Поля объекта по ключу; нет ключа или не объект — пусто.
+    pub fn fields(&self, key: &str) -> &[(String, Json)] {
+        match self.get(key) {
+            Some(Json::Obj(o)) => o,
+            _ => &[],
         }
     }
 

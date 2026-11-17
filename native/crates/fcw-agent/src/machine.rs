@@ -4,7 +4,7 @@
 //! CLI собирает запрос `machine_req`, служба агента пересылает его в мир и
 //! возвращает `machine_resp`. `wait` и `log --follow` — опрос раз в секунду.
 
-use crate::json::{obj, s, Json};
+use fcw_tui::json::{obj, s, Json};
 use std::io::Write;
 use std::time::Duration;
 
@@ -308,7 +308,7 @@ pub fn run(cmd: &Cmd, lang: &str, io: &mut Io) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::json::n;
+    use fcw_tui::json::n;
 
     #[test]
     fn args() {

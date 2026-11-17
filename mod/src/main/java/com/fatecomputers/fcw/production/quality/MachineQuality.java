@@ -692,6 +692,7 @@ public final class MachineQuality {
             j.addProperty("good", w.good());
             j.addProperty("class", w.yieldClass().name());
             j.addProperty("map", w.map());
+            j.addProperty("time", w.time());
             j.add("causes", causesJson(w.map()));
             wafers.add(j);
         }

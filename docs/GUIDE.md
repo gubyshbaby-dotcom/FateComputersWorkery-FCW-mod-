@@ -110,6 +110,7 @@ python3 mod/tools/guide/check.py
 | `guide.fcw.port.kind.gui`, `guide.fcw.port.kind.item_catalyst` | подписи «управление», «слот шаблона» в таблице портов |
 | страница `energy/index.md` | буфер, приём, поведение при нехватке энергии |
 | страница `reference/commands.md` | добавить `fcw machine ...` в раздел «В гостевой системе» |
+| страница `production/programs.md` | программы компьютера (`fcw top`, `fcw litho`, …, `fcw apc`): команды, вкладки, клавиши, состояния; написана вручную по `docs/design/CONSOLE_APPS.md` |
 
 ## Проверка без библиотек
 

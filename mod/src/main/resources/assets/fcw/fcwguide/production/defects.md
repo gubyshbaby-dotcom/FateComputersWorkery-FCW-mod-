@@ -54,7 +54,7 @@ The class is in the tooltip of the item. Items of one class stack.
 
 ## Corrections computed by a computer
 
-A computer linked to a machine by a data cable or through a router computes corrections for it. The faster the processor of the computer, the more machines it serves. A linked computer gives three quarters of its power even when its virtual machine is off. The full power comes from a computing service in the guest system; this version does not have it yet.
+A computer linked to a machine by a data cable or through a router computes corrections for it. The faster the processor of the computer, the more machines it serves. A linked computer gives three quarters of its power even when its virtual machine is off. The full power comes from a computing service in the guest system: the command `fcw apc on` switches it on ([Console Programs](programs.md)).
 
 | Machine | What the computing gives |
 |---|---|
@@ -66,4 +66,4 @@ The `apc` line of `status` shows which computer computes and how many units it g
 
 ## Shift report
 
-The `yield` command on the panel shows, for one in-game day, the number of wafers, the share of good fields, the classes, the causes of defects and the downtime, and for the scanner the last wafers as well. From a computer, `fcw machine name yield` gives the report of one machine.
+The `yield` command on the panel shows, for one in-game day, the number of wafers, the share of good fields, the classes, the causes of defects and the downtime, and for the scanner the last wafers as well. From a computer, `fcw machine name yield` gives the report of one machine, and the program `fcw yield` shows the report for every machine of the network with hints on what to fix.

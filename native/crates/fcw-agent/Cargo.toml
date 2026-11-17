@@ -11,4 +11,5 @@ name = "fcw"
 path = "src/main.rs"
 
 [dependencies]
+fcw-tui.workspace = true
 libc = "0.2"

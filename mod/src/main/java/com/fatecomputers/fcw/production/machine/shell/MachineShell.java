@@ -352,6 +352,28 @@ public final class MachineShell {
             o.addProperty("reason", code.equals("fault") ? fault.name().toLowerCase(Locale.ROOT) : "");
             o.addProperty("phase", String.valueOf(m.workPhase() == null ? "" : m.workPhase()));
             o.addProperty("log_seq", m.log().lastSeq());
+            // per section: the console programs draw every section of a line, and the power drawn right now
+            JsonArray sections = new JsonArray();
+            int use = 0;
+            for (int i = 0; i < m.sectionCount(); i++) {
+                SectionState s = m.section(i);
+                JsonObject so = new JsonObject();
+                so.addProperty("id", specs.get(i).id());
+                so.addProperty("state", s.status().name().toLowerCase(Locale.ROOT));
+                if (s.running()) {
+                    so.addProperty("recipe", MachineRecipeNames.shortName(s.recipeId()));
+                } else {
+                    so.add("recipe", null);
+                }
+                so.addProperty("ticks", s.progress());
+                so.addProperty("total", s.total());
+                sections.add(so);
+                if (s.status() == Status.WORKING && s.recipe() != null) {
+                    use += s.recipe().energyPerTick();
+                }
+            }
+            o.add("sections", sections);
+            o.addProperty("use", use);
             MachineQuality q = m.quality();
             o.addProperty("defects", Quality.enabled());
             o.add("apc", q.apcJson());

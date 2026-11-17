@@ -36,8 +36,12 @@ navigation:
 | `fcw machine euv-1 status` | любая команда пульта для машины с этим именем |
 | `fcw machine euv-1 log 20 --follow` | журнал; новые записи печатаются по мере появления |
 | `fcw machine euv-1 wait idle --timeout 600` | ждать состояния `idle`, `run` или `fault` |
+| `fcw top` | полноэкранная сводка по машинам сети |
+| `fcw litho euv-1`, `fcw mon euv-1` | полноэкранная программа машины: карта пластины, брак, журнал |
+| `fcw yield` | отчёт за смену |
+| `fcw apc on`, `fcw apc off`, `fcw apc status` | служба расчёта поправок для машин |
 
-Подробнее: [Редстоун и fcw](../computers/redstone.md).
+Подробнее: [Редстоун и fcw](../computers/redstone.md), [Программы компьютера](../production/programs.md).
 
 ## Машины с компьютера
 

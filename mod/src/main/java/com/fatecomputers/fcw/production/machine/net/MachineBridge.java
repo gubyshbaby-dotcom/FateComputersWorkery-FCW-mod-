@@ -302,6 +302,7 @@ public final class MachineBridge {
                 if (watched.contains(MachineShell.name(l.machine()))) {
                     JsonObject f = MachineShell.exec(l.machine(), "status", "en_us", true, actor).json();
                     if (f != null) {
+                        f.addProperty("link", l.via().id());
                         frames.add(f);
                     }
                 }
@@ -310,6 +311,9 @@ public final class MachineBridge {
             o.addProperty("type", "machine_frame");
             o.addProperty("id", watchId);
             o.addProperty("seq", ++frameSeq);
+            // game clock for the header of the console programs: ticks of the day (0 = 06:00) and the day number
+            o.addProperty("time", level.getDayTime() % 24000L);
+            o.addProperty("day", level.getDayTime() / 24000L);
             o.add("machines", frames);
             if (o.toString().getBytes(StandardCharsets.UTF_8).length <= MAX_LINE_BYTES) {
                 send.accept(o);

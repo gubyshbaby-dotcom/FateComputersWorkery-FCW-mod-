@@ -35,6 +35,6 @@ One wafer costs 4 quartz. A boule (8 wafers) takes 32 quartz, 16 coal and 8 reds
 4. EUV scanner. 301 blocks; needs steel, wafers and prototype chips from the crafting table.
 5. Electronics line. Needs steel and wafers.
 
-How to build: [Building Machines](construction.md). How to operate: [Operating Machines](operation.md). What the chip output depends on: [Defects](defects.md).
+How to build: [Building Machines](construction.md). How to operate: [Operating Machines](operation.md). What the chip output depends on: [Defects](defects.md). How to watch the plant from a computer: [Console Programs](programs.md).
 
 <SubPages />

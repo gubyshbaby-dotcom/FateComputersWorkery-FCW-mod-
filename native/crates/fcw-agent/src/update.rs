@@ -3,7 +3,7 @@
 //! пробует запустить, атомарно подменяет себя и перезапускается.
 
 use crate::hash::{base64_decode, Sha256};
-use crate::json::Json;
+use fcw_tui::json::Json;
 use std::fs::File;
 use std::io::Write;
 use std::path::{Path, PathBuf};

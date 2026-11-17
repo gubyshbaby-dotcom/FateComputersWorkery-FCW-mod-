@@ -1,0 +1,25 @@
+ fcw litho  euv-1  EUV scanner Mk2                    RUN   wafer_cpu  14:20:09
+  1 Wafer   2 Lot   3 Mask   4 Log
+┌─ Wafer 43 ──────────────────────────┐  ── Exposure ──────────────────────────
+│              01  02  03             │   field       24 / 61   serpentine, row
+│             ▀▀▀ ▀▀▀ ▀▀▀             │   dose        29.9 mJ/cm²   −0.3 %
+│      10 P09  08  07  06  05  04     │   focus       +4 nm   tilt 0.4 µrad
+│     ▀▀▀ ▀▀▀ ▀▀▀ ▀▀▀ ▀▀▀ ▀▀▀ ▀▀▀     │   overlay     1.6 nm (3σ)
+│      11  12  13  14  15  16  17     │  ── Mask ──────────────────────────────
+│     ▀▀▀ ▀▀▀ ▀▀▀ ▀▀▀ ▀▀▀ ▀▀▀ ▀▀▀     │   reticle     reticle_cpu
+│  26  25  24  23  22  21  20  19 W18 │   life        ▄▄▄▄▄▄▄▄▄▄▄▄▄▄ 187/256
+│ ▀▀▀ ▀▀▀ ▀▀▀ ▀▀▀ ▀▀▀ ▀▀▀ ▀▀▀ ▀▀▀ ▀▀▀ │  ── Environment ───────────────────────
+│  27  28  29  30  31  32  33  34  35 │   cleanliness ISO 6   room sealed
+│ ▀▀▀ ▀▀▀ ▀▀▀ ▀▀▀ ▀▀▀ ▀▀▀ ▀▀▀ ▀▀▀ ▀▀▀ │   cooling     water on
+│  44  43  42  41  40  39  38  37  36 │   vibration   none
+│ ▀▀▀ ▀▀▀ ▀▀▀ ▀▀▀ ▀▀▀ ▀▀▀ ▀▀▀ ▀▀▀ ▀▀▀ │   power       2048 FE/t   buffer 78 %
+│      45  46  47  48  49  50  51     │   APC         fedora-1.mc  8 / 8 CU
+│     ▀▀▀ ▀▀▀ ▀▀▀ ▀▀▀ ▀▀▀ ▀▀▀ ▀▀▀     │  ── Queue ─────────────────────────────
+│      58  57  56  55  54  53  52     │   dock1       silicon_wafer x5
+│     ▀▀▀ ▀▀▀ ▀▀▀ ▀▀▀ ▀▀▀ ▀▀▀ ▀▀▀     │   remaining   wafer 0:36  queue 5:36
+│              59  60  61             │
+│             ▀▀▀ ▀▀▀ ▀▀▀             │
+└─────────────────────────────────────┘
+ wafer    ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄  38 %   P particles W polish
+ 14:20:07  поле 24
+F1Help F2Lot F3Mask F4Log F5Start F6Stop F7Recipe F9top F10Quit
