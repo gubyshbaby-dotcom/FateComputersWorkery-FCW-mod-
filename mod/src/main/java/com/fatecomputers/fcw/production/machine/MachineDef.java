@@ -43,7 +43,7 @@ public final class MachineDef {
      * behind other cells of the same machine (the furnace's charge under the tower top), those are moved
      * straight out along their face to the surface.
      */
-    public record Port(String id, String kind, Direction face, int x, int y, int z, int ax, int ay, int az) {
+    public record Port(String id, String kind, Direction face, int x, int y, int z, int ax, int ay, int az, double[] pos) {
     }
 
     /** A model from dyn/: a moving part (always drawn) or a carried thing (drawn by clips and slot displays). */
@@ -64,6 +64,7 @@ public final class MachineDef {
     public final Map<String, Cell> hatchCells = new LinkedHashMap<>();
     public final List<Port> ports = new ArrayList<>();
     public final Port terminal;
+    private final Map<Long, MachineSpec.Zone> zoneCells = new java.util.HashMap<>();
     public final Map<String, Dyn> dynamic = new LinkedHashMap<>();
     public final Map<String, Slot> slots = new LinkedHashMap<>();
     public final MachineAnimation anim;
@@ -125,7 +126,8 @@ public final class MachineDef {
                 ay += face.getStepY();
                 az += face.getStepZ();
             }
-            Port port = new Port(p.get("id").getAsString(), p.get("kind").getAsString(), face, px, py, pz, ax, ay, az);
+            Port port = new Port(p.get("id").getAsString(), p.get("kind").getAsString(), face, px, py, pz, ax, ay, az,
+                    MachineAnimation.doubles(p.getAsJsonArray("pos")));
             ports.add(port);
             if (port.kind.equals("gui")) {
                 term = port;
@@ -135,6 +137,23 @@ public final class MachineDef {
             throw new IllegalStateException("machine " + name + " has no terminal cell");
         }
         terminal = term;
+        for (MachineSpec.Zone zone : spec.zones()) {
+            Port port = zone.port() == null ? null : port(zone.port());
+            if (port != null) {
+                zoneCells.put(key(port.x, port.y, port.z), zone);
+                if (port.ax != terminal.x || port.ay != terminal.y || port.az != terminal.z) {
+                    zoneCells.put(key(port.ax, port.ay, port.az), zone);
+                }
+            }
+            if (zone.hatch() != null) {
+                for (Cell c : hatches.get(zone.hatch()).cells()) {
+                    zoneCells.put(key(c.x(), c.y(), c.z()), zone);
+                }
+            }
+            for (int[] c : zone.extraCells()) {
+                zoneCells.put(key(c[0], c[1], c[2]), zone);
+            }
+        }
         for (Map.Entry<String, JsonElement> e : manifest.getAsJsonObject("dynamic").entrySet()) {
             JsonObject d = e.getValue().getAsJsonObject();
             Map<MachineState, ResourceLocation> models = new EnumMap<>(MachineState.class);
@@ -169,6 +188,16 @@ public final class MachineDef {
         } catch (IOException e) {
             throw new IllegalStateException("cannot read " + path, e);
         }
+    }
+
+    private static long key(int x, int y, int z) {
+        return BlockPos.asLong(x, y, z);
+    }
+
+    /** The hand-loading zone a cell belongs to, or null. */
+    @Nullable
+    public MachineSpec.Zone zoneAt(Cell c) {
+        return zoneCells.get(key(c.x(), c.y(), c.z()));
     }
 
     private int index(int x, int y, int z) {

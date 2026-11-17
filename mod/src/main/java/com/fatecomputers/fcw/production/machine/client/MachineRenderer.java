@@ -119,6 +119,7 @@ public class MachineRenderer implements BlockEntityRenderer<MachineControllerBlo
             }
             draw(level, origin, facing, state, dyn, m, pose, buffer, packedOverlay);
         }
+        MachineStatusRenderer.render(be, pose, buffers);
         pose.popPose();
     }
 
