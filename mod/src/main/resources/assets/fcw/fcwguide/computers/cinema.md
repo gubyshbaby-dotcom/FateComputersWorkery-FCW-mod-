@@ -32,7 +32,7 @@ It stands on the floor or a table, and a click on the underside of a block hangs
 
 | Action | How |
 |---|---|
-| Switch on, switch off | right click with an empty hand |
+| Switch on, switch off | right click with an empty hand; it also follows its computer on and off; a rising redstone edge switches it on, a falling one off |
 | Replace the lamp | right click a switched-off, cooled-down projector with a lamp |
 | Show the link | sneak + right click |
 
@@ -83,7 +83,7 @@ The sound is heard from 48 blocks; within 6 blocks of a speaker it is at full vo
 
 ## A large hall
 
-The projector and the speakers link to a computer within 8 blocks. In a larger hall put the computer halfway between the projector and the screen, or ask the administrator to raise `access.linkRadius`.
+The projector and the speakers link to a computer within 32 blocks (`cinema.linkRadius`): a hall is bigger than a desk, so the radius is wider than for a monitor or keyboard.
 
 ## Power
 

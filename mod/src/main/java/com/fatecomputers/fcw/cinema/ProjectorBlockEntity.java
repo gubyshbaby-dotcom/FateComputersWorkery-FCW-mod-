@@ -62,6 +62,8 @@ public class ProjectorBlockEntity extends PeripheralBlockEntity {
     private int lampTicks;
     /** Компьютер включён: есть что показывать. Иначе проектор светит синим «нет сигнала». */
     private boolean signal;
+    /** Последний увиденный уровень редстоуна: реагируем только на фронты. */
+    private boolean redstone;
     // настройки сервера, которые нужны клиенту для картинки
     private int lifeTicks = 40 * TICKS_PER_HOUR;
     private int range = 24;
@@ -169,6 +171,35 @@ public class ProjectorBlockEntity extends PeripheralBlockEntity {
         }
         signal = on;
         changedAndSync();
+        // проектор включается и гаснет вместе со своим компьютером
+        switchRemotely(on);
+    }
+
+    /**
+     * Включить или выключить без игрока: вместе с компьютером или по фронту редстоуна. Те же правила,
+     * что у ПКМ (остывание, лампа, питание), но молча: отказ просто ничего не меняет.
+     */
+    public void onRedstone(boolean on) {
+        if (on != redstone) {
+            redstone = on;
+            switchRemotely(on);
+        }
+    }
+
+    public void switchRemotely(boolean on) {
+        if (level == null || level.isClientSide) {
+            return;
+        }
+        readConfig();
+        if (on && phase == Phase.OFF && !lampBurnt()
+                && !(powerRequired() && energy.getEnergyStored() < powerDraw() * POWER_GRACE_TICKS)) {
+            powerLossTicks = 0;
+            setPhase(Phase.LIT);
+            click(0.6f);
+        } else if (!on && phase == Phase.LIT) {
+            setPhase(Phase.COOLING);
+            click(0.5f);
+        }
     }
 
     private void setPhase(Phase p) {

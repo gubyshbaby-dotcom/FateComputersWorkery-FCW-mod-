@@ -59,7 +59,7 @@ public final class LinkManager {
             player.displayClientMessage(Component.translatable("message.fcw.selection_gone"), true);
             return;
         }
-        int radius = FcwConfig.SERVER.linkRadius.get();
+        int radius = radius(device);
         if (computer.getBlockPos().distSqr(device.getBlockPos()) > (double) radius * radius) {
             player.displayClientMessage(Component.translatable("message.fcw.too_far", radius), true);
             return;
@@ -74,7 +74,7 @@ public final class LinkManager {
         if (level == null) {
             return;
         }
-        int radius = FcwConfig.SERVER.linkRadius.get();
+        int radius = radius(device);
         ComputerBlockEntity computer = ComputerTracker.nearest(level, device.getBlockPos(), radius);
         if (computer == null) {
             if (placer != null) {
@@ -87,6 +87,14 @@ public final class LinkManager {
             placer.displayClientMessage(Component.translatable("message.fcw.linked",
                     Component.translatable("device.fcw." + device.kind().id()), pos(computer.getBlockPos())), true);
         }
+    }
+
+    /** Проекторы и колонки стоят по залу, остальная периферия — у стола. */
+    private static int radius(PeripheralBlockEntity device) {
+        return switch (device.kind()) {
+            case PROJECTOR, SPEAKER -> FcwConfig.SERVER.hallLinkRadius.get();
+            default -> FcwConfig.SERVER.linkRadius.get();
+        };
     }
 
     public static void describeLink(ServerPlayer player, PeripheralBlockEntity device) {

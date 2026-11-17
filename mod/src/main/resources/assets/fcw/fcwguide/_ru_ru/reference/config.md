@@ -68,6 +68,7 @@ navigation:
 | `projectorRange` | 24 | на сколько блоков светит проектор |
 | `lampLifeHours` | 40 | ресурс лампы проектора в часах проекции; 0: лампы не изнашиваются |
 | `projectorPower` | 30 | расход проектора, FE за тик, при `requirePower = true` |
+| `linkRadius` (cinema) | 32 | радиус привязки проектора и колонок, блоков |
 
 ## fcw-client.toml
 

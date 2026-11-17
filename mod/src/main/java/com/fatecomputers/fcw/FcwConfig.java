@@ -62,6 +62,7 @@ public final class FcwConfig {
         public final ModConfigSpec.EnumValue<com.fatecomputers.fcw.production.ProductionDifficulty> productionDifficulty;
 
         public final ModConfigSpec.IntValue projectorRange;
+        public final ModConfigSpec.IntValue hallLinkRadius;
         public final ModConfigSpec.IntValue lampLifeHours;
         public final ModConfigSpec.IntValue projectorPower;
 
@@ -197,6 +198,9 @@ public final class FcwConfig {
                     .defineInRange("lampLifeHours", 40, 0, 100_000);
             projectorPower = b.comment("FE per tick a projector draws while its lamp is lit (only with production.requirePower = true).")
                     .defineInRange("projectorPower", 30, 0, 10_000);
+            hallLinkRadius = b.comment("Radius in blocks in which projectors and speakers link to a computer: a hall is bigger",
+                            "than a desk, so it is wider than access.linkRadius.")
+                    .defineInRange("linkRadius", 32, 1, 128);
             b.pop();
         }
     }

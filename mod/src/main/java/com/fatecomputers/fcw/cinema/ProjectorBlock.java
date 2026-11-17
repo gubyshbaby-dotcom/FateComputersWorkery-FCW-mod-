@@ -112,6 +112,16 @@ public class ProjectorBlock extends PeripheralBlock {
         return ItemInteractionResult.sidedSuccess(level.isClientSide);
     }
 
+    /** Редстоун: фронт сигнала включает проектор, спад — выключает (как ПКМ, с остыванием). */
+    @Override
+    protected void neighborChanged(BlockState state, Level level, BlockPos pos, net.minecraft.world.level.block.Block block,
+                                   BlockPos from, boolean moving) {
+        super.neighborChanged(state, level, pos, block, from, moving);
+        if (!level.isClientSide && level.getBlockEntity(pos) instanceof ProjectorBlockEntity be) {
+            be.onRedstone(level.hasNeighborSignal(pos));
+        }
+    }
+
     @Override
     protected InteractionResult useWithoutItem(BlockState state, Level level, BlockPos pos, Player player, BlockHitResult hit) {
         if (!(level.getBlockEntity(pos) instanceof ProjectorBlockEntity be)) {

@@ -68,6 +68,7 @@ Two files in the `config` folder: `fcw-server.toml` (server; also applies in sin
 | `projectorRange` | 24 | how many blocks a projector throws its picture |
 | `lampLifeHours` | 40 | life of a projector lamp in hours of projection; 0: lamps do not wear |
 | `projectorPower` | 30 | FE per tick a projector draws with `requirePower = true` |
+| `linkRadius` (cinema) | 32 | radius in which projectors and speakers link, blocks |
 
 ## fcw-client.toml
 
