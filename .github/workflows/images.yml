@@ -14,6 +14,9 @@ on:
         default: false
   push:
     tags: ["images-*"]
+    # проверочная сборка при изменении сборщика (в релиз не выкладывается)
+    branches: ["**"]
+    paths: ["images/**", ".github/workflows/images.yml"]
 
 permissions:
   contents: write
