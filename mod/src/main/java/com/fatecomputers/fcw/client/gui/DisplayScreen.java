@@ -175,7 +175,8 @@ public class DisplayScreen extends Screen {
             Component retake = Component.translatable(mayControl() ? "screen.fcw.click_to_retake" : "screen.fcw.view_only");
             int bw = Math.max(font.width(msg), font.width(retake)) + 16;
             int by = height - 40;
-            g.fill((width - bw) / 2, by - 4, (width + bw) / 2, by + 22, 0xC0000000);
+            g.fill((width - bw) / 2 - 1, by - 5, (width + bw) / 2 + 1, by + 23, 0xFFFF8855);
+            g.fill((width - bw) / 2, by - 4, (width + bw) / 2, by + 22, 0xF0101010);
             g.drawCenteredString(font, msg, width / 2, by, 0xFFFF8855);
             g.drawCenteredString(font, retake, width / 2, by + 11, 0xFFDDDDDD);
         }

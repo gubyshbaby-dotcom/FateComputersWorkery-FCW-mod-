@@ -87,7 +87,7 @@ public class ComputerScreen extends AbstractContainerScreen<ComputerMenu> {
                 .bounds(leftPos + LIST_X + 92, topPos + BUTTONS_Y, 88, 16)
                 .tooltip(Tooltip.create(Component.translatable("gui.fcw.update_os.tooltip"))).build());
         refreshButton = addRenderableWidget(Button.builder(Component.literal("↻"), b -> send(ComputerActionPayload.REFRESH_IMAGES, ""))
-                .bounds(leftPos + LIST_X + LIST_W - 13, topPos + LIST_Y - 13, 13, 12)
+                .bounds(leftPos + LIST_X + LIST_W - 16, topPos + LIST_Y - 14, 16, 13)
                 .tooltip(Tooltip.create(Component.translatable("gui.fcw.refresh"))).build());
         confirmButton = addRenderableWidget(Button.builder(Component.translatable("gui.fcw.reinstall.confirm"), b -> {
                     if (confirmImage != null) {
@@ -455,9 +455,13 @@ public class ComputerScreen extends AbstractContainerScreen<ComputerMenu> {
             net = Component.translatable("gui.fcw.net.off");
         } else {
             String host = s.hostname() + (s.dnsZone().isEmpty() ? "" : "." + s.dnsZone());
-            net = s.ipAddress().isEmpty()
-                    ? Component.translatable("gui.fcw.net.no_ip", host)
-                    : Component.translatable("gui.fcw.net.ip", host, s.ipAddress());
+            if (!s.ipAddress().isEmpty()) {
+                net = Component.translatable("gui.fcw.net.ip", host, s.ipAddress());
+            } else if (isOn(s)) {
+                net = Component.translatable("gui.fcw.net.no_ip", host);
+            } else {
+                net = Component.translatable("gui.fcw.net.name", host);
+            }
         }
         lines.add(net.copy().withStyle(ChatFormatting.GRAY).getVisualOrderText());
         if (!s.controller().isEmpty()) {

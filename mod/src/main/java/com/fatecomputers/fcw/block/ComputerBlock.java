@@ -103,8 +103,6 @@ public class ComputerBlock extends DeviceBlock implements EntityBlock {
         return 0;
     }
 
-    @Override
-    protected int getDirectSignal(BlockState state, BlockGetter level, BlockPos pos, Direction direction) {
-        return getSignal(state, level, pos, direction);
-    }
+    // Weak power only (like a repeater's side, not a torch): a solid block next to the computer is
+    // not powered through, so the computer does not read its own output back as an input.
 }

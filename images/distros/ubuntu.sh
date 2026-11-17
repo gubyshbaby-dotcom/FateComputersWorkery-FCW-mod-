@@ -46,7 +46,7 @@ EOF
   # службы в chroot не запускаем
   printf '#!/bin/sh\nexit 101\n' > "$ROOT/usr/sbin/policy-rc.d"; chmod +x "$ROOT/usr/sbin/policy-rc.d"
   # Минимальная база Ubuntu выкидывает man и доки: оставляем как есть.
-  in_root apt-get update
+  in_root apt-get update --error-on=any
   in_root apt-get -y -o Dpkg::Options::=--force-confold full-upgrade
   in_root apt-get -y --no-install-recommends install "${UBUNTU_PACKAGES[@]}"
   rm -f "$ROOT/usr/sbin/policy-rc.d" "$ROOT/etc/apt/apt.conf.d/99fcw-build"

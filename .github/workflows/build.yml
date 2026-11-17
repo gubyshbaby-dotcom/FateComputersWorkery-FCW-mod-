@@ -16,6 +16,11 @@ concurrency:
   group: build-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  # libopus (через крейт opus) объявляет старый cmake_minimum_required,
+  # CMake 4 без этого отказывается его собирать
+  CMAKE_POLICY_VERSION_MINIMUM: "3.5"
+
 jobs:
   test:
     runs-on: ubuntu-latest

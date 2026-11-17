@@ -30,6 +30,22 @@ STAGES="${FCW_STAGES:-base packages configure initramfs pack}"
 DISK_SIZE="${FCW_DISK_SIZE:-8G}"
 
 [[ $EUID -eq 0 ]] || { echo "нужен root (chroot, mount)" >&2; exit 1; }
+
+# Вся сборка идёт в своём пространстве монтирования с private-распространением:
+# монтирования chroot не утекают на хост (на хостах с systemd корень shared,
+# и /proc, /sys, /dev иначе оставались бы внутри rootfs) и исчезают сами,
+# даже если скрипт упадёт.
+if [[ -z "${FCW_IN_MOUNT_NS:-}" ]]; then
+  exec unshare --mount --propagation private env FCW_IN_MOUNT_NS=1 "$0" "$@"
+fi
+
+# CA для загрузок внутри chroot (в базовых образах их может не быть): по
+# умолчанию берём системный бандл хоста. В образ он не попадает.
+if [[ -z "${FCW_BUILD_CA:-}" ]]; then
+  for f in /etc/ssl/certs/ca-certificates.crt /etc/pki/tls/certs/ca-bundle.crt /etc/ssl/cert.pem; do
+    if [[ -s "$f" ]]; then FCW_BUILD_CA="$f"; break; fi
+  done
+fi
 [[ -f "$HERE/distros/$DISTRO.sh" ]] || { echo "нет описания дистрибутива: $DISTRO" >&2; exit 1; }
 
 ROOT="$WORK_DIR/$DISTRO/rootfs"
@@ -47,6 +63,7 @@ mount_chroot() {
   for m in proc sys dev dev/pts run tmp; do mkdir -p "$ROOT/$m"; done
   # корень chroot сам должен быть точкой монтирования (pacman проверяет место)
   mount --bind "$ROOT" "$ROOT";               MOUNTED+=("$ROOT")
+  mount --make-private "$ROOT"
   mount -t proc proc "$ROOT/proc";            MOUNTED+=("$ROOT/proc")
   mount --rbind /sys "$ROOT/sys";             MOUNTED+=("$ROOT/sys")
   mount --make-rslave "$ROOT/sys"
@@ -157,10 +174,12 @@ stage_configure() {
     ln -sf fcw "$ROOT/usr/local/bin/fcw-agent"
   fi
 
-  echo "fcw-$DISTRO" > "$ROOT/etc/hostname"
+  # Статического имени нет: его задаёт демон (systemd.hostname= в cmdline,
+  # то же имя отдаёт DHCP). Своё имя гость находит через systemd-resolved.
+  rm -f "$ROOT/etc/hostname"
+  printf '127.0.0.1 localhost\n::1 localhost\n' > "$ROOT/etc/hosts"
   # часовой пояс по умолчанию UTC; настоящий передаёт демон (fcw.tz=)
   ln -sf ../usr/share/zoneinfo/UTC "$ROOT/etc/localtime"
-  printf '127.0.0.1 localhost\n::1 localhost\n127.0.1.1 fcw-%s\n' "$DISTRO" > "$ROOT/etc/hosts"
 
   # Пользователь user / пароль fcw, root заблокирован.
   if ! in_root id user >/dev/null 2>&1; then
@@ -260,6 +279,11 @@ stage_pack() {
   local raw="$WORK_DIR/$DISTRO/rootfs.ext4"
   rm -f "$raw"
   truncate -s "$DISK_SIZE" "$raw"
+  if [[ -n "$(mounts_under_root)" ]]; then
+    echo "в $ROOT ещё что-то смонтировано, упаковывать нельзя:" >&2
+    mounts_under_root >&2
+    exit 1
+  fi
   mkfs.ext4 -q -F -L fcw-root -m 1 -E lazy_itable_init=1,lazy_journal_init=1 -d "$ROOT" "$raw"
   qemu-img convert -c -O qcow2 -o cluster_size=65536 "$raw" "$dst/rootfs.qcow2"
   rm -f "$raw"

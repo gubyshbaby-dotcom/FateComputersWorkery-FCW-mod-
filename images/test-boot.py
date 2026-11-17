@@ -88,7 +88,7 @@ def main():
            "-display", "none",
            "-kernel", os.path.join(a.image, man["kernel"]),
            "-initrd", os.path.join(a.image, man["initrd"]),
-           "-append", (man["cmdline"] + " " + a.append).strip(),
+           "-append", (man["cmdline"] + f" systemd.hostname=fcw-{man['id']} " + a.append).strip(),
            "-drive", f"if=none,id=root,file={disk},format=qcow2,discard=unmap",
            "-device", "virtio-blk-pci,drive=root",
            "-device", "virtio-serial-pci",
