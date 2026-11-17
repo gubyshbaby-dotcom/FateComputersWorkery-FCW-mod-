@@ -8,7 +8,7 @@ ARCH_MIRROR="${ARCH_MIRROR:-https://geo.mirror.pkgbuild.com}"
 BASE_URL="$ARCH_MIRROR/iso/latest/archlinux-bootstrap-x86_64.tar.zst"
 
 ARCH_PACKAGES=(
-  linux mkinitcpio sudo less nano htop bash-completion iproute2 iputils
+  linux mkinitcpio sudo less nano htop bash-completion iproute2 iputils inetutils
   labwc swaybg lxqt-panel lxqt-menu-data lxqt-themes alacritty pcmanfm-qt
   qt6-wayland breeze-icons ttf-dejavu mesa xdg-utils
   pipewire wireplumber pipewire-pulse

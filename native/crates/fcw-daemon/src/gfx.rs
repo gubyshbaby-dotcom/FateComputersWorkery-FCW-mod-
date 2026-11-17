@@ -26,7 +26,7 @@ pub struct Cursor {
 
 impl Cursor {
     pub fn visible(&self) -> bool {
-        self.width > 0 && self.height > 0 && self.rgba.chunks_exact(4).any(|p| p[3] != 0)
+        self.width > 0 && self.height > 0 && self.rgba.as_chunks::<4>().0.iter().any(|p| p[3] != 0)
     }
 }
 
@@ -52,7 +52,7 @@ impl Inner {
         self.width = w;
         self.height = h;
         self.fb = vec![0; (w as usize) * (h as usize) * 4];
-        for px in self.fb.chunks_exact_mut(4) {
+        for px in self.fb.as_chunks_mut::<4>().0 {
             px[3] = 255;
         }
         self.tiles_x = w.div_ceil(TILE);
@@ -163,7 +163,7 @@ impl GfxScreen {
         let mut row_buf = vec![0u8; cw as usize * 4];
         for row in 0..ch {
             let src = &data[row as usize * src_stride..row as usize * src_stride + cw as usize * 4];
-            for (d, s) in row_buf.chunks_exact_mut(4).zip(src.chunks_exact(4)) {
+            for (d, s) in row_buf.as_chunks_mut::<4>().0.iter_mut().zip(src.as_chunks::<4>().0) {
                 d[0] = s[0];
                 d[1] = s[1];
                 d[2] = s[2];
@@ -288,8 +288,8 @@ impl GfxScreen {
 
 /// Сжимает тайл: сплошной цвет -> RECT_SOLID, иначе RGBA + zstd.
 pub fn encode_tile(x: u32, y: u32, w: u32, h: u32, rgba: &[u8]) -> spb::Rect {
-    let first = &rgba[0..4];
-    let solid = rgba.chunks_exact(4).all(|p| p == first);
+    let first: [u8; 4] = rgba[0..4].try_into().expect("tile has at least one pixel");
+    let solid = rgba.as_chunks::<4>().0.iter().all(|p| *p == first);
     if solid {
         return spb::Rect {
             x,

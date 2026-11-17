@@ -78,7 +78,7 @@ impl State {
         self.width = w;
         self.height = h;
         self.base = vec![0; (w * h * 4) as usize];
-        for px in self.base.chunks_exact_mut(4) {
+        for px in self.base.as_chunks_mut::<4>().0 {
             px[3] = 255;
         }
         self.tiles_x = w.div_ceil(TILE);
@@ -352,7 +352,7 @@ impl View {
                     };
                     for row in 0..c.h as usize {
                         let doff = (c.y as usize + row) * stride + c.x as usize * 4;
-                        for px in s.base[doff..doff + c.w as usize * 4].chunks_exact_mut(4) {
+                        for px in s.base[doff..doff + c.w as usize * 4].as_chunks_mut::<4>().0 {
                             px.copy_from_slice(&color);
                         }
                     }

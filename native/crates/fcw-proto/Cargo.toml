@@ -2,6 +2,7 @@
 name = "fcw-proto"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 description = "FCW protocol types (prost) and length-prefixed framing"
 

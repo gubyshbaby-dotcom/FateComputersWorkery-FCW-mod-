@@ -3,7 +3,7 @@ name = "fcw-net"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-rust-version = "1.80"
+rust-version.workspace = true
 description = "FCW: userspace L2 switch, DHCP/DNS gateway and NAT with firewall for QEMU guests"
 
 [dependencies]

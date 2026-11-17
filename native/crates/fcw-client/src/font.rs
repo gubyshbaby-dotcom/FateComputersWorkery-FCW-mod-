@@ -41,7 +41,7 @@ impl Font {
             let tab = &d[4 + n * h..];
             let mut g = 0usize;
             let mut in_seq = false;
-            for c in tab.chunks_exact(2) {
+            for c in tab.as_chunks::<2>().0 {
                 if g >= n {
                     break;
                 }
@@ -138,7 +138,7 @@ pub fn draw_cell(buf: &mut [u8], stride: usize, x: usize, y: usize, cp: u32, fg:
         }
         let off = (y + r) * stride + x * 4;
         let Some(line) = buf.get_mut(off..off + CELL_W * 4) else { return };
-        for (c, px) in line.chunks_exact_mut(4).enumerate() {
+        for (c, px) in line.as_chunks_mut::<4>().0.iter_mut().enumerate() {
             px.copy_from_slice(if bits & (0x80 >> c) != 0 { &f } else { &b });
         }
     }

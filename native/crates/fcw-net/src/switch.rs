@@ -78,7 +78,15 @@ impl Counters {
         c.fetch_add(1, Ordering::Relaxed);
     }
     pub fn dec(c: &AtomicU64) {
-        let _ = c.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |v| v.checked_sub(1));
+        // не уходим ниже нуля; compare_exchange вместо fetch_update/try_update,
+        // чтобы собиралось и на старых, и на новых версиях Rust
+        let mut cur = c.load(Ordering::Relaxed);
+        while let Some(next) = cur.checked_sub(1) {
+            match c.compare_exchange_weak(cur, next, Ordering::Relaxed, Ordering::Relaxed) {
+                Ok(_) => break,
+                Err(actual) => cur = actual,
+            }
+        }
     }
 }
 

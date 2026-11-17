@@ -41,11 +41,11 @@ impl AudioEncoder {
                 self.odd = Some(b0);
             }
         }
-        let mut chunks = data.chunks_exact(2);
-        for c in &mut chunks {
-            self.pcm.push(i16::from_le_bytes([c[0], c[1]]));
+        let (chunks, rest) = data.as_chunks::<2>();
+        for c in chunks {
+            self.pcm.push(i16::from_le_bytes(*c));
         }
-        if let [b] = chunks.remainder() {
+        if let [b] = rest {
             self.odd = Some(*b);
         }
         let mut out = Vec::new();
