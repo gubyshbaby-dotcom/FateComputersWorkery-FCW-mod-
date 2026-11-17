@@ -54,7 +54,7 @@ public final class Machines {
 
     /**
      * EUV scanner: wafers in at dock 1, patterned wafers out at dock 2, the reticle (catalyst) in the reticle
-     * port, tin in the drawer (the same input slots). Automation may use both docks both ways. Wafer load,
+     * port. The tin drawer is not a hand zone until a recipe uses tin. Automation may use both docks both ways. Wafer load,
      * then exposure fields in a loop.
      */
     public static final MachineDef EUV_SCANNER = MachineDef.load(EUV, new MachineSpec("", "euv",
@@ -63,8 +63,9 @@ public final class Machines {
                     new PortRole("tin", 0, Role.INPUT), new PortRole("reticle", 0, Role.CATALYST)),
             List.of(Zone.of("wafer_dock_1", 0, Role.INPUT).hatch("foup_port_1"),
                     Zone.of("wafer_dock_2", 0, Role.OUTPUT).hatch("foup_port_2"),
-                    Zone.of("reticle", 0, Role.CATALYST).hatch("reticle_port"),
-                    Zone.of("tin", 0, Role.INPUT).hatch("tin_port").shown()),
+                    // Лотка олова в руках нет: пока ни один рецепт не тратит олово (источник EUV придёт с
+                    // сырьём уровня fab, docs/design/HARDCORE.md), иначе лоток показывал бы слоты дока 1.
+                    Zone.of("reticle", 0, Role.CATALYST).hatch("reticle_port")),
             List.of(new Phase("wafer_load", Mode.FIXED), new Phase("expose_enter", Mode.FIXED), new Phase("expose", Mode.LOOP),
                     new Phase("expose_exit", Mode.FIXED)),
             List.of(new Display("reticle_on_stage", 0, When.CATALYST_PRESENT, "reticle_stage"),
