@@ -12,7 +12,7 @@
       "item": "fcw:granite_plate"
     },
     {
-      "item": "fcw:chip_controller"
+      "tag": "fcw:build/chip_controller"
     }
   ],
   "result": {

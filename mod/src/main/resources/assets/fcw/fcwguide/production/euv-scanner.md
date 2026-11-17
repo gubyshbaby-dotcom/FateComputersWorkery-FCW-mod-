@@ -19,8 +19,8 @@ Prints the pattern of a reticle onto a silicon wafer. The reticle decides which 
 | | |
 |---|---|
 | Size | 13 x 6 x 5 (width, height, depth), 301 cells |
-| Placement | from building blocks: [Building the scanner](euv-building.md) |
-| Slots | 4 inputs, reticle slot, 4 outputs |
+| Building | blueprint and building blocks, or the blocks laid by hand: [Building the scanner](euv-building.md) |
+| Stack places | 4 inputs, reticle place, 4 outputs |
 | Draw | 1024 to 2048 FE/t while working |
 
 ## Front view
@@ -45,7 +45,9 @@ Prints the pattern of a reticle onto a silicon wafer. The reticle decides which 
 
 Sides are named as the operator sees them, standing in front of the panel. Loading and starting: [Operating a machine](operation.md).
 
-Wafers are loaded and unloaded through both FOUP docks. The reticle goes into the reticle port and stays in the machine. The tin drawer leads to the same input slots as the docks; the recipes of this version need no tin. The data port does nothing yet: it is reserved for control from a computer.
+Wafers go into dock 1, patterned wafers are taken from dock 2. The reticle goes into the reticle port and stays in the machine. The tin drawer leads to the same inputs as the dock; the recipes of this version need no tin. The data port takes a data cable from a computer.
+
+A closed room and water in the coolant supply port reduce defects: [Defects](defects.md).
 
 ## Recipes
 

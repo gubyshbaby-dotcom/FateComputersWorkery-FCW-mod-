@@ -205,6 +205,17 @@ public abstract class MachineCellBlock extends Block implements EntityBlock {
             }
             return ItemInteractionResult.sidedSuccess(level.isClientSide);
         }
+        if (machine != null && stack.getCapability(net.neoforged.neoforge.capabilities.Capabilities.FluidHandler.ITEM) != null) {
+            // a bucket (or any fluid container) on a fluid port: water for cooling and rinsing goes in by hand too
+            for (MachineDef.Port p : def.ports) {
+                if (p.kind().equals("fluid") && p.ax() == c.x() && p.ay() == c.y() && p.az() == c.z() && machine.tank(p.id()) != null) {
+                    if (!level.isClientSide) {
+                        net.neoforged.neoforge.fluids.FluidUtil.interactWithFluidHandler(player, hand, machine.tank(p.id()));
+                    }
+                    return ItemInteractionResult.sidedSuccess(level.isClientSide);
+                }
+            }
+        }
         MachineSpec.Zone zone = def.zoneAt(c);
         if (zone == null) {
             return ItemInteractionResult.PASS_TO_DEFAULT_BLOCK_INTERACTION;

@@ -85,13 +85,14 @@ for k in ("controller", "memory", "gpu", "cpu"):
 
 # =============================================================== construction components
 WHERE_RU = {"craft": "Верстак", "smelting": "Печь", "blasting": "Плавильная печь", "stonecutting": "Камнерез",
-            "wafering": "Резка и полировка"}
+            "wafering": "Резка и полировка", "legacy": "Верстак: чипы младшего тира (для первого литографа)"}
 WHERE_EN = {"craft": "Crafting table", "smelting": "Furnace", "blasting": "Blast furnace", "stonecutting": "Stonecutter",
-            "wafering": "Wafering cell"}
+            "wafering": "Wafering cell", "legacy": "Crafting table: bench chips (for the first scanner)"}
 _made = {r[0]: "craft" for r in BD.CRAFT}
 _made.update({r[2]: r[0] for r in BD.COOK})
 _made.update({r[1]: "stonecutting" for r in BD.STONECUT})
 _made.update({r[1]: r[0] for r in BD.MACHINE_RECIPES})
+_made.update({r[3]: "legacy" for r in BD.LEGACY_CHIPS})
 _used = {}
 for _m, _stages in BD.STAGES.items():
     for (_sid, _ru, _en, _sec, _items) in _stages:
@@ -100,6 +101,8 @@ for _m, _stages in BD.STAGES.items():
             _used[_it][_m] += _n
 for _k, (_ru, _en, _stack, _group) in BD.COMPONENTS.items():
     _u = _used.get(_k)
+    if _k.startswith("proto_"):
+        _u = None
     to_ru = ("Нужен: " + ", ".join(f"{BD.MACHINE_NAMES[m][0]} ×{n}" for m, n in _u.items())) if _u else "Деталь других компонентов"
     to_en = ("Needed by: " + ", ".join(f"{BD.MACHINE_NAMES[m][1]} ×{n}" for m, n in _u.items())) if _u else "A part of other components"
     ITEMS[_k] = (_ru, _en, WHERE_RU[_made[_k]], to_ru, WHERE_EN[_made[_k]], to_en)
@@ -137,6 +140,8 @@ VANILLA = {
     "white_concrete_powder": "белый цемент", "polished_granite": "полированный гранит", "clay_ball": "глина",
     "sand": "песок", "coal_block": "блок угля", "chain": "цепь", "rail": "рельсы", "leather": "кожа",
     "tinted_glass": "тонированное стекло", "slime_ball": "слизь", "lever": "рычаг", "blue_dye": "синий краситель",
+    "#fcw:build/chip_controller": "микросхема контроллера (или опытная)", "#fcw:build/chip_memory": "микросхема памяти (или опытная)",
+    "#fcw:build/cpu_pga": "процессор PGA (или опытный)",
     "#minecraft:coals": "уголь", "#minecraft:planks": "доски", "#minecraft:wool": "шерсть",
     "#c:ingots/steel": "сталь", "#c:silicon": "технический кремний",
     "white_wool": "белая шерсть", "red_wool": "красная шерсть", "black_dye": "чёрный краситель",
@@ -369,7 +374,11 @@ TAGS = {
 }
 for path, vals in TAGS.items():
     tag("fcw", path, [f"fcw:{v}" for v in vals])
+for _path, _vals in BD.BUILD_TAGS.items():
+    tag("fcw", _path, [f"fcw:{v}" for v in _vals])
 tag("fcw", "chips/any", ["#fcw:chips/micron", "#fcw:chips/duv", "#fcw:chips/immersion", "#fcw:chips/euv"])
+# блоки-фильтры чистой комнаты (FFU из архива 11 художника): поднимают класс ISO у литографа
+write(f"{DATA}/fcw/tags/block/cleanroom_filters.json", {"replace": False, "values": []})
 assert set(MICRON + EUV) == set(CPU + MEM + ["chip_gpu", "chip_controller"])
 
 # =============================================================== item models + lang
@@ -529,6 +538,9 @@ A("")
 A("Чипы для первого литографа. Контроллеры, память и процессоры PGA нельзя сделать без литографа, поэтому")
 A("первый литограф строится на чипах с верстака: на уровне `engineer` три за один, на `standard` один за один,")
 A("на `fab` замены нет.")
+A("")
+A("Получаются «опытные» чипы: они годятся только в узлы литографа (теги `fcw:build/…`, куда входят и настоящие")
+A("чипы) и в компьютер не ставятся.")
 A("")
 A("| Получается | Из чего (на `engineer`) |")
 A("|---|---|")

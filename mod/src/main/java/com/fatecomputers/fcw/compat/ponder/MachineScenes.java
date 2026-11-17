@@ -29,7 +29,8 @@ import java.util.Map;
  * machine manifests (cells, ports), so a changed model needs new structure files and nothing here.
  *
  * <p>How a machine is operated (panel, breaker) is said in two shared sentences, {@code port_panel} and
- * {@code port_breaker}: when the controls change, those are the lines to rewrite.
+ * {@code port_breaker}; how it is built, in the shared sentences {@code build_*}: when the controls or the
+ * construction change, those are the lines to rewrite.
  */
 final class MachineScenes {
     /** English names for scene titles (the Russian ones are in the lang file). */
@@ -44,13 +45,16 @@ final class MachineScenes {
     static final Map<String, String> SHARED = new LinkedHashMap<>();
 
     static {
-        SHARED.put("kit_place", "Right-click the ground: the whole machine is placed");
-        SHARED.put("kit_front", "The operator panel faces the player who placed it");
-        SHARED.put("kit_break", "Sneak and break any cell: the kit and the contents drop");
-        SHARED.put("port_panel", "Operator panel: status, start and stop");
+        SHARED.put("build_place", "Right-click the ground with the blueprint: scaffolding marks the site, a pallet stands where the panel will be");
+        SHARED.put("build_deliver", "Bring the components to the pallet or the scaffolding: by hand, with hoppers or pipes");
+        SHARED.put("build_console", "Right-click the pallet with an empty hand: the console shows the bill (bom) and the stage");
+        SHARED.put("build_stages", "A stage starts when its components are there; the machine grows from the bottom up");
+        SHARED.put("build_done", "After commissioning the main breaker is unlocked");
+        SHARED.put("build_wrench", "Wrench, sneak and right-click the panel of a switched-off machine, twice: teardown, the components come back");
+        SHARED.put("port_panel", "Operator panel: right-click with an empty hand opens the console (status, start, stop)");
         SHARED.put("port_breaker", "Main breaker: the machine works only while it is on");
         SHARED.put("port_power", "Power input: FE");
-        SHARED.put("port_fluids", "Fluid ports: accepted, not needed by the current recipes");
+        SHARED.put("port_fluids", "Fluid ports: filled with a bucket or pipes; cooling water improves quality");
     }
 
     /** One step of a ports scene: what to outline and what to say (own text, or a shared key). */
@@ -109,13 +113,13 @@ final class MachineScenes {
                     Note.power(),
                     Note.fluids("etchant", "exhaust")),
             Machines.EUV, List.of(
-                    Note.in("Two FOUP docks: wafers go in, patterned wafers come out", "wafer_dock_1", "wafer_dock_2"),
+                    Note.in("Two FOUP docks: right-click with wafers to load, with an empty hand to take patterned wafers", "wafer_dock_1", "wafer_dock_2"),
                     Note.in("Reticle port: the photomask stays inside and is not consumed", "reticle"),
                     Note.in("Tin drawer: one more item input, not needed by the current recipes", "tin"),
                     Note.panel(),
                     Note.breaker(), Note.power(),
                     Note.fluids("coolant_in", "hydrogen", "nitrogen", "exhaust"),
-                    Note.other("Data port: reserved for control from a computer", "data")));
+                    Note.other("Data port: a data cable links the machine to a computer", "data")));
 
     private MachineScenes() {
     }
@@ -158,49 +162,79 @@ final class MachineScenes {
         }
     }
 
-    // ───────────────────────── kit machines: placing and removing
+    // ───────────────────────── building: blueprint, site, stages, wrench
 
-    static PonderStoryBoard kit(MachineDef def) {
+    /**
+     * The short story of a build: the site (scaffolding and the pallet), the delivery, the machine growing
+     * layer by layer, the teardown with the wrench. Stages and bills are not shown: they are in the guide.
+     */
+    static PonderStoryBoard build(MachineDef def) {
         return (scene, util) -> {
-            scene.title(def.name + "_kit", NAMES.get(def.name) + ": placing and removing");
+            scene.title(def.name + "_build", NAMES.get(def.name) + ": building and teardown");
             stage(scene, def);
-            ItemStack kit = ProductionMachines.sourceItem(def);
+            ItemStack blueprint = ProductionMachines.sourceItem(def);
             Selection machine = util.select().layersFrom(1);
             AABB box = box(def);
             Vec3 top = new Vec3(box.getCenter().x, box.maxY, box.getCenter().z);
+            MachineDef.Port panel = def.terminal;
+            BlockPos panelCell = DocStructures.cell(def, panel.x(), panel.y(), panel.z());
+            BlockPos panelPos = DocStructures.cell(def, panel.ax(), panel.ay(), panel.az());
+            Vec3 panelFace = util.vector().blockSurface(panelPos, DocStructures.face(panel.face()));
+
+            // the schematic holds the finished machine: turn it into a build site before it is shown
+            for (MachineDef.Cell cell : def.cells) {
+                BlockPos at = DocStructures.cell(def, cell.x(), cell.y(), cell.z());
+                scene.world().setBlock(at, at.equals(panelCell) ? DocStructures.formed(def, cell, MachineState.SITE)
+                        : ProductionMachines.scaffoldState(def, cell, DocStructures.FACING), false);
+            }
 
             scene.world().showSection(util.select().layer(0), Direction.UP);
             scene.idle(15);
-
             scene.overlay().chaseBoundingBoxOutline(PonderPalette.WHITE, "space", box, 80);
             // own text and not a shared one with parameters: those need a newer Ponder than the first 1.0 builds
-            scene.overlay().showText(80).text("The kit needs " + def.sx + " x " + def.sy + " x " + def.sz + " free blocks: width, height, depth")
+            scene.overlay().showText(80).text("The site needs " + def.sx + " x " + def.sy + " x " + def.sz + " free blocks: width, height, depth")
                     .pointAt(top).placeNearTarget();
             scene.idle(90);
 
             BlockPos ground = DocStructures.cell(def, def.sx / 2, 0, 0).below();
-            scene.overlay().showControls(util.vector().topOf(ground), Pointing.DOWN, 40).rightClick().withItem(kit);
+            scene.overlay().showControls(util.vector().topOf(ground), Pointing.DOWN, 40).rightClick().withItem(blueprint);
             scene.idle(20);
             scene.world().showSection(machine, Direction.DOWN);
             scene.idle(15);
-            scene.overlay().showText(60).sharedText("kit_place").pointAt(top).placeNearTarget().attachKeyFrame();
+            scene.overlay().showText(70).sharedText("build_place").pointAt(top).placeNearTarget().attachKeyFrame();
+            scene.idle(80);
+
+            scene.overlay().showControls(panelFace, Pointing.RIGHT, 40).rightClick().withItem(new ItemStack(Items.IRON_INGOT));
+            scene.overlay().showOutlineWithText(util.select().position(panelPos), 70).colored(PonderPalette.INPUT)
+                    .sharedText("build_deliver").pointAt(panelFace).placeNearTarget().attachKeyFrame();
+            scene.idle(80);
+            scene.overlay().showControls(panelFace, Pointing.RIGHT, 40).rightClick();
+            scene.overlay().showOutlineWithText(util.select().position(panelPos), 70).colored(PonderPalette.WHITE)
+                    .sharedText("build_console").pointAt(panelFace).placeNearTarget().attachKeyFrame();
+            scene.idle(80);
+
+            scene.overlay().showText(20 + 12 * def.sy).sharedText("build_stages").pointAt(top).placeNearTarget().attachKeyFrame();
+            for (int y = 0; y < def.sy; y++) {
+                for (MachineDef.Cell cell : def.cells) {
+                    if (cell.y() == y) {
+                        scene.world().setBlock(DocStructures.cell(def, cell.x(), cell.y(), cell.z()), DocStructures.formed(def, cell, MachineState.OFF), true);
+                    }
+                }
+                scene.idle(12);
+            }
+            scene.idle(30);
+            scene.effects().indicateSuccess(panelPos);
+            scene.overlay().showText(60).sharedText("build_done").pointAt(panelFace).placeNearTarget().attachKeyFrame();
             scene.idle(70);
 
-            MachineDef.Port panel = def.terminal;
-            BlockPos panelPos = DocStructures.cell(def, panel.ax(), panel.ay(), panel.az());
-            scene.overlay().showOutlineWithText(util.select().position(panelPos), 60).colored(PonderPalette.WHITE)
-                    .sharedText("kit_front").pointAt(util.vector().blockSurface(panelPos, DocStructures.face(panel.face())))
-                    .placeNearTarget().attachKeyFrame();
-            scene.idle(70);
-
-            scene.overlay().showControls(util.vector().blockSurface(panelPos, DocStructures.face(panel.face())), Pointing.RIGHT, 40)
-                    .leftClick().whileSneaking().withItem(new ItemStack(Items.IRON_PICKAXE));
+            scene.overlay().showControls(panelFace, Pointing.RIGHT, 50).rightClick().whileSneaking()
+                    .withItem(new ItemStack(ProductionMachines.WRENCH.get()));
             scene.idle(30);
             scene.world().hideSection(machine, Direction.UP);
             scene.idle(15);
-            scene.world().createItemEntity(util.vector().topOf(ground).add(0, 1.5, 0), Vec3.ZERO, kit);
-            scene.overlay().showText(70).sharedText("kit_break").pointAt(util.vector().topOf(ground).add(0, 0.5, 0)).placeNearTarget().attachKeyFrame();
-            scene.idle(80);
+            scene.world().createItemEntity(util.vector().topOf(ground).add(0, 1.5, 0), Vec3.ZERO, blueprint);
+            scene.overlay().showText(80).sharedText("build_wrench").pointAt(util.vector().topOf(ground).add(0, 0.5, 0)).placeNearTarget().attachKeyFrame();
+            scene.idle(90);
             scene.markAsFinished();
         };
     }
@@ -327,10 +361,10 @@ final class MachineScenes {
             scene.world().setBlock(DocStructures.cell(def, cell.x(), cell.y(), cell.z()), DocStructures.formed(def, cell, MachineState.OFF), false);
         }
         scene.effects().indicateSuccess(controller);
-        scene.overlay().showText(70).text("When every block is in place the blank becomes the machine")
+        scene.overlay().showText(70).text("When every block is in place the blank becomes the machine and commissioning starts")
                 .pointAt(controllerFace).placeNearTarget().attachKeyFrame();
         scene.idle(80);
-        scene.overlay().showText(70).text("Breaking a cell while sneaking turns it back into the building blocks")
+        scene.overlay().showText(70).text("The other way: the blueprint of the scanner and the same blocks brought to its pallet")
                 .pointAt(new Vec3(box.getCenter().x, box.maxY, box.getCenter().z)).placeNearTarget();
         scene.idle(80);
         scene.markAsFinished();

@@ -4,7 +4,7 @@
     "item": "fcw:ram_simm"
   },
   "result": {
-    "id": "fcw:chip_memory",
+    "id": "fcw:proto_chip_memory",
     "count": 1
   }
 }

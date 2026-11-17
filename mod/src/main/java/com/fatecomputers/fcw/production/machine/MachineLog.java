@@ -28,6 +28,11 @@ public final class MachineLog {
     public static final String WAIT = "wait";           // arg: reason (no_input)
     public static final String PIN = "pin";             // arg: recipe or "auto"
     public static final String RENAME = "rename";       // arg: new name
+    // quality (docs/design/DEFECTS.md)
+    public static final String WAFER = "wafer";         // arg: "A 55/61"
+    public static final String BROWNOUT = "brownout";   // arg: -
+    public static final String ROOM = "room";           // arg: "open -> ISO 8"
+    public static final String APC = "apc";             // arg: "host 8 -> 6 CU"
     // construction site
     public static final String SITE_START = "site_start";           // arg: who
     public static final String SITE_STAGE = "site_stage";           // arg: stage number
@@ -49,6 +54,11 @@ public final class MachineLog {
         while (entries.size() > CAPACITY) {
             entries.removeFirst();
         }
+    }
+
+    /** The seq of the newest entry (0 when the journal is empty). */
+    public long lastSeq() {
+        return nextSeq - 1;
     }
 
     /** The last n entries, oldest first. */

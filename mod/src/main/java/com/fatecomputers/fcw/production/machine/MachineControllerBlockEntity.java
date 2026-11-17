@@ -9,6 +9,7 @@ import com.fatecomputers.fcw.production.machine.MachineSpec.Zone;
 import com.fatecomputers.fcw.production.ProductionDifficulty;
 import com.fatecomputers.fcw.production.machine.block.MachineCellBlock;
 import com.fatecomputers.fcw.production.machine.construction.ConstructionSite;
+import com.fatecomputers.fcw.production.quality.MachineQuality;
 import com.fatecomputers.fcw.production.recipe.MachineRecipe;
 import com.fatecomputers.fcw.production.recipe.MachineRecipes;
 import net.minecraft.core.BlockPos;
@@ -168,6 +169,7 @@ public class MachineControllerBlockEntity extends BlockEntity {
     /** Hatches opened by clip events: closed again when the clip's work ends. */
     private final Set<String> clipOpened = new HashSet<>();
     private final MachineLog log = new MachineLog();
+    private MachineQuality quality;
 
     private boolean enabled;
     /** "stop": switch off when the product in work is finished. */
@@ -244,6 +246,12 @@ public class MachineControllerBlockEntity extends BlockEntity {
         for (String h : def.hatches.keySet()) {
             hatchOpen.put(h, false);
         }
+        quality = new MachineQuality(this);
+    }
+
+    /** Defects, classes and APC of this machine. */
+    public MachineQuality quality() {
+        return quality;
     }
 
     public MachineDef def() {
@@ -972,6 +980,7 @@ public class MachineControllerBlockEntity extends BlockEntity {
         if (commissioning > 0) {
             tickCommissioning();
         }
+        quality.tick(now);
         if (now % 20 == 0) {
             income = receivedInWindow / 20;
             receivedInWindow = 0;
@@ -1058,7 +1067,8 @@ public class MachineControllerBlockEntity extends BlockEntity {
             s.recipeId = found.get().id();
             s.progress = 0;
             double speed = Math.max(0.01, FcwConfig.SERVER.productionSpeedMultiplier.get());
-            s.total = Math.max(1, (int) Math.round(found.get().value().ticks() / speed));
+            double factor = quality.onStart(i, found.get().value(), inputs, catalyst);
+            s.total = Math.max(1, (int) Math.round(found.get().value().ticks() / speed * factor));
             s.advancing = true;
             worked = true;
             log.add(MachineLog.START, MachineRecipeNames.shortName(s.recipeId));
@@ -1074,6 +1084,7 @@ public class MachineControllerBlockEntity extends BlockEntity {
             Optional<RecipeHolder<MachineRecipe>> found = pick(i, inputs, catalyst);
             if (found.isEmpty() || !found.get().id().equals(s.recipeId)) {
                 log.add(MachineLog.ABORT, MachineRecipeNames.shortName(s.recipeId));
+                quality.onAbort(i);
                 s.reset(); // the ingredients were taken away, or a better recipe became possible
                 if (!anyRunning()) {
                     closeClipHatches();
@@ -1096,13 +1107,18 @@ public class MachineControllerBlockEntity extends BlockEntity {
             can = false;
         }
         boolean changed = can != s.advancing;
+        if (changed && !can && !(last && !fits(i, RecipeOutputs.max(recipe)))) {
+            quality.onPowerPause(i); // stopped for lack of power, not because the output is full
+        }
         s.advancing = can;
         if (!can) {
             return changed;
         }
         s.progress++;
+        quality.onProgress(i, s.progress, s.total);
         if (s.progress >= s.total) {
-            List<ItemStack> results = RecipeOutputs.roll(recipe, level.random);
+            quality.beforeFinish(i, recipe, inputs);
+            List<ItemStack> results = quality.stamp(i, recipe, RecipeOutputs.roll(recipe, level.random));
             MachineRecipes.consume(recipe, inputs, catalyst);
             putResults(i, results);
             log.add(MachineLog.DONE, MachineRecipeNames.shortName(s.recipeId));
@@ -1454,6 +1470,7 @@ public class MachineControllerBlockEntity extends BlockEntity {
         hatchOpen.forEach(hatches::putBoolean);
         tag.put("Hatches", hatches);
         tag.put("Log", log.save());
+        tag.put("Quality", quality.save());
     }
 
     @Override
@@ -1479,6 +1496,7 @@ public class MachineControllerBlockEntity extends BlockEntity {
         }
         hatchOpen.put(MachineDef.BREAKER, enabled);
         log.load(tag.getCompound("Log"));
+        quality.load(tag.getCompound("Quality"));
     }
 
     @Override

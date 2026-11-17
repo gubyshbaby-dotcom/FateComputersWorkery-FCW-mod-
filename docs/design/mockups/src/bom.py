@@ -20,13 +20,13 @@ R = {
  'copper_pipe': (4, {'copper': 3}, 'верстак'),
  'copper_coil': (2, {'copper': 8, 'iron': 1}, 'верстак'),
  'water_cooled_panel': (2, {'iron_plate': 4, 'copper_pipe': 4}, 'верстак'),
- 'furnace_transformer': (1, {'iron_plate': 8, 'copper_coil': 6, 'copper_bar': 4, 'iron_frame': 1}, 'верстак'),
+ 'furnace_transformer': (1, {'iron_plate': 2, 'copper_coil': 4, 'copper_bar': 2, 'iron_frame': 1}, 'верстак'),  # ужат в сетку 3×3
  'electric_motor': (1, {'copper_coil': 2, 'iron': 1, 'iron_plate': 1, 'redstone': 2}, 'верстак'),
  'pump': (1, {'electric_motor': 1, 'copper_pipe': 2, 'iron_plate': 2}, 'верстак'),
  'hydraulic_cylinder': (1, {'piston': 1, 'iron_plate': 2, 'copper_pipe': 1}, 'верстак'),
- 'control_cabinet_1': (1, {'iron_plate': 4, 'cpu_dip': 1, 'ram_dip': 1, 'comparator': 2, 'redstone': 8, 'lever': 1}, 'верстак'),
+ 'control_cabinet_1': (1, {'iron_plate': 3, 'cpu_dip': 1, 'ram_dip': 1, 'comparator': 2, 'redstone': 9, 'lever': 1}, 'верстак'),  # блок редстоуна
  'control_cabinet_2': (1, {'steel_plate': 4, 'cpu_qfp': 1, 'ram_simm': 2, 'motherboard': 1, 'crt_monitor': 1}, 'верстак'),
- 'control_cabinet_3': (1, {'steel_plate': 4, 'cpu_pga': 2, 'chip_memory': 4, 'chip_controller': 4, 'motherboard': 1}, 'верстак'),
+ 'control_cabinet_3': (1, {'steel_plate': 2, 'cpu_pga': 2, 'chip_memory': 2, 'chip_controller': 2, 'motherboard': 1}, 'верстак'),  # ужат в сетку 3×3
  'quartz_crucible': (1, {'quartz': 28}, 'верстак (заготовка из 7 блоков кварца), затем плавильная печь'),
  'graphite_heater': (1, {'graphite': 6, 'copper_bar': 2}, 'верстак'),
  'vacuum_chamber_section': (1, {'steel_plate': 6, 'tinted_glass': 1, 'slime_ball': 1}, 'верстак'),
@@ -43,7 +43,7 @@ R = {
  'bonding_head': (1, {'linear_stage': 1, 'gold': 2, 'diamond': 1}, 'верстак'),
  'polished_mirror_blank': (1, {'quartz': 16, 'diamond': 1}, 'резка и полировка (новый рецепт)'),
  'multilayer_mirror': (1, {'polished_mirror_blank': 1, 'silicon_wafer': 4, 'amethyst_shard': 4}, 'верстак'),
- 'laser_module': (1, {'steel_frame': 1, 'copper_coil': 4, 'tinted_glass': 2, 'amethyst_shard': 2, 'chip_controller': 1}, 'верстак'),
+ 'laser_module': (1, {'steel_frame': 1, 'copper_coil': 3, 'tinted_glass': 2, 'amethyst_shard': 2, 'chip_controller': 1}, 'верстак'),
  'precision_stage': (1, {'linear_stage': 2, 'granite_plate': 1, 'chip_controller': 1}, 'верстак'),
  'turbo_pump': (1, {'pump': 1, 'electric_motor': 1, 'steel_plate': 2, 'chip_controller': 1}, 'верстак'),
  'chiller_unit': (1, {'pump': 1, 'copper_pipe': 4, 'steel_plate': 2, 'packed_ice': 2}, 'верстак'),
@@ -67,8 +67,8 @@ R = {
  'euv_controller': (1, {'control_cabinet_3': 1, 'crt_monitor': 1, 'euv_casing': 1}, 'верстак'),
  'euv_port_energy': (1, {'euv_casing': 1, 'copper_bar': 2}, 'верстак'),
  'euv_port_coolant': (1, {'euv_casing': 1, 'copper_pipe': 2}, 'верстак'),
- 'euv_port_gas': (1, {'euv_casing': 1, 'copper_pipe': 2}, 'верстак'),
- 'euv_port_exhaust': (1, {'euv_casing': 1, 'iron_bars': 2}, 'верстак'),
+ 'euv_port_gas': (1, {'euv_casing': 1, 'copper_pipe': 1, 'glass_bottle': 1}, 'верстак'),
+ 'euv_port_exhaust': (1, {'euv_casing': 1, 'iron_bars': 1, 'iron_trapdoor': 1}, 'верстак'),
  'euv_port_data': (1, {'euv_casing': 1, 'comparator': 1}, 'верстак'),
  'euv_port_item': (1, {'euv_casing': 1, 'hopper': 1}, 'верстак'),
 }
@@ -119,7 +119,7 @@ M['euv_scanner_mk2'] = [
 RU = {'iron': 'железо', 'copper': 'медь', 'gold': 'золото', 'coal': 'уголь', 'redstone': 'редстоун', 'quartz': 'кварц', 'clay': 'глина (комки)', 'sand': 'песок',
       'diamond': 'алмазы', 'amethyst_shard': 'осколки аметиста', 'tinted_glass': 'тонированное стекло', 'piston': 'поршни', 'white_concrete_powder': 'белый цемент',
       'slime_ball': 'слизь', 'chain': 'цепи', 'wool': 'шерсть', 'rail': 'рельсы', 'hopper': 'воронки', 'comparator': 'компараторы', 'lever': 'рычаги',
-      'polished_granite': 'полированный гранит', 'packed_ice': 'плотный лёд', 'leather': 'кожа', 'steel': 'сталь (дуговая печь)', 'silicon_wafer': 'пластины кремния',
+      'polished_granite': 'полированный гранит', 'packed_ice': 'плотный лёд', 'leather': 'кожа', 'glass_bottle': 'пузырьки', 'iron_trapdoor': 'железные люки', 'steel': 'сталь (дуговая печь)', 'silicon_wafer': 'пластины кремния',
       'cpu_dip': 'cpu_dip', 'ram_dip': 'ram_dip', 'cpu_qfp': 'cpu_qfp', 'ram_simm': 'ram_simm', 'cpu_pga': 'cpu_pga', 'chip_controller': 'chip_controller',
       'chip_memory': 'chip_memory', 'motherboard': 'motherboard', 'crt_monitor': 'crt_monitor'}
 ORDER = list(RU)

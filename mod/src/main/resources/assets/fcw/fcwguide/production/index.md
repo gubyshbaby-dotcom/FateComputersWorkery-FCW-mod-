@@ -30,9 +30,11 @@ One wafer costs 4 quartz. A boule (8 wafers) takes 32 quartz, 16 coal and 8 reds
 ## Build order
 
 1. Workbench. The first computer needs no machines: [Parts without machines](workbench.md).
-2. Arc furnace. The kit is made from vanilla materials.
+2. Arc furnace. The blueprint and the components are made from vanilla materials.
 3. Crystal puller and wafering cell. They need steel and metallurgical silicon.
-4. EUV scanner. 301 blocks; needs steel and wafers.
+4. EUV scanner. 301 blocks; needs steel, wafers and prototype chips from the crafting table.
 5. Electronics line. Needs steel and wafers.
+
+How to build: [Building Machines](construction.md). How to operate: [Operating Machines](operation.md). What the chip output depends on: [Defects](defects.md).
 
 <SubPages />

@@ -26,7 +26,7 @@ The mod adds computers, each running a Linux virtual machine, and a production c
 | dark blue | fluid |
 | white | control |
 
-With the Ponder mod installed, machine kits and scanner blocks have animated scenes: hold the Ponder key (W by default) over the item in the inventory.
+With the Ponder mod installed, machine blueprints and scanner blocks have animated scenes: hold the Ponder key (W by default) over the item in the inventory.
 
 The book is crafted at a workbench:
 

@@ -66,7 +66,16 @@ COMPONENTS = {
     "precision_stage": ("Прецизионный столик", "Precision Stage", 16, "litho"),
     "turbo_pump": ("Турбомолекулярный насос", "Turbomolecular Pump", 16, "litho"),
     "chiller_unit": ("Чиллер", "Chiller Unit", 16, "litho"),
+    # stand-ins for scanner chips, made of bench chips: only for the parts of the first scanner
+    "proto_chip_controller": ("Опытный контроллер", "Prototype Controller Chip", 64, "litho"),
+    "proto_chip_memory": ("Опытная микросхема памяти", "Prototype Memory Chip", 64, "litho"),
+    "proto_cpu_pga": ("Опытный процессор PGA", "Prototype PGA Processor", 64, "litho"),
 }
+# chips in the recipes of scanner parts: the real chip or its prototype
+T_CTRL, T_MEM, T_PGA = "#fcw:build/chip_controller", "#fcw:build/chip_memory", "#fcw:build/cpu_pga"
+BUILD_TAGS = {"build/chip_controller": ["chip_controller", "proto_chip_controller"],
+              "build/chip_memory": ["chip_memory", "proto_chip_memory"],
+              "build/cpu_pga": ["cpu_pga", "proto_cpu_pga"]}
 GROUP_RU = {"structure": "Конструкция и корпус", "heat": "Тепло", "electro": "Электрика и механика",
             "control": "Управление", "units": "Узлы резки и линии", "litho": "Узлы литографа"}
 
@@ -111,16 +120,16 @@ CRAFT = [
       "B": "minecraft:redstone_block"}),
     ("control_cabinet_2", 1, None, [f("steel_plate")] * 4 + [f("cpu_qfp"), f("ram_simm"), f("ram_simm"), f("motherboard"), f("crt_monitor")]),
     ("control_cabinet_3", 1, ["SKS", "MBM", "CKC"],
-     {"S": f("steel_plate"), "K": f("cpu_pga"), "M": f("chip_memory"), "B": f("motherboard"), "C": f("chip_controller")}),
+     {"S": f("steel_plate"), "K": T_PGA, "M": T_MEM, "B": f("motherboard"), "C": T_CTRL}),
     ("diamond_wire", 1, None, [f("steel_wire")] * 8 + ["minecraft:diamond"]),
     ("diamond_blade", 1, [" D ", "DSD", " D "], {"D": "minecraft:diamond", "S": f("steel_plate")}),
     ("polishing_head", 1, None, [f("electric_motor"), f("steel_plate"), "#minecraft:wool", "#minecraft:wool"]),
     ("placement_head", 1, None, [f("linear_stage"), f("cpu_qfp"), "minecraft:hopper"]),
     ("bonding_head", 1, None, [f("linear_stage"), "minecraft:gold_ingot", "minecraft:gold_ingot", "minecraft:diamond"]),
     ("multilayer_mirror", 1, None, [f("polished_mirror_blank")] + [f("silicon_wafer")] * 4 + ["minecraft:amethyst_shard"] * 4),
-    ("laser_module", 1, None, [f("steel_frame")] + [f("copper_coil")] * 3 + [TG, TG] + ["minecraft:amethyst_shard"] * 2 + [f("chip_controller")]),
-    ("precision_stage", 1, None, [f("linear_stage"), f("linear_stage"), f("granite_plate"), f("chip_controller")]),
-    ("turbo_pump", 1, None, [f("pump"), f("electric_motor"), f("steel_plate"), f("steel_plate"), f("chip_controller")]),
+    ("laser_module", 1, None, [f("steel_frame")] + [f("copper_coil")] * 3 + [TG, TG] + ["minecraft:amethyst_shard"] * 2 + [T_CTRL]),
+    ("precision_stage", 1, None, [f("linear_stage"), f("linear_stage"), f("granite_plate"), T_CTRL]),
+    ("turbo_pump", 1, None, [f("pump"), f("electric_motor"), f("steel_plate"), f("steel_plate"), T_CTRL]),
     ("chiller_unit", 1, None, [f("pump")] + [f("copper_pipe")] * 4 + [f("steel_plate")] * 2 + ["minecraft:packed_ice"] * 2),
 ]
 # (recipe type, input, result, experience, ticks)
@@ -150,12 +159,12 @@ EUV = [
     ("euv_vacuum_chamber", 1, [f("vacuum_chamber_section")]),
     ("euv_mirror", 1, [f("multilayer_mirror"), f("steel_frame")]),
     ("euv_collector", 1, [f("multilayer_mirror")] * 4 + [CASING, "minecraft:diamond"]),
-    ("euv_droplet_generator", 1, [f("pump"), "minecraft:hopper", f("copper_pipe"), f("copper_pipe"), CASING, f("chip_controller")]),
+    ("euv_droplet_generator", 1, [f("pump"), "minecraft:hopper", f("copper_pipe"), f("copper_pipe"), CASING, T_CTRL]),
     ("euv_laser_amplifier", 1, [f("laser_module")]),
     ("euv_chiller", 1, [f("chiller_unit")]),
     ("euv_wafer_stage", 4, [f("precision_stage"), f("granite_plate"), f("granite_plate"), f("steel_plate"), f("steel_plate")]),
     ("euv_reticle_stage", 3, [f("precision_stage"), f("steel_plate"), f("steel_plate"), TG]),
-    ("euv_wafer_handler", 2, [f("linear_stage"), f("electric_motor"), f("steel_plate"), f("steel_plate"), f("chip_controller")]),
+    ("euv_wafer_handler", 2, [f("linear_stage"), f("electric_motor"), f("steel_plate"), f("steel_plate"), T_CTRL]),
     ("euv_load_port", 1, [CASING, "minecraft:hopper", f("electric_motor"), TG]),
     ("euv_vacuum_pump", 1, [f("turbo_pump"), CASING]),
     ("euv_power_unit", 1, [f("furnace_transformer")] + [f("copper_bar")] * 4 + [CASING]),
@@ -175,11 +184,12 @@ EUV_COUNT = {"euv_casing": 97, "euv_casing_glass": 29, "euv_casing_vent": 12, "e
 
 # The first scanner: chips it needs cannot be made without a scanner, so bench chips stand in for them,
 # three for one on "engineer", one for one on "standard", not at all on "fab" (recipe type fcw:legacy_chip).
+# The result is a prototype chip: it goes into scanner parts only (tags fcw:build/*), never into a computer.
 # (name, bench chip, extra ingredient or None, result)
 LEGACY_CHIPS = [
-    ("chip_controller_from_bench", f("cpu_qfp"), None, "chip_controller"),
-    ("chip_memory_from_bench", f("ram_simm"), None, "chip_memory"),
-    ("cpu_pga_from_bench", f("cpu_qfp"), "minecraft:gold_ingot", "cpu_pga"),
+    ("proto_chip_controller", f("cpu_qfp"), None, "proto_chip_controller"),
+    ("proto_chip_memory", f("ram_simm"), None, "proto_chip_memory"),
+    ("proto_cpu_pga", f("cpu_qfp"), "minecraft:gold_ingot", "proto_cpu_pga"),
 ]
 
 # machine -> stages: (id, ru, en, seconds, [(item, count)])

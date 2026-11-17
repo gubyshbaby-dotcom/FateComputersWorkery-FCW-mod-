@@ -19,7 +19,8 @@ import java.util.List;
  * Ponder scenes of the production machines. This class and its package are loaded only when Ponder is
  * installed ({@link com.fatecomputers.fcw.compat.DocsCompat}); nothing else in the mod refers to them.
  *
- * <p>Scenes hang on the items a player holds: the four kits and every building block of the EUV scanner.
+ * <p>Scenes hang on the items a player holds: the blueprints (and the old kits), the wrench and every
+ * building block of the EUV scanner.
  * The English text is written in the scenes, {@code assets/fcw_docs/lang/en_us.json} is generated from
  * it (docs/GUIDE.md), the Russian text lives in {@code ru_ru.json} next to it.
  */
@@ -36,6 +37,10 @@ public final class FcwPonderPlugin implements PonderPlugin {
 
     private static ResourceLocation kit(MachineDef def) {
         return id(def.name + "_kit");
+    }
+
+    private static ResourceLocation blueprint(MachineDef def) {
+        return id(def.name + "_blueprint");
     }
 
     private static List<ResourceLocation> euvBlocks() {
@@ -55,11 +60,17 @@ public final class FcwPonderPlugin implements PonderPlugin {
             if (def == Machines.EUV_SCANNER) {
                 continue;
             }
-            helper.forComponents(kit(def))
-                    .addStoryBoard(def.name, MachineScenes.kit(def), TAG)
+            helper.forComponents(blueprint(def), kit(def))
+                    .addStoryBoard(def.name, MachineScenes.build(def), TAG)
                     .addStoryBoard(def.name, MachineScenes.ports(def), TAG)
                     .addStoryBoard(DocStructures.CHAIN, MachineScenes::chain, TAG);
         }
+        helper.forComponents(blueprint(Machines.EUV_SCANNER))
+                .addStoryBoard(Machines.EUV, MachineScenes.build(Machines.EUV_SCANNER), TAG)
+                .addStoryBoard(Machines.EUV, MachineScenes.ports(Machines.EUV_SCANNER), TAG)
+                .addStoryBoard(DocStructures.CHAIN, MachineScenes::chain, TAG);
+        helper.forComponents(id("wrench"))
+                .addStoryBoard(Machines.ARC_FURNACE.name, MachineScenes.build(Machines.ARC_FURNACE), TAG);
         helper.forComponents(euvBlocks())
                 .addStoryBoard(DocStructures.EUV_BLANK, MachineScenes::euvBuild, TAG)
                 .addStoryBoard(Machines.EUV, MachineScenes.ports(Machines.EUV_SCANNER), TAG)
@@ -76,10 +87,9 @@ public final class FcwPonderPlugin implements PonderPlugin {
                 .register();
         var tag = helper.addToTag(TAG);
         for (MachineDef def : Machines.ALL.values()) {
-            if (def != Machines.EUV_SCANNER) {
-                tag.add(kit(def));
-            }
+            tag.add(blueprint(def));
         }
+        tag.add(id("wrench"));
         tag.add(id("euv_controller"));
     }
 

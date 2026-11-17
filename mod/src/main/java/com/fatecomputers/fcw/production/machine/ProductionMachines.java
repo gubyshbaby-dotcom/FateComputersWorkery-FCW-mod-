@@ -138,6 +138,7 @@ public final class ProductionMachines {
         NeoForge.EVENT_BUS.addListener(ProductionMachines::onRightClickBlock);
         PARTICLES.register(modBus);
         RECIPE_SERIALIZERS.register(modBus);
+        com.fatecomputers.fcw.production.quality.Quality.register(modBus);
         modBus.addListener(ProductionMachines::registerCapabilities);
         NeoForge.EVENT_BUS.addListener((RegisterCommandsEvent e) -> MachineCommands.register(e.getDispatcher()));
         if (net.neoforged.fml.ModList.get().isLoaded("ae2")) {

@@ -33,6 +33,7 @@ public final class ProductionClient {
         MachineClientHooks.setConsole(MachineConsoleScreen::handle);
         MachineClientHooks.setNotice(MachineHud::notice);
         NeoForge.EVENT_BUS.addListener(MachineHud::onHighlight);
+        NeoForge.EVENT_BUS.addListener(QualityTooltips::onTooltip);
     }
 
     private static void onRegisterLayers(RegisterGuiLayersEvent event) {
