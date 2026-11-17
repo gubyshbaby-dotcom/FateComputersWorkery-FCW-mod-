@@ -99,6 +99,14 @@ dependencies {
         }
     }
     additionalRuntimeClasspath "com.google.protobuf:protobuf-java:${protobuf_version}"
+
+    // Applied Energistics 2 is optional: machines can draw their power from an ME network
+    // (production/machine/compat/ae2). Only the API is compiled against; the mod itself joins
+    // the dev runs with ./gradlew runClient -Pfcw.withAe2 (GuideME comes with it).
+    compileOnly "org.appliedenergistics:appliedenergistics2:${ae2_version}:api"
+    if (project.hasProperty('fcw.withAe2')) {
+        runtimeOnly "org.appliedenergistics:appliedenergistics2:${ae2_version}"
+    }
 }
 
 // ---------------------------------------------------------------- natives

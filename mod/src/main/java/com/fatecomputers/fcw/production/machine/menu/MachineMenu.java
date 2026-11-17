@@ -42,6 +42,7 @@ public class MachineMenu extends AbstractContainerMenu {
     private final MachineControllerBlockEntity machine;
     private final ContainerData data;
     private final int machineSlots;
+    private final net.minecraft.world.level.Level level;
 
     /** Client constructor (extra data = controller position and machine name). */
     public MachineMenu(int containerId, Inventory playerInventory, RegistryFriendlyByteBuf buf) {
@@ -58,6 +59,7 @@ public class MachineMenu extends AbstractContainerMenu {
         this.pos = pos;
         this.def = def;
         this.machine = machine;
+        this.level = playerInventory.player.level();
         int total = 0;
         for (Section s : def.spec.sections()) {
             total += s.slots();
@@ -70,10 +72,10 @@ public class MachineMenu extends AbstractContainerMenu {
             int y = sectionY(i) + 12;
             int cols = inputColumns(s);
             for (int k = 0; k < s.inputs(); k++) {
-                addSlot(new SlotItemHandler(items, index++, INPUT_X + (k % cols) * 18, y + (k / cols) * 18));
+                addSlot(new FilteredSlot(items, index++, INPUT_X + (k % cols) * 18, y + (k / cols) * 18));
             }
             if (s.catalyst()) {
-                addSlot(new SlotItemHandler(items, index++, CATALYST_X, y + 9));
+                addSlot(new FilteredSlot(items, index++, CATALYST_X, y + 9));
             }
             for (int k = 0; k < s.outputs(); k++) {
                 addSlot(new OutputSlot(items, index++, OUTPUT_X + (k % 2) * 18, y + (k / 2) * 18));
@@ -176,6 +178,21 @@ public class MachineMenu extends AbstractContainerMenu {
         }
         slot.onTake(player, stack);
         return original;
+    }
+
+    /** Input and catalyst slots take only what the recipes of their section use (so shift-click finds the right slot). */
+    private class FilteredSlot extends SlotItemHandler {
+        private final int index;
+
+        FilteredSlot(IItemHandler handler, int index, int x, int y) {
+            super(handler, index, x, y);
+            this.index = index;
+        }
+
+        @Override
+        public boolean mayPlace(ItemStack stack) {
+            return MachineControllerBlockEntity.accepts(level, def, index, stack);
+        }
     }
 
     private static class OutputSlot extends SlotItemHandler {

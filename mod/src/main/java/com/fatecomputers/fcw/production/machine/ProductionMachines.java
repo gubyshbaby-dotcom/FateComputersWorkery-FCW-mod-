@@ -119,6 +119,9 @@ public final class ProductionMachines {
         PARTICLES.register(modBus);
         modBus.addListener(ProductionMachines::registerCapabilities);
         NeoForge.EVENT_BUS.addListener((RegisterCommandsEvent e) -> MachineCommands.register(e.getDispatcher()));
+        if (net.neoforged.fml.ModList.get().isLoaded("ae2")) {
+            com.fatecomputers.fcw.production.machine.compat.ae2.Ae2Compat.init(modBus);
+        }
         ModItems.TAB_ORDER.addAll(TAB_ITEMS);
     }
 
@@ -168,7 +171,7 @@ public final class ProductionMachines {
         return kit != null ? new ItemStack(kit.get()) : new ItemStack(EUV_BLOCKS.get("euv_controller").get());
     }
 
-    private static Block[] cellBlocks() {
+    public static Block[] cellBlocks() {
         List<Block> list = new ArrayList<>();
         PARTS.values().forEach(b -> list.add(b.get()));
         HATCHES.values().forEach(b -> list.add(b.get()));
