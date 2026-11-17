@@ -5,27 +5,25 @@
       "item": "fcw:euv_wafer_stage"
     }
   ],
-  "type": "minecraft:crafting_shaped",
+  "type": "minecraft:crafting_shapeless",
   "category": "building",
-  "pattern": [
-    "QQQ",
-    "PRP",
-    "SSS"
-  ],
-  "key": {
-    "Q": {
-      "item": "minecraft:smooth_quartz"
+  "ingredients": [
+    {
+      "item": "fcw:precision_stage"
     },
-    "P": {
-      "item": "minecraft:piston"
+    {
+      "item": "fcw:granite_plate"
     },
-    "R": {
-      "item": "minecraft:redstone"
+    {
+      "item": "fcw:granite_plate"
     },
-    "S": {
-      "tag": "c:ingots/steel"
+    {
+      "item": "fcw:steel_plate"
+    },
+    {
+      "item": "fcw:steel_plate"
     }
-  },
+  ],
   "result": {
     "id": "fcw:euv_wafer_stage",
     "count": 4

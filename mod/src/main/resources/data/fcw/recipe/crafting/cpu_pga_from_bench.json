@@ -1,0 +1,13 @@
+{
+  "type": "fcw:legacy_chip",
+  "chip": {
+    "item": "fcw:cpu_qfp"
+  },
+  "result": {
+    "id": "fcw:cpu_pga",
+    "count": 1
+  },
+  "extra": {
+    "item": "minecraft:gold_ingot"
+  }
+}

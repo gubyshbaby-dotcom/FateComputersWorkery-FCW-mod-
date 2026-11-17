@@ -1,0 +1,28 @@
+{
+  "type": "minecraft:crafting_shapeless",
+  "category": "misc",
+  "ingredients": [
+    {
+      "item": "fcw:copper_coil"
+    },
+    {
+      "item": "fcw:copper_coil"
+    },
+    {
+      "item": "minecraft:iron_ingot"
+    },
+    {
+      "item": "fcw:iron_plate"
+    },
+    {
+      "item": "minecraft:redstone"
+    },
+    {
+      "item": "minecraft:redstone"
+    }
+  ],
+  "result": {
+    "id": "fcw:electric_motor",
+    "count": 1
+  }
+}

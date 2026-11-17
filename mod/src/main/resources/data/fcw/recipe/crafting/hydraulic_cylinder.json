@@ -1,0 +1,22 @@
+{
+  "type": "minecraft:crafting_shapeless",
+  "category": "misc",
+  "ingredients": [
+    {
+      "item": "minecraft:piston"
+    },
+    {
+      "item": "fcw:iron_plate"
+    },
+    {
+      "item": "fcw:iron_plate"
+    },
+    {
+      "item": "fcw:copper_pipe"
+    }
+  ],
+  "result": {
+    "id": "fcw:hydraulic_cylinder",
+    "count": 1
+  }
+}

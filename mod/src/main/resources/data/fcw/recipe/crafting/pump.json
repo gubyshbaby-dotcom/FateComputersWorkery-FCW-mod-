@@ -1,0 +1,25 @@
+{
+  "type": "minecraft:crafting_shapeless",
+  "category": "misc",
+  "ingredients": [
+    {
+      "item": "fcw:electric_motor"
+    },
+    {
+      "item": "fcw:copper_pipe"
+    },
+    {
+      "item": "fcw:copper_pipe"
+    },
+    {
+      "item": "fcw:iron_plate"
+    },
+    {
+      "item": "fcw:iron_plate"
+    }
+  ],
+  "result": {
+    "id": "fcw:pump",
+    "count": 1
+  }
+}

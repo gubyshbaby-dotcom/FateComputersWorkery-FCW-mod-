@@ -6,6 +6,9 @@ import com.fatecomputers.fcw.production.machine.MachineDef;
 import com.fatecomputers.fcw.production.machine.MachineSpec.Role;
 import com.fatecomputers.fcw.production.machine.MachineSpec.Zone;
 import com.fatecomputers.fcw.production.machine.block.MachineCellBlock;
+import com.fatecomputers.fcw.production.machine.construction.ConstructionPlan;
+import com.fatecomputers.fcw.production.machine.construction.ConstructionScaffoldBlock;
+import com.fatecomputers.fcw.production.machine.construction.ConstructionSite;
 import com.mojang.blaze3d.vertex.PoseStack;
 import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.Minecraft;
@@ -75,8 +78,13 @@ public final class MachineHud {
         if (notice != null && System.currentTimeMillis() < noticeUntil) {
             line = notice;
         } else if (FcwConfig.CLIENT.machineHints.get()) {
-            Target t = target(mc);
-            line = t == null ? null : hint(mc, t);
+            MachineControllerBlockEntity site = siteAt(mc);
+            if (site != null) {
+                line = siteHint(mc, site);
+            } else {
+                Target t = target(mc);
+                line = t == null ? null : hint(mc, t);
+            }
         }
         if (line != null) {
             int w = mc.font.width(line);
@@ -84,6 +92,51 @@ public final class MachineHud {
             g.fill(x - 3, y - 2, x + w + 3, y + 10, 0x80000000);
             g.drawString(mc.font, line, x, y, 0xFFFFFF, false);
         }
+    }
+
+    /** The site whose pallet, scaffolding or half-built cell the player aims at. */
+    @Nullable
+    private static MachineControllerBlockEntity siteAt(Minecraft mc) {
+        if (mc.level == null || mc.player == null || !(mc.hitResult instanceof BlockHitResult hit) || hit.getType() != HitResult.Type.BLOCK) {
+            return null;
+        }
+        BlockState state = mc.level.getBlockState(hit.getBlockPos());
+        MachineControllerBlockEntity be = null;
+        if (state.getBlock() instanceof ConstructionScaffoldBlock) {
+            be = ConstructionScaffoldBlock.controller(mc.level, hit.getBlockPos(), state);
+        } else if (state.getBlock() instanceof MachineCellBlock block) {
+            be = block.controller(mc.level, hit.getBlockPos(), state);
+        }
+        return be != null && be.site() != null ? be : null;
+    }
+
+    /** "Arc furnace, stage 2/5 "Hearth and lining": lining 12/36, cooling panel 0/8". */
+    private static Component siteHint(Minecraft mc, MachineControllerBlockEntity be) {
+        ConstructionSite site = be.site();
+        ConstructionPlan plan = site.plan();
+        int index = Math.max(0, Math.min(site.stage(), plan.stages.size() - 1));
+        ConstructionPlan.Stage stage = plan.stages.get(index);
+        MutableComponent line = Component.translatable("interact.fcw.site.line", Component.translatable("machine.fcw." + be.def().name),
+                index + 1, plan.stages.size(), stage.title(mc.getLanguageManager().getSelected()));
+        if (site.mode() == ConstructionSite.Mode.TEARDOWN) {
+            line.append(": ").append(Component.translatable("interact.fcw.site.teardown_progress", (int) Math.round(site.stageProgress() * 100)));
+        } else if (site.started()) {
+            line.append(": ").append(Component.translatable(site.waitingPower() ? "interact.fcw.site.no_power" : "interact.fcw.site.progress",
+                    (int) Math.round(site.stageProgress() * 100)));
+        } else {
+            line.append(": ");
+            int shown = 0;
+            for (int e = 0; e < stage.entries().size() && shown < 3; e++) {
+                int need = stage.entries().get(e).need(), have = site.have(index, e);
+                if (have < need) {
+                    line.append(shown++ > 0 ? ", " : "").append(stage.entries().get(e).item().getDescription()).append(" " + have + "/" + need);
+                }
+            }
+        }
+        if (site.wants(mc.player.getMainHandItem())) {
+            line.append("  ·  ").append(Component.translatable("interact.fcw.put"));
+        }
+        return line;
     }
 
     @Nullable
@@ -149,6 +202,21 @@ public final class MachineHud {
     /** The outline of the aimed block: white instead of the dark vanilla one when the item in the hand belongs there. */
     public static void onHighlight(RenderHighlightEvent.Block event) {
         Minecraft mc = Minecraft.getInstance();
+        MachineControllerBlockEntity site = siteAt(mc);
+        if (site != null) {
+            // a component the site still needs: white outline on whatever part of the site is aimed at
+            if (mc.player != null && site.site().wants(mc.player.getMainHandItem())) {
+                BlockPos p = event.getTarget().getBlockPos();
+                VoxelShape s = mc.level.getBlockState(p).getShape(mc.level, p);
+                Vec3 c = event.getCamera().getPosition();
+                for (AABB box : s.toAabbs()) {
+                    LevelRenderer.renderLineBox(event.getPoseStack(), event.getMultiBufferSource().getBuffer(RenderType.lines()),
+                            box.move(p.getX() - c.x, p.getY() - c.y, p.getZ() - c.z).inflate(0.002), 1f, 1f, 1f, 0.9f);
+                }
+                event.setCanceled(true);
+            }
+            return;
+        }
         Target t = target(mc);
         if (t == null || !t.pos.equals(event.getTarget().getBlockPos())) {
             return;

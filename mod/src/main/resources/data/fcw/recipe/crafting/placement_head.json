@@ -1,0 +1,19 @@
+{
+  "type": "minecraft:crafting_shapeless",
+  "category": "misc",
+  "ingredients": [
+    {
+      "item": "fcw:linear_stage"
+    },
+    {
+      "item": "fcw:cpu_qfp"
+    },
+    {
+      "item": "minecraft:hopper"
+    }
+  ],
+  "result": {
+    "id": "fcw:placement_head",
+    "count": 1
+  }
+}

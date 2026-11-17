@@ -5,23 +5,15 @@
       "item": "fcw:euv_vacuum_chamber"
     }
   ],
-  "type": "minecraft:crafting_shaped",
+  "type": "minecraft:crafting_shapeless",
   "category": "building",
-  "pattern": [
-    "SOS",
-    "O O",
-    "SOS"
-  ],
-  "key": {
-    "S": {
-      "tag": "c:ingots/steel"
-    },
-    "O": {
-      "item": "minecraft:obsidian"
+  "ingredients": [
+    {
+      "item": "fcw:vacuum_chamber_section"
     }
-  },
+  ],
   "result": {
     "id": "fcw:euv_vacuum_chamber",
-    "count": 4
+    "count": 1
   }
 }

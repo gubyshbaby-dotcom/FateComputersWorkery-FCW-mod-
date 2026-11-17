@@ -5,30 +5,22 @@
       "item": "fcw:euv_load_port"
     }
   ],
-  "type": "minecraft:crafting_shaped",
+  "type": "minecraft:crafting_shapeless",
   "category": "building",
-  "pattern": [
-    "SGS",
-    "HCH",
-    "SRS"
-  ],
-  "key": {
-    "S": {
-      "tag": "c:ingots/steel"
-    },
-    "G": {
-      "item": "minecraft:glass_pane"
-    },
-    "H": {
-      "item": "minecraft:hopper"
-    },
-    "C": {
+  "ingredients": [
+    {
       "item": "fcw:euv_casing"
     },
-    "R": {
-      "item": "minecraft:redstone"
+    {
+      "item": "minecraft:hopper"
+    },
+    {
+      "item": "fcw:electric_motor"
+    },
+    {
+      "item": "minecraft:tinted_glass"
     }
-  },
+  ],
   "result": {
     "id": "fcw:euv_load_port",
     "count": 1

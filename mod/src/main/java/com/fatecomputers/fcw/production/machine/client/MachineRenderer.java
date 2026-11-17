@@ -88,6 +88,12 @@ public class MachineRenderer implements BlockEntityRenderer<MachineControllerBlo
         pose.translate(o.getX() + 0.5, o.getY(), o.getZ() + 0.5);
         pose.mulPose(Axis.YP.rotationDegrees(MachineDef.yRotation(facing)));
         pose.translate(-0.5, 0, -0.5);
+        if (be.site() != null) {
+            // a construction site: no mechanisms yet, only the pallet's readout, lamp and the ground marking
+            MachineStatusRenderer.render(be, pose, buffers);
+            pose.popPose();
+            return;
+        }
 
         for (MachineDef.Dyn dyn : def.dynamic.values()) {
             if (dyn.moving()) {

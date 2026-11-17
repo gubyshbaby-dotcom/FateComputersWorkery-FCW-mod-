@@ -12,7 +12,10 @@
       "item": "fcw:euv_casing"
     },
     {
-      "item": "minecraft:cauldron"
+      "item": "fcw:copper_pipe"
+    },
+    {
+      "item": "fcw:copper_pipe"
     }
   ],
   "result": {

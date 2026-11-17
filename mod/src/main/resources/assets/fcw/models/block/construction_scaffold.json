@@ -1,0 +1,5 @@
+{
+  "credit": "temporary: vanilla scaffolding until the artist's archive 16",
+  "parent": "minecraft:block/scaffolding_stable",
+  "render_type": "minecraft:cutout"
+}

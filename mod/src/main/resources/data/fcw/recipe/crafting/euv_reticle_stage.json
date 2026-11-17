@@ -5,27 +5,22 @@
       "item": "fcw:euv_reticle_stage"
     }
   ],
-  "type": "minecraft:crafting_shaped",
+  "type": "minecraft:crafting_shapeless",
   "category": "building",
-  "pattern": [
-    "SSS",
-    "PRP",
-    "GGG"
-  ],
-  "key": {
-    "S": {
-      "tag": "c:ingots/steel"
+  "ingredients": [
+    {
+      "item": "fcw:precision_stage"
     },
-    "P": {
-      "item": "minecraft:piston"
+    {
+      "item": "fcw:steel_plate"
     },
-    "R": {
-      "item": "minecraft:redstone"
+    {
+      "item": "fcw:steel_plate"
     },
-    "G": {
-      "item": "minecraft:glass_pane"
+    {
+      "item": "minecraft:tinted_glass"
     }
-  },
+  ],
   "result": {
     "id": "fcw:euv_reticle_stage",
     "count": 3

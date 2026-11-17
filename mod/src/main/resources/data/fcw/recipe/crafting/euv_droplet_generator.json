@@ -5,30 +5,28 @@
       "item": "fcw:euv_droplet_generator"
     }
   ],
-  "type": "minecraft:crafting_shaped",
+  "type": "minecraft:crafting_shapeless",
   "category": "building",
-  "pattern": [
-    "SHS",
-    "KDK",
-    "SCS"
-  ],
-  "key": {
-    "S": {
-      "tag": "c:ingots/steel"
+  "ingredients": [
+    {
+      "item": "fcw:pump"
     },
-    "H": {
+    {
       "item": "minecraft:hopper"
     },
-    "K": {
-      "item": "minecraft:copper_ingot"
+    {
+      "item": "fcw:copper_pipe"
     },
-    "D": {
-      "item": "minecraft:dispenser"
+    {
+      "item": "fcw:copper_pipe"
     },
-    "C": {
+    {
       "item": "fcw:euv_casing"
+    },
+    {
+      "item": "fcw:chip_controller"
     }
-  },
+  ],
   "result": {
     "id": "fcw:euv_droplet_generator",
     "count": 1

@@ -1,0 +1,30 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "pattern": [
+    "SKS",
+    "MBM",
+    "CKC"
+  ],
+  "key": {
+    "S": {
+      "item": "fcw:steel_plate"
+    },
+    "K": {
+      "item": "fcw:cpu_pga"
+    },
+    "M": {
+      "item": "fcw:chip_memory"
+    },
+    "B": {
+      "item": "fcw:motherboard"
+    },
+    "C": {
+      "item": "fcw:chip_controller"
+    }
+  },
+  "result": {
+    "id": "fcw:control_cabinet_3",
+    "count": 1
+  }
+}

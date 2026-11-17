@@ -1,5 +1,7 @@
 package com.fatecomputers.fcw.production.machine.euv;
 
+import com.fatecomputers.fcw.production.ProductionDifficulty;
+import com.fatecomputers.fcw.production.machine.MachineControllerBlockEntity;
 import com.fatecomputers.fcw.production.machine.MachineDef;
 import com.fatecomputers.fcw.production.machine.MachineStructure;
 import com.fatecomputers.fcw.production.machine.Machines;
@@ -75,6 +77,11 @@ public class EuvControllerBlock extends EuvKitBlock {
             return InteractionResult.CONSUME;
         }
         MachineStructure.place(level, origin, facing, def);
+        // laid out by hand: only the last step of a build is left, the commissioning (ten minutes on "engineer")
+        if (level.getBlockEntity(def.controllerPos(origin, facing)) instanceof MachineControllerBlockEntity machine) {
+            machine.beginCommissioning(ProductionDifficulty.current().stageTicks(600));
+            machine.machineName();
+        }
         level.playSound(null, pos, SoundEvents.BEACON_ACTIVATE, SoundSource.BLOCKS, 1.0f, 1.0f);
         player.displayClientMessage(Component.translatable("message.fcw.euv.assembled").withStyle(ChatFormatting.GREEN), false);
         return InteractionResult.CONSUME;

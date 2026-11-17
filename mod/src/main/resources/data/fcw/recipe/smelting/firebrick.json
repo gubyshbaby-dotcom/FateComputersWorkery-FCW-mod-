@@ -1,0 +1,12 @@
+{
+  "type": "minecraft:smelting",
+  "category": "misc",
+  "ingredient": {
+    "item": "fcw:fireclay"
+  },
+  "result": {
+    "id": "fcw:firebrick"
+  },
+  "experience": 0.1,
+  "cookingtime": 200
+}

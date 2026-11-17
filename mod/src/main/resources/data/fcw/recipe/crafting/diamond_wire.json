@@ -1,0 +1,37 @@
+{
+  "type": "minecraft:crafting_shapeless",
+  "category": "misc",
+  "ingredients": [
+    {
+      "item": "fcw:steel_wire"
+    },
+    {
+      "item": "fcw:steel_wire"
+    },
+    {
+      "item": "fcw:steel_wire"
+    },
+    {
+      "item": "fcw:steel_wire"
+    },
+    {
+      "item": "fcw:steel_wire"
+    },
+    {
+      "item": "fcw:steel_wire"
+    },
+    {
+      "item": "fcw:steel_wire"
+    },
+    {
+      "item": "fcw:steel_wire"
+    },
+    {
+      "item": "minecraft:diamond"
+    }
+  ],
+  "result": {
+    "id": "fcw:diamond_wire",
+    "count": 1
+  }
+}

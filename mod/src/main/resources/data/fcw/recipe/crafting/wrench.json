@@ -1,0 +1,20 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "pattern": [
+    "P P",
+    " I "
+  ],
+  "key": {
+    "P": {
+      "item": "fcw:steel_plate"
+    },
+    "I": {
+      "item": "minecraft:iron_ingot"
+    }
+  },
+  "result": {
+    "id": "fcw:wrench",
+    "count": 1
+  }
+}

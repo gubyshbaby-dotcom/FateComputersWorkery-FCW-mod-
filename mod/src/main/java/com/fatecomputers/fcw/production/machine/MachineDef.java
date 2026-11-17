@@ -158,7 +158,9 @@ public final class MachineDef {
             JsonObject d = e.getValue().getAsJsonObject();
             Map<MachineState, ResourceLocation> models = new EnumMap<>(MachineState.class);
             for (MachineState s : MachineState.values()) {
-                models.put(s, ResourceLocation.parse(d.getAsJsonObject("models").get(s.getSerializedName()).getAsString()));
+                // the pallet state has no models of its own: the machine is not there yet
+                String key = s == MachineState.SITE ? "off" : s.getSerializedName();
+                models.put(s, ResourceLocation.parse(d.getAsJsonObject("models").get(key).getAsString()));
             }
             JsonArray an = d.getAsJsonArray("anchor");
             dynamic.put(e.getKey(), new Dyn(e.getKey(), d.get("kind").getAsString().equals("moving"), models,

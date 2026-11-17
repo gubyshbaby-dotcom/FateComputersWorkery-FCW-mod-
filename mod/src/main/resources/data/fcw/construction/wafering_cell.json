@@ -1,0 +1,88 @@
+{
+  "stages": [
+    {
+      "id": "frame",
+      "ru": "Рама и плита",
+      "en": "Frame and plate",
+      "seconds": 120,
+      "items": [
+        {
+          "item": "fcw:steel_frame",
+          "count": 8
+        },
+        {
+          "item": "fcw:steel_plate",
+          "count": 12
+        },
+        {
+          "item": "fcw:granite_plate",
+          "count": 6
+        }
+      ]
+    },
+    {
+      "id": "saw",
+      "ru": "Пила",
+      "en": "Saw",
+      "seconds": 120,
+      "items": [
+        {
+          "item": "fcw:diamond_wire",
+          "count": 8
+        },
+        {
+          "item": "fcw:diamond_blade",
+          "count": 2
+        },
+        {
+          "item": "fcw:linear_stage",
+          "count": 3
+        },
+        {
+          "item": "fcw:electric_motor",
+          "count": 4
+        }
+      ]
+    },
+    {
+      "id": "polish",
+      "ru": "Полировка и вода",
+      "en": "Polishing and water",
+      "seconds": 90,
+      "items": [
+        {
+          "item": "fcw:polishing_head",
+          "count": 3
+        },
+        {
+          "item": "fcw:pump",
+          "count": 2
+        },
+        {
+          "item": "fcw:copper_pipe",
+          "count": 8
+        }
+      ]
+    },
+    {
+      "id": "casing",
+      "ru": "Обшивка и пульт",
+      "en": "Casing and terminal",
+      "seconds": 90,
+      "items": [
+        {
+          "item": "fcw:enclosure_panel",
+          "count": 16
+        },
+        {
+          "item": "minecraft:tinted_glass",
+          "count": 8
+        },
+        {
+          "item": "fcw:control_cabinet_2",
+          "count": 1
+        }
+      ]
+    }
+  ]
+}

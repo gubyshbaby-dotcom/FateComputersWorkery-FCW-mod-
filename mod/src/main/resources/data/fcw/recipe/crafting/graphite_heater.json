@@ -1,0 +1,21 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "pattern": [
+    "GBG",
+    "GBG",
+    "G G"
+  ],
+  "key": {
+    "G": {
+      "item": "fcw:graphite"
+    },
+    "B": {
+      "item": "fcw:copper_bar"
+    }
+  },
+  "result": {
+    "id": "fcw:graphite_heater",
+    "count": 1
+  }
+}

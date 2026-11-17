@@ -1,0 +1,21 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "pattern": [
+    "PBP",
+    "B B",
+    "PBP"
+  ],
+  "key": {
+    "P": {
+      "item": "fcw:iron_plate"
+    },
+    "B": {
+      "item": "minecraft:iron_bars"
+    }
+  },
+  "result": {
+    "id": "fcw:iron_frame",
+    "count": 2
+  }
+}

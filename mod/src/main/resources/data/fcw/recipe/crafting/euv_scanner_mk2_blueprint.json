@@ -1,0 +1,34 @@
+{
+  "neoforge:conditions": [
+    {
+      "type": "neoforge:item_exists",
+      "item": "fcw:euv_scanner_mk2_blueprint"
+    }
+  ],
+  "type": "minecraft:crafting_shapeless",
+  "category": "misc",
+  "ingredients": [
+    {
+      "item": "minecraft:paper"
+    },
+    {
+      "item": "minecraft:paper"
+    },
+    {
+      "item": "minecraft:paper"
+    },
+    {
+      "item": "minecraft:paper"
+    },
+    {
+      "item": "minecraft:blue_dye"
+    },
+    {
+      "item": "fcw:cpu_qfp"
+    }
+  ],
+  "result": {
+    "id": "fcw:euv_scanner_mk2_blueprint",
+    "count": 1
+  }
+}

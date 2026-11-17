@@ -1,0 +1,176 @@
+{
+  "components": [
+    {
+      "id": "iron_plate",
+      "stack": 64
+    },
+    {
+      "id": "steel_plate",
+      "stack": 64
+    },
+    {
+      "id": "iron_frame",
+      "stack": 64
+    },
+    {
+      "id": "steel_frame",
+      "stack": 64
+    },
+    {
+      "id": "enclosure_panel",
+      "stack": 64
+    },
+    {
+      "id": "granite_plate_blank",
+      "stack": 64
+    },
+    {
+      "id": "granite_plate",
+      "stack": 64
+    },
+    {
+      "id": "fireclay",
+      "stack": 64
+    },
+    {
+      "id": "firebrick",
+      "stack": 64
+    },
+    {
+      "id": "refractory_lining",
+      "stack": 64
+    },
+    {
+      "id": "graphite",
+      "stack": 64
+    },
+    {
+      "id": "graphite_electrode",
+      "stack": 16
+    },
+    {
+      "id": "graphite_heater",
+      "stack": 16
+    },
+    {
+      "id": "crucible_blank",
+      "stack": 16
+    },
+    {
+      "id": "quartz_crucible",
+      "stack": 16
+    },
+    {
+      "id": "water_cooled_panel",
+      "stack": 64
+    },
+    {
+      "id": "oven_module",
+      "stack": 16
+    },
+    {
+      "id": "copper_bar",
+      "stack": 64
+    },
+    {
+      "id": "copper_pipe",
+      "stack": 64
+    },
+    {
+      "id": "copper_coil",
+      "stack": 64
+    },
+    {
+      "id": "furnace_transformer",
+      "stack": 16
+    },
+    {
+      "id": "electric_motor",
+      "stack": 64
+    },
+    {
+      "id": "pump",
+      "stack": 16
+    },
+    {
+      "id": "hydraulic_cylinder",
+      "stack": 16
+    },
+    {
+      "id": "pulling_head",
+      "stack": 16
+    },
+    {
+      "id": "linear_stage",
+      "stack": 16
+    },
+    {
+      "id": "conveyor_section",
+      "stack": 64
+    },
+    {
+      "id": "vacuum_chamber_section",
+      "stack": 64
+    },
+    {
+      "id": "control_cabinet_1",
+      "stack": 16
+    },
+    {
+      "id": "control_cabinet_2",
+      "stack": 16
+    },
+    {
+      "id": "control_cabinet_3",
+      "stack": 16
+    },
+    {
+      "id": "steel_wire",
+      "stack": 64
+    },
+    {
+      "id": "diamond_wire",
+      "stack": 16
+    },
+    {
+      "id": "diamond_blade",
+      "stack": 16
+    },
+    {
+      "id": "polishing_head",
+      "stack": 16
+    },
+    {
+      "id": "placement_head",
+      "stack": 16
+    },
+    {
+      "id": "bonding_head",
+      "stack": 16
+    },
+    {
+      "id": "polished_mirror_blank",
+      "stack": 16
+    },
+    {
+      "id": "multilayer_mirror",
+      "stack": 16
+    },
+    {
+      "id": "laser_module",
+      "stack": 16
+    },
+    {
+      "id": "precision_stage",
+      "stack": 16
+    },
+    {
+      "id": "turbo_pump",
+      "stack": 16
+    },
+    {
+      "id": "chiller_unit",
+      "stack": 16
+    }
+  ]
+}

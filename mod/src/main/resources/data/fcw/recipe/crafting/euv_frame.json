@@ -5,23 +5,15 @@
       "item": "fcw:euv_frame"
     }
   ],
-  "type": "minecraft:crafting_shaped",
+  "type": "minecraft:crafting_shapeless",
   "category": "building",
-  "pattern": [
-    "SVS",
-    "V V",
-    "SVS"
-  ],
-  "key": {
-    "S": {
-      "tag": "c:ingots/steel"
-    },
-    "V": {
-      "item": "minecraft:iron_bars"
+  "ingredients": [
+    {
+      "item": "fcw:steel_frame"
     }
-  },
+  ],
   "result": {
     "id": "fcw:euv_frame",
-    "count": 8
+    "count": 1
   }
 }

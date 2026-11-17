@@ -1,0 +1,144 @@
+{
+  "stages": [
+    {
+      "id": "frame",
+      "ru": "Рама и корпус",
+      "en": "Frame and casing",
+      "seconds": 600,
+      "items": [
+        {
+          "item": "fcw:euv_frame",
+          "count": 24
+        },
+        {
+          "item": "fcw:euv_casing",
+          "count": 97
+        },
+        {
+          "item": "fcw:euv_casing_vent",
+          "count": 12
+        }
+      ]
+    },
+    {
+      "id": "vacuum",
+      "ru": "Вакуумная камера",
+      "en": "Vacuum chamber",
+      "seconds": 600,
+      "items": [
+        {
+          "item": "fcw:euv_vacuum_chamber",
+          "count": 23
+        },
+        {
+          "item": "fcw:euv_vacuum_pump",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "id": "source",
+      "ru": "Драйв-лазер и источник",
+      "en": "Drive laser and source",
+      "seconds": 900,
+      "items": [
+        {
+          "item": "fcw:euv_laser_amplifier",
+          "count": 22
+        },
+        {
+          "item": "fcw:euv_droplet_generator",
+          "count": 1
+        },
+        {
+          "item": "fcw:euv_collector",
+          "count": 1
+        },
+        {
+          "item": "fcw:euv_chiller",
+          "count": 9
+        },
+        {
+          "item": "fcw:euv_power_unit",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "id": "optics",
+      "ru": "Оптика",
+      "en": "Optics",
+      "seconds": 900,
+      "items": [
+        {
+          "item": "fcw:euv_mirror",
+          "count": 22
+        }
+      ]
+    },
+    {
+      "id": "stages",
+      "ru": "Столики и загрузчик",
+      "en": "Stages and handler",
+      "seconds": 600,
+      "items": [
+        {
+          "item": "fcw:euv_wafer_stage",
+          "count": 24
+        },
+        {
+          "item": "fcw:euv_reticle_stage",
+          "count": 9
+        },
+        {
+          "item": "fcw:euv_wafer_handler",
+          "count": 13
+        },
+        {
+          "item": "fcw:euv_load_port",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "id": "glazing",
+      "ru": "Остекление, порты, пусконаладка",
+      "en": "Glazing, ports, commissioning",
+      "seconds": 600,
+      "items": [
+        {
+          "item": "fcw:euv_casing_glass",
+          "count": 29
+        },
+        {
+          "item": "fcw:euv_port_coolant",
+          "count": 2
+        },
+        {
+          "item": "fcw:euv_port_data",
+          "count": 1
+        },
+        {
+          "item": "fcw:euv_port_energy",
+          "count": 1
+        },
+        {
+          "item": "fcw:euv_port_exhaust",
+          "count": 1
+        },
+        {
+          "item": "fcw:euv_port_gas",
+          "count": 2
+        },
+        {
+          "item": "fcw:euv_port_item",
+          "count": 2
+        },
+        {
+          "item": "fcw:euv_controller",
+          "count": 1
+        }
+      ]
+    }
+  ]
+}

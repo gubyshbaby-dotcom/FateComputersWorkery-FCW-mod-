@@ -1,5 +1,7 @@
 package com.fatecomputers.fcw.production.machine;
 
+import com.fatecomputers.fcw.production.ProductionDifficulty;
+import com.fatecomputers.fcw.production.machine.construction.ConstructionPlan;
 import net.minecraft.ChatFormatting;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -15,19 +17,28 @@ import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.item.context.UseOnContext;
 import net.minecraft.world.level.Level;
 
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
- * A machine in a box. Right click on the ground puts the whole machine in front of the player, its
- * operator side towards them and centred on the clicked spot, if every cell is free; otherwise it says
- * how many blocks are in the way and shows them. Taking the machine apart gives the kit back.
+ * The blueprint of a machine ({@code <machine>_blueprint}) and, for old worlds, the machine kit
+ * ({@code <machine>_kit}). Right click on the ground lays out a construction site in front of the player,
+ * the operator side towards them and centred on the clicked spot, if every cell is free; otherwise it says
+ * how many blocks are in the way and shows them.
+ *
+ * <p>A blueprint is cheap: the price of a machine is its bill of materials, delivered to the site. A kit
+ * used to be the whole machine in a box, so nobody is robbed: its site starts with every component
+ * already delivered and builds itself.
  */
 public class MachineKitItem extends Item {
     private final MachineDef def;
+    private final boolean legacyKit;
 
-    public MachineKitItem(Properties properties, MachineDef def) {
+    public MachineKitItem(Properties properties, MachineDef def, boolean legacyKit) {
         super(properties);
         this.def = def;
+        this.legacyKit = legacyKit;
     }
 
     public MachineDef def() {
@@ -62,8 +73,12 @@ public class MachineKitItem extends Item {
             }
             return InteractionResult.FAIL;
         }
-        MachineStructure.place(level, origin, facing, def);
-        level.playSound(null, clicked, SoundEvents.ANVIL_PLACE, SoundSource.BLOCKS, 0.8f, 0.8f);
+        MachineControllerBlockEntity site = MachineStructure.placeSite(level, origin, facing, def);
+        if (site == null) {
+            return InteractionResult.FAIL;
+        }
+        site.beginConstruction(legacyKit, player.getGameProfile().getName());
+        level.playSound(null, clicked, SoundEvents.SCAFFOLDING_PLACE, SoundSource.BLOCKS, 1.0f, 0.8f);
         if (!player.getAbilities().instabuild) {
             context.getItemInHand().shrink(1);
         }
@@ -72,7 +87,41 @@ public class MachineKitItem extends Item {
 
     @Override
     public void appendHoverText(ItemStack stack, TooltipContext context, List<Component> tooltip, TooltipFlag flag) {
-        tooltip.add(Component.translatable("tooltip.fcw.machine_kit", def.sx, def.sy, def.sz).withStyle(ChatFormatting.GRAY));
-        tooltip.add(Component.translatable("tooltip.fcw.machine_kit.break").withStyle(ChatFormatting.DARK_GRAY));
+        ConstructionPlan plan = ConstructionPlan.of(def);
+        ProductionDifficulty difficulty;
+        try {
+            difficulty = ProductionDifficulty.current();
+        } catch (IllegalStateException e) {
+            return; // the server config is not there yet (main menu)
+        }
+        if (legacyKit) {
+            tooltip.add(Component.translatable("tooltip.fcw.machine_kit.legacy").withStyle(ChatFormatting.GOLD));
+        }
+        tooltip.add(Component.translatable("tooltip.fcw.blueprint.size", def.sx, def.sy, def.sz, plan.stages.size(), plan.totalNeed())
+                .withStyle(ChatFormatting.GRAY));
+        int energy = difficulty.buildEnergyPerTick();
+        int minutes = Math.max(1, plan.totalTicks() / 1200);
+        tooltip.add((energy > 0 ? Component.translatable("tooltip.fcw.blueprint.time_power", minutes, energy)
+                : Component.translatable("tooltip.fcw.blueprint.time", minutes)).withStyle(ChatFormatting.GRAY));
+        if (!flag.hasShiftDown()) {
+            tooltip.add(Component.translatable("tooltip.fcw.blueprint.shift").withStyle(ChatFormatting.DARK_GRAY));
+            return;
+        }
+        // the whole bill, summed over the stages
+        Map<Item, Integer> total = new LinkedHashMap<>();
+        for (ConstructionPlan.Stage s : plan.stages) {
+            for (ConstructionPlan.Entry e : s.entries()) {
+                total.merge(e.item(), e.need(), Integer::sum);
+            }
+        }
+        int shown = 0;
+        for (Map.Entry<Item, Integer> e : total.entrySet()) {
+            if (shown == 12) {
+                tooltip.add(Component.translatable("tooltip.fcw.blueprint.more", total.size() - shown).withStyle(ChatFormatting.DARK_GRAY));
+                break;
+            }
+            tooltip.add(Component.literal(" " + e.getValue() + " × ").append(e.getKey().getDescription()).withStyle(ChatFormatting.DARK_AQUA));
+            shown++;
+        }
     }
 }

@@ -1,0 +1,104 @@
+{
+  "stages": [
+    {
+      "id": "frame",
+      "ru": "Рама",
+      "en": "Frame",
+      "seconds": 150,
+      "items": [
+        {
+          "item": "fcw:steel_frame",
+          "count": 14
+        },
+        {
+          "item": "fcw:steel_plate",
+          "count": 20
+        }
+      ]
+    },
+    {
+      "id": "conveyor",
+      "ru": "Конвейер",
+      "en": "Conveyor",
+      "seconds": 150,
+      "items": [
+        {
+          "item": "fcw:conveyor_section",
+          "count": 14
+        },
+        {
+          "item": "fcw:electric_motor",
+          "count": 6
+        },
+        {
+          "item": "minecraft:hopper",
+          "count": 4
+        }
+      ]
+    },
+    {
+      "id": "packaging",
+      "ru": "Корпусировка",
+      "en": "Packaging",
+      "seconds": 180,
+      "items": [
+        {
+          "item": "fcw:bonding_head",
+          "count": 2
+        },
+        {
+          "item": "fcw:linear_stage",
+          "count": 2
+        },
+        {
+          "item": "fcw:pump",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "id": "assembly",
+      "ru": "Сборка плат",
+      "en": "Board assembly",
+      "seconds": 180,
+      "items": [
+        {
+          "item": "fcw:placement_head",
+          "count": 2
+        },
+        {
+          "item": "fcw:oven_module",
+          "count": 2
+        },
+        {
+          "item": "fcw:linear_stage",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "id": "casing",
+      "ru": "Обшивка, пульты, наладка",
+      "en": "Casing, terminals, set-up",
+      "seconds": 150,
+      "items": [
+        {
+          "item": "fcw:enclosure_panel",
+          "count": 30
+        },
+        {
+          "item": "minecraft:tinted_glass",
+          "count": 12
+        },
+        {
+          "item": "fcw:control_cabinet_2",
+          "count": 2
+        },
+        {
+          "item": "fcw:silicon_wafer",
+          "count": 8
+        }
+      ]
+    }
+  ]
+}

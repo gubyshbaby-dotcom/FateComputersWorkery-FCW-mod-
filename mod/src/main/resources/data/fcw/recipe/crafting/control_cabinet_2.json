@@ -1,0 +1,37 @@
+{
+  "type": "minecraft:crafting_shapeless",
+  "category": "misc",
+  "ingredients": [
+    {
+      "item": "fcw:steel_plate"
+    },
+    {
+      "item": "fcw:steel_plate"
+    },
+    {
+      "item": "fcw:steel_plate"
+    },
+    {
+      "item": "fcw:steel_plate"
+    },
+    {
+      "item": "fcw:cpu_qfp"
+    },
+    {
+      "item": "fcw:ram_simm"
+    },
+    {
+      "item": "fcw:ram_simm"
+    },
+    {
+      "item": "fcw:motherboard"
+    },
+    {
+      "item": "fcw:crt_monitor"
+    }
+  ],
+  "result": {
+    "id": "fcw:control_cabinet_2",
+    "count": 1
+  }
+}

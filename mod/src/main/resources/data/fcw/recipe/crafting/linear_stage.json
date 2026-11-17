@@ -1,0 +1,28 @@
+{
+  "type": "minecraft:crafting_shapeless",
+  "category": "misc",
+  "ingredients": [
+    {
+      "item": "fcw:electric_motor"
+    },
+    {
+      "item": "fcw:steel_plate"
+    },
+    {
+      "item": "fcw:steel_plate"
+    },
+    {
+      "item": "minecraft:rail"
+    },
+    {
+      "item": "minecraft:rail"
+    },
+    {
+      "item": "fcw:granite_plate"
+    }
+  ],
+  "result": {
+    "id": "fcw:linear_stage",
+    "count": 1
+  }
+}

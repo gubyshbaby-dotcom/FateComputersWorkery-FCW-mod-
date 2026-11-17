@@ -5,29 +5,18 @@
       "item": "fcw:euv_mirror"
     }
   ],
-  "type": "minecraft:crafting_shaped",
+  "type": "minecraft:crafting_shapeless",
   "category": "building",
-  "pattern": [
-    "PPP",
-    "WAW",
-    "SSS"
-  ],
-  "key": {
-    "P": {
-      "item": "minecraft:glass_pane"
+  "ingredients": [
+    {
+      "item": "fcw:multilayer_mirror"
     },
-    "W": {
-      "item": "fcw:silicon_wafer"
-    },
-    "A": {
-      "item": "minecraft:amethyst_shard"
-    },
-    "S": {
-      "tag": "c:ingots/steel"
+    {
+      "item": "fcw:steel_frame"
     }
-  },
+  ],
   "result": {
     "id": "fcw:euv_mirror",
-    "count": 2
+    "count": 1
   }
 }

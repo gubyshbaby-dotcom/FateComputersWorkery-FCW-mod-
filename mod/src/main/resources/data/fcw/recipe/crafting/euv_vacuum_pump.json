@@ -5,30 +5,16 @@
       "item": "fcw:euv_vacuum_pump"
     }
   ],
-  "type": "minecraft:crafting_shaped",
+  "type": "minecraft:crafting_shapeless",
   "category": "building",
-  "pattern": [
-    "SVS",
-    "PCP",
-    "SRS"
-  ],
-  "key": {
-    "S": {
-      "tag": "c:ingots/steel"
+  "ingredients": [
+    {
+      "item": "fcw:turbo_pump"
     },
-    "V": {
-      "item": "minecraft:iron_bars"
-    },
-    "P": {
-      "item": "minecraft:piston"
-    },
-    "C": {
+    {
       "item": "fcw:euv_casing"
-    },
-    "R": {
-      "item": "minecraft:redstone_block"
     }
-  },
+  ],
   "result": {
     "id": "fcw:euv_vacuum_pump",
     "count": 1

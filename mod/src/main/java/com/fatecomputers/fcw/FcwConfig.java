@@ -54,6 +54,7 @@ public final class FcwConfig {
 
         public final ModConfigSpec.BooleanValue productionRequirePower;
         public final ModConfigSpec.DoubleValue productionSpeedMultiplier;
+        public final ModConfigSpec.EnumValue<com.fatecomputers.fcw.production.ProductionDifficulty> productionDifficulty;
 
         Server(ModConfigSpec.Builder b) {
             b.comment("VM daemon (native fcw-daemon process started by the server)").push("daemon");
@@ -155,6 +156,11 @@ public final class FcwConfig {
                     .define("requirePower", false);
             productionSpeedMultiplier = b.comment("Speed of all machine recipes: 2.0 = twice as fast, 0.5 = twice as slow.")
                     .defineInRange("speedMultiplier", 1.0, 0.01, 100.0);
+            productionDifficulty = b.comment("How hard the production chain is (docs/MACHINE_CONTROL.md):",
+                            "standard = a quarter of the bills of materials and of the build time, full refund on teardown;",
+                            "engineer = the designed numbers;",
+                            "fab      = twice the build time, building always needs power, 60 % refund, no bench chips for the first scanner.")
+                    .defineEnum("difficulty", com.fatecomputers.fcw.production.ProductionDifficulty.ENGINEER);
             b.pop();
         }
     }

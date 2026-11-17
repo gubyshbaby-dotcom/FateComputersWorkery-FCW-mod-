@@ -5,30 +5,28 @@
       "item": "fcw:euv_power_unit"
     }
   ],
-  "type": "minecraft:crafting_shaped",
+  "type": "minecraft:crafting_shapeless",
   "category": "building",
-  "pattern": [
-    "SLS",
-    "RCR",
-    "SKS"
-  ],
-  "key": {
-    "S": {
-      "tag": "c:ingots/steel"
+  "ingredients": [
+    {
+      "item": "fcw:furnace_transformer"
     },
-    "L": {
-      "item": "minecraft:lightning_rod"
+    {
+      "item": "fcw:copper_bar"
     },
-    "R": {
-      "item": "minecraft:redstone_block"
+    {
+      "item": "fcw:copper_bar"
     },
-    "C": {
+    {
+      "item": "fcw:copper_bar"
+    },
+    {
+      "item": "fcw:copper_bar"
+    },
+    {
       "item": "fcw:euv_casing"
-    },
-    "K": {
-      "item": "minecraft:copper_block"
     }
-  },
+  ],
   "result": {
     "id": "fcw:euv_power_unit",
     "count": 1

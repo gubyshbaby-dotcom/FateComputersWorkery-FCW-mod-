@@ -1,0 +1,10 @@
+{
+  "type": "fcw:legacy_chip",
+  "chip": {
+    "item": "fcw:cpu_qfp"
+  },
+  "result": {
+    "id": "fcw:chip_controller",
+    "count": 1
+  }
+}
