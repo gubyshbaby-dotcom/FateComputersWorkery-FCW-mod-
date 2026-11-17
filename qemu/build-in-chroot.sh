@@ -40,5 +40,5 @@ mount --bind "$HERE" "$ROOT/src"
 
 env_args=(PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME=/root OUT=/out WORK=/build
           QEMU_VERSION="${QEMU_VERSION:-11.1.3}")
-for v in HTTPS_PROXY https_proxy JOBS; do [[ -n "${!v:-}" ]] && env_args+=("$v=${!v}"); done
+for v in HTTPS_PROXY https_proxy JOBS REUSE_BUILD; do [[ -n "${!v:-}" ]] && env_args+=("$v=${!v}"); done
 chroot "$ROOT" /usr/bin/env -i "${env_args[@]}" /bin/sh /src/build-static.sh

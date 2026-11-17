@@ -41,6 +41,8 @@ pub struct QemuInfo {
 }
 
 type FileKey = (PathBuf, Option<SystemTime>, u64);
+/// Версия QEMU (major, minor, micro).
+pub type Version = (u32, u32, u32);
 
 /// Поиск QEMU с кешем версий и ускорителей.
 pub struct QemuLocator {
@@ -58,7 +60,7 @@ pub struct QemuLocator {
     pub accel_req: Option<Accel>,
     /// Искать qemu-system-x86_64 в PATH (qemu-img ищется там всегда).
     pub search_path: bool,
-    versions: Mutex<HashMap<FileKey, Option<(u32, u32, u32)>>>,
+    versions: Mutex<HashMap<FileKey, Option<Version>>>,
     accels: Mutex<HashMap<FileKey, Accel>>,
 }
 

@@ -24,15 +24,19 @@ apk add --no-cache \
   build-base linux-headers python3 samurai pkgconf perl bash bison flex git \
   xz zstd tar curl \
   glib-dev glib-static pcre2-dev pcre2-static gettext-dev gettext-static libffi-dev \
-  pixman-dev pixman-static zlib-dev zlib-static zstd-dev zstd-static
+  pixman-dev pixman-static zlib-dev zlib-static zstd-dev zstd-static \
+  util-linux-dev util-linux-static
 
 mkdir -p "$WORK" "$OUT"
 cd "$WORK"
 TARBALL="qemu-$QEMU_VERSION.tar.xz"
 [ -s "$TARBALL" ] || curl -fL --retry 4 -o "$TARBALL" "https://download.qemu.org/$TARBALL"
 SHA256="$(sha256sum "$TARBALL" | cut -d' ' -f1)"
-rm -rf "qemu-$QEMU_VERSION"
-tar -xJf "$TARBALL"
+# REUSE_BUILD=1: продолжить прошлую сборку (только для отладки сборщика)
+if [ "${REUSE_BUILD:-0}" != 1 ] || [ ! -d "qemu-$QEMU_VERSION/build" ]; then
+  rm -rf "qemu-$QEMU_VERSION"
+  tar -xJf "$TARBALL"
+fi
 cd "qemu-$QEMU_VERSION"
 
 # Только то, что нужно демону FCW: x86_64-гость, VNC (кадры, звук, ввод),
