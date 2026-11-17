@@ -45,7 +45,8 @@ impl H264Config {
             height,
             bitrate_bps,
             max_fps,
-            gop: (max_fps * 10.0) as u32,
+            // кратно периоду временных слоёв
+            gop: ((max_fps * 10.0) as u32).next_multiple_of(8),
             temporal_layers: 3,
             threads: 1,
             frame_skip: true,
@@ -193,6 +194,27 @@ impl H264Encoder {
 
     pub fn config(&self) -> &H264Config {
         &self.cfg
+    }
+
+    /// Меняет целевой битрейт на ходу (без ключевого кадра).
+    pub fn set_bitrate(&mut self, bitrate_bps: u32) {
+        let Some(set_option) = self.vt.SetOption else { return };
+        let bitrate = bitrate_bps.clamp(64_000, 200_000_000) as c_int;
+        let mut target = sys::SBitrateInfo { iLayer: sys::SPATIAL_LAYER_ALL, iBitrate: bitrate };
+        let mut max = sys::SBitrateInfo { iLayer: sys::SPATIAL_LAYER_ALL, iBitrate: bitrate + bitrate / 4 };
+        let raise = bitrate_bps > self.cfg.bitrate_bps;
+        // SAFETY: живой кодировщик; опции — SBitrateInfo, как требует API.
+        // Предел должен оставаться не ниже цели, отсюда порядок.
+        unsafe {
+            if raise {
+                set_option(self.ptr, sys::ENCODER_OPTION_MAX_BITRATE, addr_of_mut!(max).cast::<c_void>());
+            }
+            set_option(self.ptr, sys::ENCODER_OPTION_BITRATE, addr_of_mut!(target).cast::<c_void>());
+            if !raise {
+                set_option(self.ptr, sys::ENCODER_OPTION_MAX_BITRATE, addr_of_mut!(max).cast::<c_void>());
+            }
+        }
+        self.cfg.bitrate_bps = bitrate_bps;
     }
 
     /// Следующий кадр будет ключевым (IDR).

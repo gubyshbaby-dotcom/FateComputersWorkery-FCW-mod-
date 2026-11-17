@@ -595,6 +595,9 @@ const VIDEO_BACKOFF_MAX: Duration = Duration::from_secs(300);
 /// Столько сбросов частоты (см. [`VideoState::shed`]) за то же окно — тоже
 /// повод уйти на ступень ниже: лучше все кадры похуже, чем четверть получше.
 const VIDEO_SHEDS: usize = 8;
+/// Дальний зритель подписывается на видео с такой задержкой: пусть ступень
+/// сначала выберут ближние.
+const VIDEO_FAR_DELAY: Duration = Duration::from_millis(300);
 /// Повтор подписки на видео, если кодировщика не досталось.
 const VIDEO_RETRY: Duration = Duration::from_secs(2);
 
@@ -646,6 +649,8 @@ struct GfxSender {
     lossy: HashMap<usize, u64>,
     video: Option<VideoState>,
     video_retry: Instant,
+    /// Последняя видеообласть экрана, которую видел подписчик (её id).
+    video_seen: u64,
     /// Потолок ступени видео сейчас, кбит/с (бюджет, пониженный после заторов).
     video_cap: u32,
     /// Зрителю положена ступень игрока этого хоста.
@@ -684,14 +689,15 @@ impl GfxSender {
             lossy: HashMap::new(),
             video: None,
             video_retry: now,
+            video_seen: 0,
             video_cap: 0,
-            video_local: opts.local,
+            video_local: false,
             video_restore_at: None,
             video_backoff: VIDEO_BACKOFF,
             strikes: VecDeque::new(),
             sheds: VecDeque::new(),
         };
-        s.video_cap = s.video_budget_kbps();
+        (s.video_cap, s.video_local) = s.video_base();
         s
     }
 
@@ -704,6 +710,18 @@ impl GfxSender {
         match self.rate() {
             Some(r) => (r * 8.0 / 1000.0 * VIDEO_BUDGET_SHARE) as u32,
             None => u32::MAX,
+        }
+    }
+
+    /// Ступень видео, положенная зрителю, пока канал справляется: потолок
+    /// (кбит/с) и признак ступени игрока этого хоста. Дальнему зрителю хватит
+    /// младшей ступени: ему идёт только базовый временной слой.
+    fn video_base(&self) -> (u32, bool) {
+        let cfg = &self.opts.cfg.video;
+        let budget = self.video_budget_kbps();
+        match cfg.lowest_tier() {
+            Some(low) if cfg.max_tid_for(self.opts.fps) == 0 && low <= budget => (low, false),
+            _ => (budget, self.opts.local),
         }
     }
 
@@ -781,15 +799,24 @@ impl GfxSender {
             self.drop_video(gfx);
             return;
         };
+        if self.video_seen != region.id {
+            self.video_seen = region.id;
+            let far = self.opts.cfg.video.max_tid_for(self.opts.fps) == 0;
+            if far && self.video.is_none() {
+                self.video_retry = self.video_retry.max(now + VIDEO_FAR_DELAY);
+            }
+        }
         // после понижения ступени: пора попробовать вернуть прежнюю
         if self.video_restore_at.is_some_and(|t| now >= t) && now >= self.congested_until {
             self.video_restore_at = None;
-            self.video_cap = self.video_budget_kbps();
-            self.video_local = self.opts.local;
+            (self.video_cap, self.video_local) = self.video_base();
             let cfg = self.opts.cfg.video;
             let want = if self.video_local { Some(cfg.local_kbps) } else { cfg.tier_for(self.video_cap) };
-            if self.video.as_ref().is_some_and(|v| Some(v.sub.kbps) != want) {
-                self.drop_video(gfx);
+            if let (Some(v), Some(kbps)) = (self.video.as_mut(), want) {
+                // единственный зритель кодировщика меняет битрейт на месте
+                if v.sub.kbps() != kbps && !vm.video.retarget(&mut v.sub, kbps, false) {
+                    self.drop_video(gfx);
+                }
             }
         }
         match self.video.as_ref().map(|v| v.region) {
@@ -802,13 +829,19 @@ impl GfxSender {
                 }
             }
             Some(_) => {}
-            None if now >= self.video_retry => match vm.video.subscribe(self.video_cap, self.video_local) {
-                Some(sub) => {
-                    self.unmark_region(gfx, &region);
-                    self.video = Some(VideoState { sub, region, queue: VecDeque::new(), need_key: true, shed: false });
+            None if now >= self.video_retry => {
+                // после затора больше своего потолка зритель не возьмёт
+                let limited = !self.video_local && self.video_cap < self.video_base().0;
+                let budget = if limited { self.video_cap } else { self.video_budget_kbps() };
+                match vm.video.subscribe(self.video_cap, budget, self.video_local, limited) {
+                    Some(sub) => {
+                        self.unmark_region(gfx, &region);
+                        self.video =
+                            Some(VideoState { sub, region, queue: VecDeque::new(), need_key: true, shed: false });
+                    }
+                    None => self.video_retry = now + VIDEO_RETRY,
                 }
-                None => self.video_retry = now + VIDEO_RETRY,
-            },
+            }
             None => {}
         }
     }
@@ -862,7 +895,8 @@ impl GfxSender {
     }
 
     /// Кадры видео ждут, а канал (или бюджет) не пускает.
-    fn video_backlog(&mut self, gfx: &gfx::GfxScreen, now: Instant) {
+    fn video_backlog(&mut self, vm: &Vm, now: Instant) {
+        let gfx = &vm.gfx;
         let Some(v) = self.video.as_mut() else { return };
         let recent = |q: &mut VecDeque<Instant>| {
             q.push_back(now);
@@ -889,15 +923,24 @@ impl GfxSender {
             return;
         }
         // канал не тянет эту ступень: на ступень ниже, а с младшей — на тайлы
-        let kbps = v.sub.kbps;
+        let kbps = v.sub.kbps();
         self.strikes.clear();
         self.sheds.clear();
         self.video_local = false;
         match self.opts.cfg.video.tier_below(kbps) {
-            Some(lower) => self.video_cap = lower,
-            None => self.video_retry = now + self.video_backoff,
+            Some(lower) => {
+                self.video_cap = lower;
+                // единственный зритель кодировщика снижает битрейт на месте,
+                // иначе — переподписка на ступень ниже
+                if !vm.video.retarget(&mut v.sub, lower, true) {
+                    self.drop_video(gfx);
+                }
+            }
+            None => {
+                self.video_retry = now + self.video_backoff;
+                self.drop_video(gfx);
+            }
         }
-        self.drop_video(gfx);
         self.video_restore_at = Some(now + self.video_backoff);
         self.video_backoff = (self.video_backoff * 2).min(VIDEO_BACKOFF_MAX);
     }
@@ -926,7 +969,7 @@ impl GfxSender {
                 self.congested_until = now + CONGESTED_HOLD;
             }
             if have_video && !credit_ok {
-                self.video_backlog(gfx, now);
+                self.video_backlog(vm, now);
                 have_video = false;
             }
             // Видео бюджета не ждёт: ступень выбрана так, что в бюджет укладывается,
@@ -1032,6 +1075,10 @@ impl GfxSender {
             if self.opts.frame_acks && !self.inflight.is_empty() {
                 // подстраховка от потерянного подтверждения
                 at(now + Duration::from_secs(1));
+            }
+            if self.opts.video && self.video.is_none() && self.video_retry > now && self.video_seen != 0 {
+                // отложенная подписка на видео
+                at(self.video_retry);
             }
             if let Some(v) = &self.video {
                 // видео могло стихнуть без единого изменения экрана

@@ -16,6 +16,10 @@
 //!     --rate-mbps 20 --fps 30 --quality [--no-video] [--viewers 3] [--same-host]
 //! ```
 //!
+//! Сцена `vnc` берёт картинку у настоящего QEMU по VNC (тем же кодом, что
+//! демон): `--scene vnc --vnc /tmp/anim-vnc.sock`. Гость без образа ОС —
+//! загрузочный сектор `examples/vnc_anim.asm` с анимацией на весь экран.
+//!
 //! Печатает строку таблицы: fps клиента, Мбит/с, задержка (p50/p95/max) от
 //! захвата демоном до готовности кадра у клиента, время до совпадения картинки
 //! клиента с демоном без потерь после остановки сцены, число прямоугольников
@@ -67,6 +71,8 @@ struct Opts {
     /// Сохранить кадр клиента и демона в <префикс>-client.png / -server.png.
     png: Option<String>,
     tiers: Option<String>,
+    /// Сцена vnc: Unix-сокет VNC работающего QEMU.
+    vnc: Option<String>,
     max_encoders: Option<u32>,
     video_threads: Option<u16>,
 }
@@ -96,6 +102,7 @@ fn parse() -> Opts {
         quality: false,
         png: None,
         tiers: None,
+        vnc: None,
         max_encoders: None,
         video_threads: None,
     };
@@ -121,6 +128,7 @@ fn parse() -> Opts {
             "--quality" => o.quality = true,
             "--png" => o.png = Some(v()),
             "--tiers" => o.tiers = Some(v()),
+            "--vnc" => o.vnc = Some(v()),
             "--max-encoders" => o.max_encoders = Some(v().parse().unwrap()),
             "--video-threads" => o.video_threads = Some(v().parse().unwrap()),
             other => panic!("unknown argument {other}"),
@@ -247,7 +255,7 @@ fn render(scene: &str, sin: &Sin, page: &[u8], frame: u64, seed: &mut u64, buf: 
 
 fn scene_fps(scene: &str) -> u64 {
     match scene {
-        "video" | "film" => 30,
+        "video" | "film" | "vnc" => 30,
         "scroll" => 60,
         _ => 20,
     }
@@ -368,12 +376,14 @@ async fn main() {
         assert!(data.len() >= fw * fh * 4, "raw file is smaller than one frame");
         (data, fw, fh)
     });
-    let (w, h) = match (&film, o.screen) {
+    let vnc = o.scene == "vnc";
+    let (mut w, mut h) = match (&film, o.screen) {
         (_, Some(s)) => s,
         (Some((_, fw, fh)), None) => (*fw, *fh),
         _ => (W, H),
     };
     assert!(film.is_some() || (w, h) == (W, H), "--screen only with --scene film");
+    assert!(!vnc || o.vnc.is_some(), "--vnc <socket> for --scene vnc");
     let dir = std::env::temp_dir().join(format!("fcw-bench-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     let c = cert::load_or_create(&dir).unwrap();
@@ -415,7 +425,28 @@ async fn main() {
     let (vm, _) = d
         .vm_for_create(&pb::CreateVm { vm_id: "b".into(), image_id: "x".into(), gpu: true, ..Default::default() })
         .unwrap();
-    vm.gfx.resize(w as u32, h as u32);
+    if vnc {
+        // экран ведёт настоящий QEMU: тот же клиент RFB, что в демоне
+        let gfx = vm.gfx.clone();
+        let path = std::path::PathBuf::from(o.vnc.clone().unwrap());
+        tokio::spawn(async move {
+            let (_cmd_tx, mut cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+            let (ev_tx, mut ev_rx) = tokio::sync::mpsc::unbounded_channel();
+            tokio::spawn(async move { while ev_rx.recv().await.is_some() {} });
+            let s = fcw_daemon::localsock::connect_retry(&path, Duration::from_secs(10)).await.expect("VNC socket");
+            let r = fcw_daemon::rfb::run(s, gfx, &mut cmd_rx, ev_tx, false).await;
+            eprintln!("VNC connection ended: {r:?}");
+        });
+        let t0 = Instant::now();
+        while vm.gfx.size().0 == 0 && t0.elapsed() < Duration::from_secs(15) {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        let (gw, gh) = vm.gfx.size();
+        assert!(gw > 0, "no picture from VNC");
+        (w, h) = (gw as usize, gh as usize);
+    } else {
+        vm.gfx.resize(w as u32, h as u32);
+    }
     tokio::spawn(quic::serve(d.clone(), ep.clone()));
 
     // канал
@@ -455,11 +486,13 @@ async fn main() {
 
     // начальная картинка: светлый «интерфейс»
     let sin = Sin::new();
-    let page = if film.is_some() { Vec::new() } else { web_page(&sin, 4000) };
+    let page = if film.is_some() || vnc { Vec::new() } else { web_page(&sin, 4000) };
     let mut buf = vec![0xe8u8; w * h * 4];
     let mut seed = 1u64;
-    vm.gfx.apply_rgbx(0, 0, w as u32, h as u32, &buf);
-    vm.gfx.commit();
+    if !vnc {
+        vm.gfx.apply_rgbx(0, 0, w as u32, h as u32, &buf);
+        vm.gfx.commit();
+    }
     let t0 = Instant::now();
     while view.info().width == 0 && t0.elapsed() < Duration::from_secs(10) {
         tokio::time::sleep(Duration::from_millis(20)).await;
@@ -483,6 +516,17 @@ async fn main() {
     let mut quality: Vec<f64> = Vec::new();
     let mut next_probe = Duration::from_secs(2);
     let mut encoders = 0;
+    // сцена vnc: «произведено» — число обновлений экрана от QEMU
+    let mut commits = vm.gfx.subscribe();
+    let commit_count = Arc::new(std::sync::atomic::AtomicU64::new(0));
+    if vnc {
+        let n = commit_count.clone();
+        tokio::spawn(async move {
+            while commits.changed().await.is_ok() {
+                n.fetch_add(1, Ordering::Relaxed);
+            }
+        });
+    }
     while start.elapsed() < Duration::from_secs(o.seconds) {
         tick.tick().await;
         match &film {
@@ -492,12 +536,15 @@ async fn main() {
                 let (x0, y0) = ((w - fw) / 2 / 64 * 64, (h - fh) / 2 / 64 * 64);
                 vm.gfx.apply_rgbx(x0 as u32, y0 as u32, *fw as u32, *fh as u32, src);
             }
+            None if vnc => {}
             None => {
                 render(&o.scene, &sin, &page, frame, &mut seed, &mut buf);
                 vm.gfx.apply_rgbx(0, 0, w as u32, h as u32, &buf);
             }
         }
-        vm.gfx.commit();
+        if !vnc {
+            vm.gfx.commit();
+        }
         frame += 1;
         produced += 1;
         encoders = encoders.max(fcw_daemon::video::active_encoders());
@@ -515,6 +562,9 @@ async fn main() {
             tick.reset();
         }
     }
+    if vnc {
+        produced = commit_count.load(Ordering::Relaxed);
+    }
     let elapsed = start.elapsed().as_secs_f64();
     let cpu = (cpu_seconds() - cpu0) / elapsed;
     let mut st = view.take_stats();
@@ -529,7 +579,8 @@ async fn main() {
         if srv == cli {
             break Some(stop.elapsed().as_secs_f64());
         }
-        if stop.elapsed() > Duration::from_secs(30) {
+        // настоящий гость не останавливается: сходимости не ждём
+        if vnc || stop.elapsed() > Duration::from_secs(30) {
             break None;
         }
         tokio::time::sleep(Duration::from_millis(50)).await;
@@ -552,7 +603,7 @@ async fn main() {
         )
     };
     let mut label = if o.legacy { format!("{} (было)", o.scene) } else { o.scene.clone() };
-    if film.is_some() {
+    if film.is_some() || vnc {
         label = format!("{label} {w}x{h}");
     }
     if o.no_video {
@@ -573,7 +624,7 @@ async fn main() {
         p50,
         p95,
         max,
-        converged.map(|c| format!("{c:.1} с")).unwrap_or_else(|| "нет за 30 с".into()),
+        converged.map(|c| format!("{c:.1} с")).unwrap_or_else(|| if vnc { "-" } else { "нет за 30 с" }.into()),
         max_q.map(|q| format!("{q:.0} мс")).unwrap_or_else(|| "-".into()),
         st.video_rects + tail.video_rects,
         st.jpeg_rects + tail.jpeg_rects,

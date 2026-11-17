@@ -48,9 +48,9 @@ Alacritty. Экран компьютера живой прямо на монит
 | каталог | что |
 |---|---|
 | `mod/` | мод NeoForge 1.21.1 (Java 21, Gradle, ModDevGradle), modid `fcw` |
-| `native/crates/fcw-daemon` | демон ВМ: QEMU, QMP, VNC → тайлы, текстовые экраны, QUIC, токены, ввод, звук (Opus), агент, образы |
+| `native/crates/fcw-daemon` | демон ВМ: QEMU, QMP, VNC → тайлы и видео (H.264), текстовые экраны, QUIC, токены, ввод, звук (Opus), агент, образы |
 | `native/crates/fcw-net` | сеть гостей: L2-свитч, DHCP, DNS, NAT (smoltcp), файрвол, лимиты |
-| `native/crates/fcw-client` | JNI-библиотека клиента: QUIC-сессия, виды экранов в RGBA, шрифт, GLFW → evdev, звук |
+| `native/crates/fcw-client` | JNI-библиотека клиента: QUIC-сессия, виды экранов в RGBA (тайлы, декодер H.264), шрифт, GLFW → evdev, звук |
 | `native/crates/fcw-probe` | консольный клиент для проверок без игры (скриншоты, ввод, звук, редстоун) |
 | `native/crates/fcw-agent` | агент внутри гостя (`fcw`): редстоун, информация; статический musl |
 | `images/` | сборка гостевых образов и проверка их загрузки |
@@ -211,11 +211,20 @@ allow/deny), `access.*` (радиус привязки, только владе�
 
 ## Сборка
 
-Нативная часть (Rust 1.80+, для звука нужен cmake):
+Нативная часть (Rust 1.88+; для звука нужен cmake, для видеорежима —
+компилятор C++ и, на x86, nasm):
 
 ```bash
 cargo build --release --manifest-path native/Cargo.toml
 ```
+
+Видеорежим экрана (фильмы на мониторах) использует кодек H.264 — OpenH264,
+собранный из исходников. Без nasm он собирается без ассемблера и кодирует в
+несколько раз медленнее, так что на x86 nasm лучше поставить. Собрать без
+кодека: `--no-default-features --features audio` для `fcw-daemon` и
+`fcw-client` (тогда видео идёт тайлами, как раньше). Про патенты H.264 и
+условия OpenH264 — в [`docs/CONTRACT.md`](docs/CONTRACT.md), §4, «Кодек и
+лицензия».
 
 Агент гостя:
 

@@ -355,7 +355,9 @@ async fn video_region_goes_h264_then_exact_picture() {
     let c = cert::load_or_create(&dir).unwrap();
     let ep = quic::make_endpoint("127.0.0.1:0".parse().unwrap(), &c).unwrap();
     let port = ep.local_addr().unwrap().port();
-    let screen = ScreenConfig { local_unlimited: false, ..ScreenConfig::default() };
+    // кодировщиков хватает и на младшую ступень для дальнего зрителя
+    let video = VideoConfig { max_encoders: 4, ..Default::default() };
+    let screen = ScreenConfig { local_unlimited: false, video, ..ScreenConfig::default() };
     assert!(screen.video.enabled);
     let d = daemon_with(&dir, port, &c.sha256_hex, screen);
     let (vm, _) = d
@@ -401,8 +403,9 @@ async fn video_region_goes_h264_then_exact_picture() {
     }
     let region = region.expect("video detected");
     assert_eq!((region.x, region.y, region.w, region.h), (64, 64, 384, 256));
-    // один кодировщик на трёх зрителей одной ступени
-    assert_eq!(fcw_daemon::video::active_encoders(), 1);
+    // кодировщиков два, а не по одному на зрителя: общая ступень двух ближних
+    // и младшая ступень дальнего
+    assert_eq!(fcw_daemon::video::active_encoders(), 2);
 
     // сразу после остановки: у зрителей с видео — последний кадр H.264, близкий к оригиналу
     tokio::time::sleep(Duration::from_millis(250)).await;

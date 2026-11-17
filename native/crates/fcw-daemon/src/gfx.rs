@@ -39,6 +39,13 @@ pub const HOT_WINDOW_US: u64 = 1_000_000;
 pub const SETTLE_US: u64 = 400_000;
 pub const JPEG_QUALITY: u8 = 70;
 
+/// Сколько изменившихся тайлов кадра проверять на «пёстрость» (равномерно).
+const VIDEO_SAMPLE_TILES: usize = 32;
+/// «Большое» изменение считается видео, если такая доля проверенных тайлов —
+/// «пёстрые» (больше [`BUSY_COLORS`] цветов). Поток текста в терминале или
+/// прокрутка страницы меняют весь экран, но это не видео: их тайлы
+/// малоцветные и должны идти без потерь.
+const VIDEO_BUSY_FRACTION: f32 = 0.34;
 /// Видео начинается, когда столько «больших» изменений пришло за
 /// [`VIDEO_ON_WINDOW_US`] (при 30 к/с — около 0,2 с движения).
 pub const VIDEO_ON_FRAMES: usize = 6;
@@ -61,7 +68,8 @@ pub const VIDEO_SHRINK_FRACTION: f32 = 0.6;
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct VideoDetect {
     pub enabled: bool,
-    /// «Большое» изменение: такая доля тайлов экрана за один кадр.
+    /// «Большое» изменение: такая доля тайлов экрана за один кадр (и эти
+    /// тайлы «пёстрые», как у фото и видео).
     pub min_area: f32,
 }
 
@@ -245,6 +253,27 @@ impl Inner {
         v.win_box = None;
     }
 
+    /// Похоже ли изменение на фото или видео: выборка изменившихся тайлов
+    /// в основном «пёстрая». Число цветов запоминается для [`GfxScreen::collect`].
+    fn mostly_busy(&mut self, tiles: &[usize]) -> bool {
+        let step = tiles.len().div_ceil(VIDEO_SAMPLE_TILES).max(1);
+        let (mut busy, mut n) = (0usize, 0usize);
+        for &i in tiles.iter().step_by(step) {
+            let ver = self.tile_ver[i];
+            let colors = match self.colors[i] {
+                Some((v, c)) if v == ver => c as usize,
+                _ => {
+                    let c = count_colors(&self.copy_tile(i).4, BUSY_COLORS + 1);
+                    self.colors[i] = Some((ver, c as u16));
+                    c
+                }
+            };
+            busy += (colors > BUSY_COLORS) as usize;
+            n += 1;
+        }
+        busy as f32 >= VIDEO_BUSY_FRACTION * n as f32
+    }
+
     /// Учитывает зафиксированное изменение тайлов `tiles` (см. шапку модуля).
     fn detect_video(&mut self, tiles: &[usize], now: u64) {
         if !self.video.cfg.enabled || tiles.is_empty() {
@@ -267,7 +296,7 @@ impl Inner {
             }
         }
         let bbox = bbox.expect("tiles is not empty");
-        let big = tiles.len() as f32 >= min_area * total as f32;
+        let big = tiles.len() as f32 >= min_area * total as f32 && self.mostly_busy(tiles);
         let seq = self.seq;
         let Some(rb) = region else {
             let v = &mut self.video;
@@ -368,9 +397,9 @@ pub struct EncodePolicy {
     /// кадр не попадают.
     pub skip: Option<VideoRegion>,
     /// Если в кадр попадает не меньше такой доли тайлов экрана (смена сцены,
-    /// ключевой кадр), «пёстрые» тайлы идут JPEG, как при заторе: без потерь
-    /// такой кадр — мегабайты, и канал с бюджетом встал бы на секунды.
-    /// 0 — выключено.
+    /// ключевой кадр), «пёстрые» тайлы идут JPEG, даже если меняются редко:
+    /// без потерь такой кадр — мегабайты, и канал с бюджетом встал бы на
+    /// секунды. Текст и интерфейс это не затрагивает. 0 — выключено.
     pub bulk_fraction: f32,
 }
 
@@ -682,17 +711,17 @@ impl GfxScreen {
                     let n = (0..g.tile_ver.len()).filter(|i| wanted(&taken, *i)).count();
                     n > 1 && n as f32 >= policy.bulk_fraction * g.tile_ver.len() as f32
                 };
-                let congested = policy.congested || bulk;
                 for i in 0..g.tile_ver.len() {
                     if !wanted(&taken, i) {
                         continue;
                     }
                     taken[i] = true;
                     let hot = g.hot(i, now);
-                    let lossy_above = match (policy.lossy_ok, hot, congested) {
-                        (false, _, _) | (true, false, false) => None,
+                    let lossy_above = match (policy.lossy_ok, hot, policy.congested) {
+                        (false, _, _) => None,
                         (true, true, true) => Some(HOT_COLORS),
                         (true, true, false) | (true, false, true) => Some(BUSY_COLORS),
+                        (true, false, false) => bulk.then_some(BUSY_COLORS),
                     };
                     push(&g, &mut parts, &mut jobs, i, lossy_above, false);
                 }
@@ -1036,14 +1065,31 @@ mod tests {
         assert_eq!((k.width, k.height, k.rects.len()), (128, 64, 2));
     }
 
-    /// Меняет тайлы [tx0, tx1) x [ty0, ty1) и фиксирует изменение.
+    /// Меняет тайлы [tx0, tx1) x [ty0, ty1) и фиксирует изменение: в каждом
+    /// пиксель (3, 3) цвета `v` и рядом «пёстрый» квадрат 10 x 10, как у видео.
     fn touch(s: &GfxScreen, tx0: u32, ty0: u32, tx1: u32, ty1: u32, v: u8) {
+        let noise: Vec<u8> = (0..100u8).flat_map(|i| [i, v, i ^ v, 0]).collect();
         for ty in ty0..ty1 {
             for tx in tx0..tx1 {
                 s.apply_rgbx(tx * TILE + 3, ty * TILE + 3, 1, 1, &[v, v, v, 0]);
+                s.apply_rgbx(tx * TILE + 20, ty * TILE + 20, 10, 10, &noise);
             }
         }
         s.commit();
+    }
+
+    #[test]
+    fn text_flood_is_not_video() {
+        let s = video_screen();
+        // весь экран меняется кадр за кадром, но в тайлах по два цвета (текст)
+        for v in 1..=20u8 {
+            let px: Vec<u8> = (0..640 * 480)
+                .flat_map(|i| if (i / 3 + v as usize).is_multiple_of(2) { [v; 4] } else { [0; 4] })
+                .collect();
+            s.apply_rgbx(0, 0, 640, 480, &px);
+            s.commit();
+        }
+        assert_eq!(s.video_region(), None);
     }
 
     fn video_screen() -> GfxScreen {

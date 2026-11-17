@@ -251,8 +251,10 @@ pub struct VideoDecoder {
     #[cfg(feature = "video")]
     dec: Option<openh264::decoder::Decoder>,
     /// Номер видеопотока, который сейчас декодируется.
+    #[cfg(feature = "video")]
     stream: u32,
     /// Декодер получил ключевой кадр и не ошибался.
+    #[cfg(feature = "video")]
     synced: bool,
     /// Кадр пришлось отбросить: нужен ключевой.
     need_key: bool,
