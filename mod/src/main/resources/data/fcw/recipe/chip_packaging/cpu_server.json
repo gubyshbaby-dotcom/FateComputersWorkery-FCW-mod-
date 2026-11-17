@@ -1,0 +1,37 @@
+{
+  "type": "fcw:chip_packaging",
+  "inputs": [
+    {
+      "ingredient": {
+        "item": "fcw:wafer_cpu"
+      },
+      "count": 4
+    },
+    {
+      "ingredient": {
+        "item": "minecraft:gold_ingot"
+      },
+      "count": 8
+    },
+    {
+      "ingredient": {
+        "tag": "c:ingots/steel"
+      },
+      "count": 4
+    },
+    {
+      "ingredient": {
+        "item": "minecraft:netherite_scrap"
+      },
+      "count": 2
+    }
+  ],
+  "results": [
+    {
+      "id": "fcw:cpu_server",
+      "count": 1
+    }
+  ],
+  "ticks": 2400,
+  "energy_per_tick": 768
+}

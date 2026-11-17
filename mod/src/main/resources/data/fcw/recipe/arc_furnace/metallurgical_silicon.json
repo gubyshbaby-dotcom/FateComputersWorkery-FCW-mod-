@@ -1,0 +1,25 @@
+{
+  "type": "fcw:arc_furnace",
+  "inputs": [
+    {
+      "ingredient": {
+        "item": "minecraft:quartz"
+      },
+      "count": 4
+    },
+    {
+      "ingredient": {
+        "tag": "minecraft:coals"
+      },
+      "count": 2
+    }
+  ],
+  "results": [
+    {
+      "id": "fcw:metallurgical_silicon",
+      "count": 2
+    }
+  ],
+  "ticks": 400,
+  "energy_per_tick": 256
+}

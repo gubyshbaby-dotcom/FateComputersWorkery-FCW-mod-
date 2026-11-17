@@ -1,0 +1,27 @@
+{
+  "neoforge:conditions": [
+    {
+      "type": "neoforge:item_exists",
+      "item": "fcw:euv_frame"
+    }
+  ],
+  "type": "minecraft:crafting_shaped",
+  "category": "building",
+  "pattern": [
+    "SVS",
+    "V V",
+    "SVS"
+  ],
+  "key": {
+    "S": {
+      "tag": "c:ingots/steel"
+    },
+    "V": {
+      "item": "minecraft:iron_bars"
+    }
+  },
+  "result": {
+    "id": "fcw:euv_frame",
+    "count": 8
+  }
+}

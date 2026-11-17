@@ -1,0 +1,36 @@
+{
+  "neoforge:conditions": [
+    {
+      "type": "neoforge:item_exists",
+      "item": "fcw:euv_droplet_generator"
+    }
+  ],
+  "type": "minecraft:crafting_shaped",
+  "category": "building",
+  "pattern": [
+    "SHS",
+    "KDK",
+    "SCS"
+  ],
+  "key": {
+    "S": {
+      "tag": "c:ingots/steel"
+    },
+    "H": {
+      "item": "minecraft:hopper"
+    },
+    "K": {
+      "item": "minecraft:copper_ingot"
+    },
+    "D": {
+      "item": "minecraft:dispenser"
+    },
+    "C": {
+      "item": "fcw:euv_casing"
+    }
+  },
+  "result": {
+    "id": "fcw:euv_droplet_generator",
+    "count": 1
+  }
+}

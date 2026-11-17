@@ -1,0 +1,19 @@
+{
+  "type": "fcw:wafering",
+  "inputs": [
+    {
+      "ingredient": {
+        "item": "fcw:silicon_boule"
+      },
+      "count": 1
+    }
+  ],
+  "results": [
+    {
+      "id": "fcw:silicon_wafer",
+      "count": 8
+    }
+  ],
+  "ticks": 800,
+  "energy_per_tick": 256
+}

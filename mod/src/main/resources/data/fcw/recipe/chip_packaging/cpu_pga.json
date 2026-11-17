@@ -1,0 +1,25 @@
+{
+  "type": "fcw:chip_packaging",
+  "inputs": [
+    {
+      "ingredient": {
+        "item": "fcw:wafer_cpu"
+      },
+      "count": 1
+    },
+    {
+      "ingredient": {
+        "item": "minecraft:gold_ingot"
+      },
+      "count": 2
+    }
+  ],
+  "results": [
+    {
+      "id": "fcw:cpu_pga",
+      "count": 4
+    }
+  ],
+  "ticks": 600,
+  "energy_per_tick": 384
+}

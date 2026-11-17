@@ -95,8 +95,20 @@ public final class FcwRecipes {           // регистрация RecipeType �
         LITHOGRAPHY, CHIP_PACKAGING, PCB_ASSEMBLY;
 }
 public record MachineRecipe(List<SizedIngredient> inputs, Optional<Ingredient> catalyst,
-        List<ChanceResult> results, int ticks, int energyPerTick) implements Recipe<MachineRecipeInput> {}
+        List<ChanceResult> results, int ticks, int energyPerTick,
+        RecipeType<MachineRecipe> type) implements Recipe<MachineRecipeInput> {
+    // type: шестой компонент, которого не было в первой редакции контракта. Класс один на шесть
+    // типов, а getType() должен знать свой; его проставляет сериализатор, в JSON поля нет.
+    public List<ItemStack> rollResults(RandomSource random);  // выходы одного цикла с учётом шансов
+    public List<ItemStack> maxResults();                      // все выходы по максимуму: под что нужно место
+    public long totalEnergy();                                // ticks * energyPerTick
+}
+public record ChanceResult(ItemStack stack, float chance) {}
+public record MachineRecipeInput(List<ItemStack> inputs, ItemStack catalyst) implements RecipeInput {}
 public final class MachineRecipes {
+    // Ещё: all(level, type), isInput(level, type, stack), isCatalyst(level, type, stack) — для
+    // фильтров слотов. Из подходящих рецептов find берёт самый конкретный (больше разных входов,
+    // затем больше предметов). В рецептах v1 не больше 4 разных входов и 2 разных выходов.
     /** Первый рецепт этого типа, который можно выполнить из содержимого входных слотов. */
     public static Optional<RecipeHolder<MachineRecipe>> find(Level level, RecipeType<MachineRecipe> type,
             List<ItemStack> inputs, ItemStack catalyst);

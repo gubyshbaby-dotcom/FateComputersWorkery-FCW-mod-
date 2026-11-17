@@ -1,0 +1,25 @@
+{
+  "type": "fcw:chip_packaging",
+  "inputs": [
+    {
+      "ingredient": {
+        "item": "fcw:wafer_controller"
+      },
+      "count": 1
+    },
+    {
+      "ingredient": {
+        "item": "minecraft:copper_ingot"
+      },
+      "count": 2
+    }
+  ],
+  "results": [
+    {
+      "id": "fcw:chip_controller",
+      "count": 8
+    }
+  ],
+  "ticks": 400,
+  "energy_per_tick": 256
+}

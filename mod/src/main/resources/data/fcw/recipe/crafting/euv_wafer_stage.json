@@ -1,0 +1,33 @@
+{
+  "neoforge:conditions": [
+    {
+      "type": "neoforge:item_exists",
+      "item": "fcw:euv_wafer_stage"
+    }
+  ],
+  "type": "minecraft:crafting_shaped",
+  "category": "building",
+  "pattern": [
+    "QQQ",
+    "PRP",
+    "SSS"
+  ],
+  "key": {
+    "Q": {
+      "item": "minecraft:smooth_quartz"
+    },
+    "P": {
+      "item": "minecraft:piston"
+    },
+    "R": {
+      "item": "minecraft:redstone"
+    },
+    "S": {
+      "tag": "c:ingots/steel"
+    }
+  },
+  "result": {
+    "id": "fcw:euv_wafer_stage",
+    "count": 4
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "type": "fcw:arc_furnace",
+  "inputs": [
+    {
+      "ingredient": {
+        "item": "minecraft:iron_ingot"
+      },
+      "count": 4
+    },
+    {
+      "ingredient": {
+        "tag": "minecraft:coals"
+      },
+      "count": 2
+    }
+  ],
+  "results": [
+    {
+      "id": "fcw:steel_ingot",
+      "count": 4
+    }
+  ],
+  "ticks": 300,
+  "energy_per_tick": 256
+}

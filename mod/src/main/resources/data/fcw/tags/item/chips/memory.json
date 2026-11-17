@@ -1,0 +1,13 @@
+{
+  "replace": false,
+  "values": [
+    "fcw:chip_memory",
+    "fcw:ram_dip",
+    "fcw:ram_simm",
+    "fcw:ram_dimm",
+    "fcw:ram_ddr",
+    "fcw:ram_ddr_rgb",
+    "fcw:ram_server",
+    "fcw:ram_sodimm"
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "type": "minecraft:crafting_shapeless",
+  "category": "misc",
+  "ingredients": [
+    {
+      "item": "fcw:ram_dip"
+    },
+    {
+      "item": "fcw:ram_dip"
+    },
+    {
+      "item": "fcw:pcb_blank"
+    },
+    {
+      "item": "minecraft:gold_nugget"
+    }
+  ],
+  "result": {
+    "id": "fcw:ram_simm",
+    "count": 1
+  }
+}

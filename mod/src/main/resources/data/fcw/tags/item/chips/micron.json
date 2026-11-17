@@ -1,0 +1,9 @@
+{
+  "replace": false,
+  "values": [
+    "fcw:cpu_dip",
+    "fcw:cpu_qfp",
+    "fcw:ram_dip",
+    "fcw:ram_simm"
+  ]
+}

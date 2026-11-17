@@ -1,0 +1,9 @@
+{
+  "replace": false,
+  "values": [
+    "fcw:reticle_controller",
+    "fcw:reticle_memory",
+    "fcw:reticle_gpu",
+    "fcw:reticle_cpu"
+  ]
+}

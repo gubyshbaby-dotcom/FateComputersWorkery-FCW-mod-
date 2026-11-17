@@ -1,0 +1,316 @@
+{
+	"credit": "Fate Computers Workery: item model made from a machine part",
+	"parent": "minecraft:block/block",
+	"ambientocclusion": false,
+	"gui_light": "front",
+	"texture_size": [
+		64,
+		64
+	],
+	"textures": {
+		"particle": "fcw:item/silicon_boule",
+		"main": "fcw:item/silicon_boule"
+	},
+	"elements": [
+		{
+			"name": "crystal_neck",
+			"from": [
+				7.0,
+				20.0,
+				7.0
+			],
+			"to": [
+				9.0,
+				23.0,
+				9.0
+			],
+			"faces": {
+				"north": {
+					"uv": [
+						3.0,
+						12.0,
+						4.0,
+						13.5
+					],
+					"texture": "#main"
+				},
+				"east": {
+					"uv": [
+						3.0,
+						12.0,
+						4.0,
+						13.5
+					],
+					"texture": "#main"
+				},
+				"south": {
+					"uv": [
+						3.0,
+						12.0,
+						4.0,
+						13.5
+					],
+					"texture": "#main"
+				},
+				"west": {
+					"uv": [
+						3.0,
+						12.0,
+						4.0,
+						13.5
+					],
+					"texture": "#main"
+				},
+				"up": {
+					"uv": [
+						4.0,
+						12.0,
+						5.0,
+						13.0
+					],
+					"texture": "#main"
+				}
+			}
+		},
+		{
+			"name": "crystal_shoulder",
+			"from": [
+				5.0,
+				17.0,
+				5.0
+			],
+			"to": [
+				11.0,
+				20.0,
+				11.0
+			],
+			"faces": {
+				"north": {
+					"uv": [
+						0.0,
+						12.0,
+						3.0,
+						13.5
+					],
+					"texture": "#main"
+				},
+				"east": {
+					"uv": [
+						0.0,
+						12.0,
+						3.0,
+						13.5
+					],
+					"texture": "#main"
+				},
+				"south": {
+					"uv": [
+						0.0,
+						12.0,
+						3.0,
+						13.5
+					],
+					"texture": "#main"
+				},
+				"west": {
+					"uv": [
+						0.0,
+						12.0,
+						3.0,
+						13.5
+					],
+					"texture": "#main"
+				},
+				"up": {
+					"uv": [
+						12.0,
+						0.0,
+						15.0,
+						3.0
+					],
+					"texture": "#main"
+				}
+			}
+		},
+		{
+			"name": "crystal_body",
+			"from": [
+				4.0,
+				-7.0,
+				4.0
+			],
+			"to": [
+				12.0,
+				17.0,
+				12.0
+			],
+			"faces": {
+				"north": {
+					"uv": [
+						0.0,
+						0.0,
+						4.0,
+						12.0
+					],
+					"texture": "#main"
+				},
+				"east": {
+					"uv": [
+						0.0,
+						0.0,
+						4.0,
+						12.0
+					],
+					"texture": "#main"
+				},
+				"south": {
+					"uv": [
+						0.0,
+						0.0,
+						4.0,
+						12.0
+					],
+					"texture": "#main"
+				},
+				"west": {
+					"uv": [
+						0.0,
+						0.0,
+						4.0,
+						12.0
+					],
+					"texture": "#main"
+				},
+				"up": {
+					"uv": [
+						4.0,
+						0.0,
+						8.0,
+						4.0
+					],
+					"texture": "#main"
+				},
+				"down": {
+					"uv": [
+						8.0,
+						0.0,
+						12.0,
+						4.0
+					],
+					"texture": "#main"
+				}
+			}
+		}
+	],
+	"display": {
+		"gui": {
+			"rotation": [
+				20,
+				30,
+				-40
+			],
+			"translation": [
+				0,
+				0,
+				0
+			],
+			"scale": [
+				0.575,
+				0.575,
+				0.575
+			]
+		},
+		"ground": {
+			"translation": [
+				0,
+				2,
+				0
+			],
+			"scale": [
+				0.3,
+				0.3,
+				0.3
+			]
+		},
+		"fixed": {
+			"rotation": [
+				0,
+				0,
+				-45
+			],
+			"scale": [
+				0.5,
+				0.5,
+				0.5
+			]
+		},
+		"thirdperson_righthand": {
+			"rotation": [
+				0,
+				0,
+				0
+			],
+			"translation": [
+				0,
+				3,
+				1
+			],
+			"scale": [
+				0.3,
+				0.3,
+				0.3
+			]
+		},
+		"thirdperson_lefthand": {
+			"rotation": [
+				0,
+				0,
+				0
+			],
+			"translation": [
+				0,
+				3,
+				1
+			],
+			"scale": [
+				0.3,
+				0.3,
+				0.3
+			]
+		},
+		"firstperson_righthand": {
+			"rotation": [
+				0,
+				30,
+				0
+			],
+			"translation": [
+				0,
+				4,
+				0
+			],
+			"scale": [
+				0.35,
+				0.35,
+				0.35
+			]
+		},
+		"firstperson_lefthand": {
+			"rotation": [
+				0,
+				30,
+				0
+			],
+			"translation": [
+				0,
+				4,
+				0
+			],
+			"scale": [
+				0.35,
+				0.35,
+				0.35
+			]
+		}
+	}
+}

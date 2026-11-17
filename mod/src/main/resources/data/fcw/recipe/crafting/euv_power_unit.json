@@ -1,0 +1,36 @@
+{
+  "neoforge:conditions": [
+    {
+      "type": "neoforge:item_exists",
+      "item": "fcw:euv_power_unit"
+    }
+  ],
+  "type": "minecraft:crafting_shaped",
+  "category": "building",
+  "pattern": [
+    "SLS",
+    "RCR",
+    "SKS"
+  ],
+  "key": {
+    "S": {
+      "tag": "c:ingots/steel"
+    },
+    "L": {
+      "item": "minecraft:lightning_rod"
+    },
+    "R": {
+      "item": "minecraft:redstone_block"
+    },
+    "C": {
+      "item": "fcw:euv_casing"
+    },
+    "K": {
+      "item": "minecraft:copper_block"
+    }
+  },
+  "result": {
+    "id": "fcw:euv_power_unit",
+    "count": 1
+  }
+}

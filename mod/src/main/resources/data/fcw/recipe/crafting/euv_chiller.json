@@ -1,0 +1,33 @@
+{
+  "neoforge:conditions": [
+    {
+      "type": "neoforge:item_exists",
+      "item": "fcw:euv_chiller"
+    }
+  ],
+  "type": "minecraft:crafting_shaped",
+  "category": "building",
+  "pattern": [
+    "SVS",
+    "IKI",
+    "SVS"
+  ],
+  "key": {
+    "S": {
+      "tag": "c:ingots/steel"
+    },
+    "V": {
+      "item": "minecraft:iron_bars"
+    },
+    "I": {
+      "item": "minecraft:packed_ice"
+    },
+    "K": {
+      "item": "minecraft:copper_block"
+    }
+  },
+  "result": {
+    "id": "fcw:euv_chiller",
+    "count": 2
+  }
+}

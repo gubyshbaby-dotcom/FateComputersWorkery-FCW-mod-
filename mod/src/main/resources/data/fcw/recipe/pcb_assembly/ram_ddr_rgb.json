@@ -1,0 +1,37 @@
+{
+  "type": "fcw:pcb_assembly",
+  "inputs": [
+    {
+      "ingredient": {
+        "item": "fcw:pcb_blank"
+      },
+      "count": 1
+    },
+    {
+      "ingredient": {
+        "item": "fcw:chip_memory"
+      },
+      "count": 8
+    },
+    {
+      "ingredient": {
+        "item": "fcw:chip_controller"
+      },
+      "count": 1
+    },
+    {
+      "ingredient": {
+        "item": "minecraft:glowstone_dust"
+      },
+      "count": 2
+    }
+  ],
+  "results": [
+    {
+      "id": "fcw:ram_ddr_rgb",
+      "count": 1
+    }
+  ],
+  "ticks": 400,
+  "energy_per_tick": 384
+}
