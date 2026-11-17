@@ -16,6 +16,7 @@ import shutil
 import socket
 import subprocess
 import sys
+import threading
 import time
 
 
@@ -62,6 +63,8 @@ def main():
     ap.add_argument("--mem", type=int, default=2048)
     ap.add_argument("--smp", type=int, default=2)
     ap.add_argument("--append", default="")
+    ap.add_argument("--console-cmd", nargs="*", default=[],
+                    help="команды для текстовой консоли hvc0 после входа")
     a = ap.parse_args()
 
     man = json.load(open(os.path.join(a.image, "manifest.json")))
@@ -72,8 +75,9 @@ def main():
     subprocess.run(["qemu-img", "create", "-q", "-f", "qcow2", "-F", "qcow2", "-b",
                     os.path.abspath(os.path.join(a.image, man["rootfs"])), disk], check=True)
     qmp_path = os.path.join(a.work, "qmp.sock")
+    con_sock = os.path.join(a.work, "con.sock")
     con_log = os.path.join(a.work, "console.log")
-    for p in (qmp_path, con_log):
+    for p in (qmp_path, con_log, con_sock):
         if os.path.exists(p):
             os.remove(p)
 
@@ -88,7 +92,7 @@ def main():
            "-drive", f"if=none,id=root,file={disk},format=qcow2,discard=unmap",
            "-device", "virtio-blk-pci,drive=root",
            "-device", "virtio-serial-pci",
-           "-chardev", f"file,id=con0,path={con_log}",
+           "-chardev", f"socket,id=con0,path={con_sock},server=on,wait=off",
            "-device", "virtconsole,chardev=con0",
            "-object", "rng-random,id=rng0,filename=/dev/urandom",
            "-device", "virtio-rng-pci,rng=rng0",
@@ -100,8 +104,24 @@ def main():
     t0 = time.time()
     proc = subprocess.Popen(cmd, stdout=open(os.path.join(a.work, "qemu.log"), "w"),
                             stderr=subprocess.STDOUT)
+    con = None
     try:
         q = Qmp(qmp_path)
+        con = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        con.connect(con_sock)
+        logf = open(con_log, "wb")
+
+        def pump():
+            while True:
+                try:
+                    b = con.recv(4096)
+                except OSError:
+                    return
+                if not b:
+                    return
+                logf.write(b)
+                logf.flush()
+        threading.Thread(target=pump, daemon=True).start()
         shot_no = 0
 
         def shot(tag):
@@ -133,6 +153,10 @@ def main():
                 break
             time.sleep(1)
         shot("ready")
+        for c in a.console_cmd:
+            con.sendall(c.encode() + b"\n")
+            print(f"[{time.time()-t0:6.1f}s] hvc0$ {c}", flush=True)
+            time.sleep(5)
         for k in a.keys:
             q.cmd("send-key", keys=[{"type": "qcode", "data": x} for x in k.split("-")])
             print(f"[{time.time()-t0:6.1f}s] клавиши {k}", flush=True)

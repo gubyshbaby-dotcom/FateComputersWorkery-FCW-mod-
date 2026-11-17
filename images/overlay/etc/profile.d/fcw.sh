@@ -14,7 +14,7 @@ if [ "$(tty 2>/dev/null)" = "/dev/tty1" ] && [ -z "${WAYLAND_DISPLAY:-}" ] && [ 
   unset fcw_i
   if ls /dev/dri/card* >/dev/null 2>&1 && [ ! -e "$HOME/.fcw-no-desktop" ]; then
     . /etc/fcw/session.env
-    labwc >"${XDG_RUNTIME_DIR:-/tmp}/labwc.log" 2>&1
-    echo "Рабочий стол завершился. Запустить снова: labwc   (журнал: \$XDG_RUNTIME_DIR/labwc.log)"
+    mkdir -p "$HOME/.cache"; labwc >"$HOME/.cache/labwc.log" 2>&1
+    echo "Desktop exited. Start again: labwc   (log: ~/.cache/labwc.log)"
   fi
 fi

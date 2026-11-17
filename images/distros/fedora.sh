@@ -10,7 +10,7 @@ BASE_URL="https://dl.fedoraproject.org/pub/fedora/linux/releases/$FEDORA_RELEASE
 
 FEDORA_PACKAGES=(
   kernel-core kernel-modules-core kernel-modules
-  systemd systemd-udev systemd-networkd systemd-resolved dracut
+  systemd systemd-udev systemd-pam systemd-networkd systemd-resolved dracut
   passwd shadow-utils util-linux sudo procps-ng iproute iputils less nano htop
   bash-completion kbd glibc-langpack-en glibc-langpack-ru dbus-broker
   labwc swaybg lxqt-panel lxqt-menu-data lxqt-themes alacritty pcmanfm-qt
@@ -49,6 +49,8 @@ distro_install_packages() {
   # но ядро и модули ставить нужно — снимаем исключения контейнера
   rm -f "$ROOT/etc/dnf/protected.d/"*container* 2>/dev/null || true
   dnf_in_root upgrade --refresh
+  # обычная «личность» Fedora вместо контейнерной (os-release, пресеты служб)
+  dnf_in_root install --allowerasing fedora-release fedora-release-identity-basic
   dnf_in_root install "${FEDORA_PACKAGES[@]}"
 }
 
@@ -57,6 +59,8 @@ distro_remove_other_terminals() {
   for t in qterminal xterm foot konsole gnome-terminal ptyxis kitty xfce4-terminal lxterminal rxvt-unicode; do
     if in_root rpm -q "$t" >/dev/null 2>&1; then in_root rpm -e --nodeps "$t"; fi
   done
+  # виджет терминала от qterminal: ничего его не требует, убираем
+  if in_root rpm -q qtermwidget >/dev/null 2>&1; then in_root rpm -e qtermwidget || true; fi
 }
 
 distro_configure() {

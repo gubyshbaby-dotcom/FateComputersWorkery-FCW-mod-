@@ -7,7 +7,6 @@
   </core>
   <placement><policy>cascade</policy></placement>
   <theme>
-    <name></name>
     <cornerRadius>6</cornerRadius>
     <font place="ActiveWindow"><name>DejaVu Sans</name><size>10</size><weight>bold</weight></font>
     <font place="MenuItem"><name>DejaVu Sans</name><size>10</size></font>
@@ -18,7 +17,6 @@
     <keybind key="C-A-t"><action name="Execute" command="alacritty" /></keybind>
     <keybind key="W-e"><action name="Execute" command="pcmanfm-qt" /></keybind>
     <keybind key="A-F4"><action name="Close" /></keybind>
-    <keybind key="W-d"><action name="ToggleShowDesktop" /></keybind>
   </keyboard>
   <mouse>
     <default />

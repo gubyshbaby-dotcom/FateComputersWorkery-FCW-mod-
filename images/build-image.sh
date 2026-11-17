@@ -149,6 +149,9 @@ stage_configure() {
   if [[ -f "$HERE/wallpapers/$DISTRO.png" ]]; then
     install -Dm644 "$HERE/wallpapers/$DISTRO.png" "$ROOT/usr/share/fcw/wallpaper.png"
   fi
+  if [[ -f "$HERE/wallpapers/$DISTRO-menu.png" ]]; then
+    install -Dm644 "$HERE/wallpapers/$DISTRO-menu.png" "$ROOT/usr/share/fcw/menu.png"
+  fi
   if [[ -n "${FCW_AGENT_BIN:-}" ]]; then
     install -Dm755 "$FCW_AGENT_BIN" "$ROOT/usr/local/bin/fcw"
     ln -sf fcw "$ROOT/usr/local/bin/fcw-agent"
