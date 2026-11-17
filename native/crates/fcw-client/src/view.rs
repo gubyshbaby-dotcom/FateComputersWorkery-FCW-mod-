@@ -275,6 +275,20 @@ pub struct View {
     pub screen_id: String,
     pub max_fps: u32,
     st: Mutex<State>,
+    stats: Mutex<FrameStats>,
+}
+
+/// Счётчики кадров для замеров (fcw-probe, бенчмарки).
+#[derive(Clone, Debug, Default)]
+pub struct FrameStats {
+    pub frames: u64,
+    /// Размер сообщений FrameUpdate/TextUpdate (байт).
+    pub bytes: u64,
+    /// Задержка от захвата демоном до прихода к клиенту, мкс (если демон
+    /// прислал capture_unix_us).
+    pub latency_us: Vec<u64>,
+    pub jpeg_rects: u64,
+    pub lossless_rects: u64,
 }
 
 /// Снимок для `viewInfo`.
@@ -297,6 +311,7 @@ impl View {
             screen_id: screen_id.to_string(),
             max_fps,
             st: Mutex::new(State { kind, ..Default::default() }),
+            stats: Mutex::new(FrameStats::default()),
         }
     }
 
@@ -508,6 +523,27 @@ impl View {
         s.cursor_drawn = cur;
         s.clear_dirty();
         result
+    }
+
+    /// Учёт пришедшего кадра (размер сообщения и метка времени захвата).
+    pub fn record_frame(&self, bytes: usize, capture_unix_us: u64, jpeg_rects: u64, lossless_rects: u64) {
+        let mut st = self.stats.lock();
+        st.frames += 1;
+        st.bytes += bytes as u64;
+        st.jpeg_rects += jpeg_rects;
+        st.lossless_rects += lossless_rects;
+        if capture_unix_us != 0 {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_micros() as u64)
+                .unwrap_or(0);
+            st.latency_us.push(now.saturating_sub(capture_unix_us));
+        }
+    }
+
+    /// Счётчики с прошлого вызова (обнуляются).
+    pub fn take_stats(&self) -> FrameStats {
+        std::mem::take(&mut *self.stats.lock())
     }
 
     /// Полный снимок кадра с курсором (для fcw-probe).

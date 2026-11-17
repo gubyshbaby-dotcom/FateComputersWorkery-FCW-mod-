@@ -26,4 +26,5 @@ serde_json = { workspace = true }
 parking_lot = { workspace = true }
 anyhow = { workspace = true }
 jni = "0.21"
+jpeg-decoder = { version = "0.3", default-features = false }
 opus = { workspace = true, optional = true }

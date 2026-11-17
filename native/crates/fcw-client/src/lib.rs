@@ -9,6 +9,7 @@ pub mod font;
 pub mod glfw;
 pub mod jni_api;
 pub mod session;
+pub mod shaper;
 pub mod tls;
 pub mod view;
 

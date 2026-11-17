@@ -537,6 +537,8 @@ impl Session {
                 view.apply_text(&u);
             } else {
                 let Some(mut u) = frame::read_async::<_, spb::FrameUpdate>(&mut recv).await? else { return Ok(()) };
+                let jpeg = u.rects.iter().filter(|r| r.encoding == 4).count() as u64;
+                view.record_frame(u.encoded_len(), u.capture_unix_us, jpeg, u.rects.len() as u64 - jpeg);
                 let rects = std::mem::take(&mut u.rects);
                 let decoded = decode_rects(rects);
                 view.apply_frame(&u, decoded);

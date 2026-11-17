@@ -25,6 +25,7 @@ message ClientMsg {
     RequestKeyframe request_keyframe = 4;
     Ping ping = 5;
     Detach detach = 6;
+    FrameAck frame_ack = 7;        // добавлено: подтверждение кадров
   }
 }
 
@@ -38,10 +39,25 @@ message Subscribe {
   string screen_id = 2;    // "gfx0" | "tty0"
   uint32 max_fps = 3;      // 0 = 30; дальний зритель просит меньше
   bool audio = 4;          // присылать звук этой машины
+  // Добавлено. Клиент умеет RECT_JPEG: при нехватке канала или на часто
+  // меняющихся «пёстрых» тайлах демон шлёт их с потерями и позже досылает
+  // без потерь.
+  bool accept_lossy = 5;
+  // Добавлено. Клиент подтверждает кадры (FrameAck); демон держит в пути не
+  // больше, чем нужно, и склеивает изменения вместо очереди.
+  bool frame_acks = 6;
 }
 message Unsubscribe { string vm_id = 1; string screen_id = 2; }
 message RequestKeyframe { string vm_id = 1; string screen_id = 2; }
 message Ping { uint64 nonce = 1; }
+
+// Клиент получил и применил `frames` кадров с начала потока экрана
+// (считаются FrameUpdate этого потока).
+message FrameAck {
+  string vm_id = 1;
+  string screen_id = 2;
+  uint64 frames = 3;
+}
 
 message ServerMsg {
   oneof kind {
@@ -131,6 +147,8 @@ enum RectEncoding {
   RECT_RGBA_ZSTD = 1;      // w*h*4 байт RGBA8, сжато zstd
   RECT_SOLID = 2;          // data = 4 байта RGBA, залить весь прямоугольник
   RECT_COPY = 3;           // скопировать из (src_x, src_y) того же кадра
+  RECT_JPEG = 4;           // добавлено: baseline JPEG (RGB, альфа 255), с потерями;
+                           // шлётся только клиентам с Subscribe.accept_lossy
 }
 
 message Rect {
