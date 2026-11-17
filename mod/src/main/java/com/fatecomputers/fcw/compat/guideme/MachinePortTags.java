@@ -79,7 +79,7 @@ final class MachinePortTags {
             return switch (role) {
                 case INPUT -> "item_in";
                 case OUTPUT -> "item_out";
-                case BOTH -> "item_both";
+                case BOTH, TRAY -> "item_both";
                 case CATALYST -> "item_catalyst";
             };
         }
